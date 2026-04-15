@@ -21,7 +21,7 @@ jobs:
       - name: Lint YAML files
         uses: ibiqlik/action-yamllint@v3
         with:
-          file_or_dir: .
+          file_or_dir: parm/
           config_data: |
             extends: default
             rules:

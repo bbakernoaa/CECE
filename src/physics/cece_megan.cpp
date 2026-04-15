@@ -351,7 +351,8 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
         try {
             YAML::Node spec_node = YAML::LoadFile(spec_file);
             if (spec_node["speciation"]) {
-                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end(); ++it) {
+                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
+                     ++it) {
                     std::string target_species = it->first.as<std::string>();
                     for (auto const& src : it->second) {
                         SpeciationEntry entry;
@@ -362,7 +363,8 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
                 }
             }
         } catch (const YAML::Exception& e) {
-            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": " << e.what() << "\n";
+            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
+                      << e.what() << "\n";
         }
     }
 
@@ -371,13 +373,6 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
             source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
         }
     }
-
-
-
-
-
-
-
 
     lai_coeff_1_ = 0.49;
     lai_coeff_2_ = 0.2;
@@ -431,13 +426,17 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
     auto gwetroot = ResolveImport("soil_moisture_root", import_state);
     auto wilting_point = ResolveImport("wilting_point", import_state);
 
-    if (temp.data() == nullptr || emissions_out.data() == nullptr || lai.data() == nullptr ||
-        pardr.data() == nullptr || pardf.data() == nullptr || suncos.data() == nullptr) {
+    if (temp.data() == nullptr || lai.data() == nullptr || pardr.data() == nullptr ||
+        pardf.data() == nullptr || suncos.data() == nullptr) {
         return;
     }
 
-    int nx = static_cast<int>(emissions_out.extent(0));
-    int ny = static_cast<int>(emissions_out.extent(1));
+    if (!use_speciation_ && emissions_out.data() == nullptr) {
+        return;
+    }
+
+    int nx = static_cast<int>(lai.extent(0));
+    int ny = static_cast<int>(lai.extent(1));
 
     double beta = beta_;
     double ct1 = ct1_;
@@ -480,52 +479,55 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
             auto target_out = ResolveExport(target_field_name, export_state);
             if (target_out.data() == nullptr) continue;
 
+            // Pre-aggregate the emission factors (AEF * factor) for all sources mapping to this
+            // target
+            double effective_aef = 0.0;
             for (const auto& source_entry : sources) {
                 double src_aef = source_aefs_.count(source_entry.source_species)
                                      ? source_aefs_[source_entry.source_species]
                                      : aef_;
-                double factor = source_entry.factor;
-
-                Kokkos::parallel_for(
-                    "MeganKernel_Speciated",
-                    Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<2>>({0, 0},
-                                                                                          {nx, ny}),
-                    KOKKOS_LAMBDA(int i, int j) {
-                        double T = temp(i, j, 0);
-                        double L = lai(i, j, 0);
-                        double sc = suncos(i, j, 0);
-
-                        if (L <= 0.0) return;
-
-                        double T_AVG_15 = 297.0;
-                        double PAR_AVG = 400.0;
-                        int doy = 180;
-                        double dbtwn = 30.0;
-
-                        double L_prev = has_pmlai ? pmlai(i, j, 0) : L;
-                        double gwet = has_gwetroot ? gwetroot(i, j, 0) : 1.0;
-                        double wilt = has_wilt ? wilting_point(i, j, 0) : 0.0;
-
-                        double gamma_lai = get_gamma_lai(L, lai_c1, lai_c2, is_bidirectional);
-                        double gamma_t_li = get_gamma_t_li(T, beta, std_t);
-                        double gamma_t_ld = get_gamma_t_ld(T, T_AVG_15, ct1, ceo, R, ct2, t_opt_c1,
-                                                           t_opt_c2, e_opt_c);
-                        double gamma_par = get_gamma_par_pceea(pardr(i, j, 0), pardf(i, j, 0),
-                                                               PAR_AVG, sc, doy, wm2_umol, ptoa_c1,
-                                                               ptoa_c2, gp_c1, gp_c2, gp_c3, gp_c4);
-
-                        double gamma_age =
-                            get_gamma_age(L, L_prev, dbtwn, T, anew, agro, amat, aold);
-                        double gamma_sm = get_gamma_sm(gwet, wilt);
-
-                        double megan_emis =
-                            NORM_FAC * src_aef * factor * gamma_age * gamma_sm * gamma_lai *
-                            gamma_co2_const *
-                            ((1.0 - ldf) * gamma_t_li + (ldf * gamma_par * gamma_t_ld));
-
-                        target_out(i, j, 0) += megan_emis;
-                    });
+                effective_aef += src_aef * source_entry.factor;
             }
+
+            if (effective_aef <= 0.0) continue;
+
+            Kokkos::parallel_for(
+                "MeganKernel_Speciated",
+                Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<2>>({0, 0},
+                                                                                      {nx, ny}),
+                KOKKOS_LAMBDA(int i, int j) {
+                    double T = temp(i, j, 0);
+                    double L = lai(i, j, 0);
+                    double sc = suncos(i, j, 0);
+
+                    if (L <= 0.0) return;
+
+                    double T_AVG_15 = 297.0;
+                    double PAR_AVG = 400.0;
+                    int doy = 180;
+                    double dbtwn = 30.0;
+
+                    double L_prev = has_pmlai ? pmlai(i, j, 0) : L;
+                    double gwet = has_gwetroot ? gwetroot(i, j, 0) : 1.0;
+                    double wilt = has_wilt ? wilting_point(i, j, 0) : 0.0;
+
+                    double gamma_lai = get_gamma_lai(L, lai_c1, lai_c2, is_bidirectional);
+                    double gamma_t_li = get_gamma_t_li(T, beta, std_t);
+                    double gamma_t_ld =
+                        get_gamma_t_ld(T, T_AVG_15, ct1, ceo, R, ct2, t_opt_c1, t_opt_c2, e_opt_c);
+                    double gamma_par =
+                        get_gamma_par_pceea(pardr(i, j, 0), pardf(i, j, 0), PAR_AVG, sc, doy,
+                                            wm2_umol, ptoa_c1, ptoa_c2, gp_c1, gp_c2, gp_c3, gp_c4);
+
+                    double gamma_age = get_gamma_age(L, L_prev, dbtwn, T, anew, agro, amat, aold);
+                    double gamma_sm = get_gamma_sm(gwet, wilt);
+
+                    double megan_emis = NORM_FAC * effective_aef * gamma_age * gamma_sm *
+                                        gamma_lai * gamma_co2_const *
+                                        ((1.0 - ldf) * gamma_t_li + (ldf * gamma_par * gamma_t_ld));
+
+                    target_out(i, j, 0) += megan_emis;
+                });
             Kokkos::fence();
             MarkModified(target_field_name, export_state);
         }
