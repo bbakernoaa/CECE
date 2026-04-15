@@ -1,0 +1,342 @@
+mechanism: racm2
+speciation:
+  ISO:
+  - source: ISOP
+    factor: 1.0
+  OLI:
+  - source: MBO
+    factor: 1.0
+  - source: LVOC
+    factor: 0.01
+  - source: LVOC
+    factor: 0.005
+  - source: MT_AROM
+    factor: 0.2
+  API:
+  - source: MT_PINE
+    factor: 1.0
+  - source: MT_CAMP
+    factor: 0.33
+  - source: MT_CAMP
+    factor: 0.18
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.02
+  - source: MT_CAMP
+    factor: 0.2
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.04
+  - source: MT_CAMP
+    factor: 0.14
+  - source: MT_AROM
+    factor: 0.08
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.01
+  - source: MT_CAMP
+    factor: 0.05
+  - source: OTHER
+    factor: 0.01
+  - source: MT_AROM
+    factor: 0.05
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.03
+  - source: MT_CAMP
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.005
+  LIM:
+  - source: MT_ACYC
+    factor: 0.5
+  - source: MT_ACYC
+    factor: 0.01
+  - source: MT_ACYC
+    factor: 0.09
+  - source: MT_ACYC
+    factor: 0.4
+  - source: MT_SABI
+    factor: 0.06
+  - source: MT_SABI
+    factor: 0.09
+  - source: MT_SABI
+    factor: 0.07
+  - source: MT_SABI
+    factor: 0.6
+  - source: MT_SABI
+    factor: 0.1
+  - source: MT_SABI
+    factor: 0.075
+  - source: MT_SABI
+    factor: 0.005
+  - source: MT_AROM
+    factor: 0.2
+  - source: MT_AROM
+    factor: 0.07
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.05
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  - source: MT_AROM
+    factor: 0.005
+  - source: MT_AROM
+    factor: 0.005
+  SESQ:
+  - source: SQT_HR
+    factor: 0.5
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.05
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.1
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.04
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.08
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.05
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.03
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.15
+  - source: SQT_LR
+    factor: 0.08
+  - source: SQT_LR
+    factor: 0.03
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.15
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.2
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.03
+  - source: SQT_LR
+    factor: 0.02
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.05
+  - source: SQT_LR
+    factor: 0.03
+  - source: SQT_LR
+    factor: 0.15
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.02
+  MOH:
+  - source: MEOH
+    factor: 1.0
+  ACT:
+  - source: ACTO
+    factor: 1.0
+  EOH:
+  - source: ETOH
+    factor: 0.5
+  ACD:
+  - source: ETOH
+    factor: 0.5
+  ORA1:
+  - source: ACID
+    factor: 0.8
+  ORA2:
+  - source: ACID
+    factor: 0.19
+  ETH:
+  - source: LVOC
+    factor: 0.18
+  ETE:
+  - source: LVOC
+    factor: 0.36
+  HC3:
+  - source: LVOC
+    factor: 0.12
+  OLT:
+  - source: LVOC
+    factor: 0.03
+  - source: LVOC
+    factor: 0.28
+  - source: LVOC
+    factor: 0.01
+  HCHO:
+  - source: OXPROD
+    factor: 0.9
+  MACR:
+  - source: OXPROD
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.015
+  - source: OXPROD
+    factor: 0.01
+  - source: STRESS
+    factor: 0.03
+  - source: MT_AROM
+    factor: 0.0
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.045
+  - source: MT_AROM
+    factor: 0.1
+  - source: STRESS
+    factor: 0.025
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.045
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.025
+  - source: OTHER
+    factor: 0.035
+  - source: MT_CAMP
+    factor: 0.0025
+  MVK:
+  - source: OXPROD
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.015
+  - source: OXPROD
+    factor: 0.01
+  - source: STRESS
+    factor: 0.03
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.045
+  - source: MT_AROM
+    factor: 0.1
+  - source: STRESS
+    factor: 0.025
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.045
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.025
+  - source: OTHER
+    factor: 0.035
+  - source: MT_CAMP
+    factor: 0.0025
+  HCN:
+  - source: STRESS
+    factor: 0.05
+  CH4:
+  - source: OTHER
+    factor: 0.15
+  CH3BR:
+  - source: OTHER
+    factor: 0.03
+  CH3CL:
+  - source: OTHER
+    factor: 0.15
+  CH3I:
+  - source: OTHER
+    factor: 0.22
+  TRS:
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.1
+  - source: OTHER
+    factor: 0.03
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.05
+  HC5:
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  HC8:
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  CO:
+  - source: CO
+    factor: 1.0
+  'NO':
+  - source: 'NO'
+    factor: 1.0

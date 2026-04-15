@@ -1,0 +1,601 @@
+megan_species_mapping:
+  isoprene:
+    megan_species: ISOP
+    fraction: 1.0
+  MBO_2m3e2ol:
+    megan_species: MBO
+    fraction: 1.0
+  pinene_a:
+    megan_species: MT_PINE
+    fraction: 1.0
+  myrcene:
+    megan_species: MT_ACYC
+    fraction: 0.5
+  ocimene_al:
+    megan_species: MT_ACYC
+    fraction: 0.01
+  ocimene_c_b:
+    megan_species: MT_ACYC
+    fraction: 0.09
+  ocimene_t_b:
+    megan_species: MT_ACYC
+    fraction: 0.4
+  pinene_b:
+    megan_species: MT_CAMP
+    fraction: 0.33
+  camphene:
+    megan_species: MT_CAMP
+    fraction: 0.18
+  bornene:
+    megan_species: MT_CAMP
+    fraction: 0.005
+  fenchene_a:
+    megan_species: MT_CAMP
+    fraction: 0.005
+  carene_3:
+    megan_species: MT_CAMP
+    fraction: 0.2
+  fenchene_b:
+    megan_species: MT_CAMP
+    fraction: 0.005
+  tricyclene:
+    megan_species: MT_CAMP
+    fraction: 0.02
+  thujene_a:
+    megan_species: MT_CAMP
+    fraction: 0.04
+  sabinene:
+    megan_species: MT_CAMP
+    fraction: 0.14
+  terpineol_a:
+    megan_species: MT_CAMP
+    fraction: 0.05
+  terpineol_4:
+    megan_species: MT_CAMP
+    fraction: 0.02
+  terpinyl_ACT_a:
+    megan_species: MT_CAMP
+    fraction: 0.005
+  phellandrene_a:
+    megan_species: MT_SABI
+    fraction: 0.06
+  terpinene_g:
+    megan_species: MT_SABI
+    fraction: 0.09
+  terpinene_a:
+    megan_species: MT_SABI
+    fraction: 0.07
+  limonene:
+    megan_species: MT_SABI
+    fraction: 0.6
+  phellandrene_b:
+    megan_species: MT_SABI
+    fraction: 0.1
+  terpinolene:
+    megan_species: MT_SABI
+    fraction: 0.075
+  verbenene:
+    megan_species: MT_SABI
+    fraction: 0.005
+  cymene_p:
+    megan_species: MT_AROM
+    fraction: 0.2
+  cymene_o:
+    megan_species: MT_AROM
+    fraction: 0.07
+  meta-cymenene:
+    megan_species: MT_AROM
+    fraction: 0.02
+  p-cymenene:
+    megan_species: MT_AROM
+    fraction: 0.05
+  camphor:
+    megan_species: MT_AROM
+    fraction: 0.08
+  bornyl_ACT:
+    megan_species: MT_AROM
+    fraction: 0.02
+  piperitone:
+    megan_species: MT_AROM
+    fraction: 0.01
+  estragole:
+    megan_species: MT_AROM
+    fraction: 0.02
+  borneol:
+    megan_species: MT_AROM
+    fraction: 0.05
+  thujone_b:
+    megan_species: MT_AROM
+    fraction: 0.02
+  thujone_a:
+    megan_species: MT_AROM
+    fraction: 0.03
+  linalool:
+    megan_species: MT_AROM
+    fraction: 0.2
+  santene:
+    megan_species: MT_AROM
+    fraction: 0.005
+  coniferyl_alcohol:
+    megan_species: MT_AROM
+    fraction: 0.005
+  cineole_1_8:
+    megan_species: MT_AROM
+    fraction: 0.2
+  myrtenal:
+    megan_species: MT_AROM
+    fraction: 0.005
+  fenchone:
+    megan_species: MT_AROM
+    fraction: 0.005
+  ionone_b:
+    megan_species: MT_AROM
+    fraction: 0.005
+  ipsenol:
+    megan_species: MT_AROM
+    fraction: 0.005
+  carbon_monoxide:
+    megan_species: CO
+    fraction: 1.0
+  caryophyllene_b:
+    megan_species: SQT_HR
+    fraction: 0.5
+  caryophyllene_c_i:
+    megan_species: SQT_HR
+    fraction: 0.005
+  cadinene_d:
+    megan_species: SQT_HR
+    fraction: 0.005
+  bisabolene_b:
+    megan_species: SQT_HR
+    fraction: 0.02
+  farnescene_a:
+    megan_species: SQT_HR
+    fraction: 0.05
+  patchoulene_b:
+    megan_species: SQT_HR
+    fraction: 0.005
+  elemene_b:
+    megan_species: SQT_HR
+    fraction: 0.01
+  nerolidol_c:
+    megan_species: SQT_HR
+    fraction: 0.005
+  farnesol:
+    megan_species: SQT_HR
+    fraction: 0.005
+  humulene_a:
+    megan_species: SQT_HR
+    fraction: 0.1
+  muurolene_a:
+    megan_species: SQT_HR
+    fraction: 0.005
+  bergamotene_a:
+    megan_species: SQT_HR
+    fraction: 0.04
+  germacrene_B:
+    megan_species: SQT_HR
+    fraction: 0.005
+  selinene_b:
+    megan_species: SQT_HR
+    fraction: 0.08
+  calarene:
+    megan_species: SQT_HR
+    fraction: 0.005
+  farnescene_b:
+    megan_species: SQT_HR
+    fraction: 0.05
+  acoradiene:
+    megan_species: SQT_HR
+    fraction: 0.01
+  humulene_g:
+    megan_species: SQT_HR
+    fraction: 0.01
+  muurolene_g:
+    megan_species: SQT_HR
+    fraction: 0.03
+  germacrene_D:
+    megan_species: SQT_HR
+    fraction: 0.02
+  cadinene_g:
+    megan_species: SQT_HR
+    fraction: 0.005
+  nerolidol_t:
+    megan_species: SQT_HR
+    fraction: 0.005
+  bergamotene_b:
+    megan_species: SQT_HR
+    fraction: 0.02
+  bisabolene_a:
+    megan_species: SQT_HR
+    fraction: 0.005
+  cedrol:
+    megan_species: SQT_LR
+    fraction: 0.01
+  homosalate:
+    megan_species: SQT_LR
+    fraction: 0.15
+  2ethyl_hexyl_salate:
+    megan_species: SQT_LR
+    fraction: 0.08
+  cedrene_a:
+    megan_species: SQT_LR
+    fraction: 0.03
+  thujopsene:
+    megan_species: SQT_LR
+    fraction: 0.01
+  longifolene:
+    megan_species: SQT_LR
+    fraction: 0.15
+  cadinol_a:
+    megan_species: SQT_LR
+    fraction: 0.01
+  zingiberene_a:
+    megan_species: SQT_LR
+    fraction: 0.01
+  isolongifolene:
+    megan_species: SQT_LR
+    fraction: 0.01
+  longicyclene:
+    megan_species: SQT_LR
+    fraction: 0.01
+  copaene_a:
+    megan_species: SQT_LR
+    fraction: 0.2
+  bourbonene_b:
+    megan_species: SQT_LR
+    fraction: 0.01
+  longipinene:
+    megan_species: SQT_LR
+    fraction: 0.03
+  cubebene_b:
+    megan_species: SQT_LR
+    fraction: 0.02
+  ylangene_a:
+    megan_species: SQT_LR
+    fraction: 0.01
+  cubebene_a:
+    megan_species: SQT_LR
+    fraction: 0.05
+  copaene_b:
+    megan_species: SQT_LR
+    fraction: 0.03
+  kaur_16_ene:
+    megan_species: SQT_LR
+    fraction: 0.15
+  gurjunene_b:
+    megan_species: SQT_LR
+    fraction: 0.01
+  aromadendrene:
+    megan_species: SQT_LR
+    fraction: 0.02
+  methanol:
+    megan_species: MEOH
+    fraction: 1.0
+  acetone:
+    megan_species: ACTO
+    fraction: 1.0
+  ethanol:
+    megan_species: ETOH
+    fraction: 0.5
+  acetaldehyde:
+    megan_species: ETOH
+    fraction: 0.5
+  formic_acid:
+    megan_species: ACID
+    fraction: 0.8
+  acetic_acid:
+    megan_species: ACID
+    fraction: 0.19
+  pyruvic_acid:
+    megan_species: ACID
+    fraction: 0.01
+  ethane:
+    megan_species: LVOC
+    fraction: 0.18
+  ethene:
+    megan_species: LVOC
+    fraction: 0.36
+  propane:
+    megan_species: LVOC
+    fraction: 0.12
+  butane:
+    megan_species: LVOC
+    fraction: 0.005
+  butene:
+    megan_species: LVOC
+    fraction: 0.03
+  propene:
+    megan_species: LVOC
+    fraction: 0.28
+  2_methylprop_1_ene:
+    megan_species: LVOC
+    fraction: 0.01
+  butene_c2:
+    megan_species: LVOC
+    fraction: 0.01
+  butene_t2:
+    megan_species: LVOC
+    fraction: 0.005
+  formaldehyde:
+    megan_species: OXPROD
+    fraction: 0.9
+  pentanal:
+    megan_species: OXPROD
+    fraction: 0.005
+  heptanal:
+    megan_species: OTHER
+    fraction: 0.005
+  met_heptenone:
+    megan_species: OXPROD
+    fraction: 0.01
+  decanal:
+    megan_species: OXPROD
+    fraction: 0.005
+  octanal:
+    megan_species: OXPROD
+    fraction: 0.005
+  nonanal:
+    megan_species: OXPROD
+    fraction: 0.005
+  oxopentanal:
+    megan_species: OXPROD
+    fraction: 0.03
+  nonenal:
+    megan_species: OXPROD
+    fraction: 0.005
+  t-2-octenal:
+    megan_species: OXPROD
+    fraction: 0.005
+  geranyl_acetone:
+    megan_species: OXPROD
+    fraction: 0.02
+  neryl_acetone:
+    megan_species: OXPROD
+    fraction: 0.005
+  hexanal:
+    megan_species: STRESS
+    fraction: 0.06
+  guaiacol:
+    megan_species: STRESS
+    fraction: 0.005
+  eugenol:
+    megan_species: STRESS
+    fraction: 0.01
+  phenylacetaldehyde:
+    megan_species: STRESS
+    fraction: 0.005
+  anisole:
+    megan_species: STRESS
+    fraction: 0.01
+  ethyl_cinnamate:
+    megan_species: STRESS
+    fraction: 0.005
+  cinnamaldehyde:
+    megan_species: STRESS
+    fraction: 0.005
+  cinnamic_acid:
+    megan_species: STRESS
+    fraction: 0.005
+  jasmone:
+    megan_species: STRESS
+    fraction: 0.005
+  chavicol:
+    megan_species: STRESS
+    fraction: 0.02
+  salicylaldehyde:
+    megan_species: STRESS
+    fraction: 0.005
+  p_coumaric_acid:
+    megan_species: STRESS
+    fraction: 0.005
+  linalool_OXD_c:
+    megan_species: STRESS
+    fraction: 0.005
+  linalool_OXD_t:
+    megan_species: STRESS
+    fraction: 0.005
+  2met_nonatriene:
+    megan_species: STRESS
+    fraction: 0.05
+  3met_3DCTT:
+    megan_species: STRESS
+    fraction: 0.01
+  1_pentanol:
+    megan_species: STRESS
+    fraction: 0.005
+  benzene:
+    megan_species: STRESS
+    fraction: 0.005
+  hydrogen_cyanide:
+    megan_species: STRESS
+    fraction: 0.05
+  isobutyronitrile:
+    megan_species: STRESS
+    fraction: 0.005
+  methacrolein:
+    megan_species: STRESS
+    fraction: 0.05
+  met_vinylketone:
+    megan_species: STRESS
+    fraction: 0.05
+  met_acetate:
+    megan_species: STRESS
+    fraction: 0.01
+  met_benzoate:
+    megan_species: STRESS
+    fraction: 0.01
+  safrole:
+    megan_species: STRESS
+    fraction: 0.005
+  3_pentanone:
+    megan_species: STRESS
+    fraction: 0.005
+  acetophenone:
+    megan_species: STRESS
+    fraction: 0.01
+  benzyl_alcohol:
+    megan_species: STRESS
+    fraction: 0.01
+  benzaldehyde:
+    megan_species: STRESS
+    fraction: 0.01
+  toluene:
+    megan_species: STRESS
+    fraction: 0.01
+  phenol:
+    megan_species: STRESS
+    fraction: 0.01
+  2_pentene:
+    megan_species: STRESS
+    fraction: 0.005
+  hexanol_1:
+    megan_species: STRESS
+    fraction: 0.02
+  met_salicylate:
+    megan_species: STRESS
+    fraction: 0.09
+  benzyl_benzoate:
+    megan_species: STRESS
+    fraction: 0.005
+  benzyl_acetate:
+    megan_species: STRESS
+    fraction: 0.005
+  hexenal_t2:
+    megan_species: STRESS
+    fraction: 0.05
+  3_metthiophene:
+    megan_species: STRESS
+    fraction: 0.005
+  4_penten_1_ol:
+    megan_species: STRESS
+    fraction: 0.005
+  hexenol_c3:
+    megan_species: STRESS
+    fraction: 0.1
+  3_metfuran:
+    megan_species: STRESS
+    fraction: 0.01
+  met_jasmonate:
+    megan_species: STRESS
+    fraction: 0.01
+  xylene:
+    megan_species: STRESS
+    fraction: 0.005
+  z2_penten_1ol:
+    megan_species: STRESS
+    fraction: 0.005
+  1_penten_3_one:
+    megan_species: STRESS
+    fraction: 0.005
+  hexenyl_ACT_c3:
+    megan_species: STRESS
+    fraction: 0.09
+  3_penten_2_ol:
+    megan_species: STRESS
+    fraction: 0.005
+  hexenal_c3:
+    megan_species: STRESS
+    fraction: 0.1
+  indole:
+    megan_species: STRESS
+    fraction: 0.01
+  8_heptadecene:
+    megan_species: STRESS
+    fraction: 0.005
+  z3_hexen_1yl_butyrate:
+    megan_species: STRESS
+    fraction: 0.005
+  2_met_butanenitrile:
+    megan_species: STRESS
+    fraction: 0.005
+  z2_penten_3ol:
+    megan_species: STRESS
+    fraction: 0.005
+  methane:
+    megan_species: OTHER
+    fraction: 0.15
+  met_bromide:
+    megan_species: OTHER
+    fraction: 0.03
+  met_chloride:
+    megan_species: OTHER
+    fraction: 0.15
+  met_iodide:
+    megan_species: OTHER
+    fraction: 0.22
+  met_mercaptan:
+    megan_species: OTHER
+    fraction: 0.01
+  octenol_1e3ol:
+    megan_species: OTHER
+    fraction: 0.01
+  octanol:
+    megan_species: OTHER
+    fraction: 0.01
+  carbon_2s:
+    megan_species: OTHER
+    fraction: 0.01
+  2met_s:
+    megan_species: OTHER
+    fraction: 0.1
+  butanone_2:
+    megan_species: OTHER
+    fraction: 0.07
+  skatole:
+    megan_species: OTHER
+    fraction: 0.01
+  naphthalene:
+    megan_species: OTHER
+    fraction: 0.01
+  pentane:
+    megan_species: OTHER
+    fraction: 0.01
+  heptanone:
+    megan_species: OTHER
+    fraction: 0.01
+  hexane:
+    megan_species: OTHER
+    fraction: 0.01
+  dodecene_1:
+    megan_species: OTHER
+    fraction: 0.01
+  decane:
+    megan_species: OTHER
+    fraction: 0.01
+  heptane:
+    megan_species: OTHER
+    fraction: 0.01
+  carbonyl_s:
+    megan_species: OTHER
+    fraction: 0.03
+  MBO_3m2e1ol:
+    megan_species: OTHER
+    fraction: 0.01
+  2met_2s:
+    megan_species: OTHER
+    fraction: 0.01
+  MBO_3m3e1ol:
+    megan_species: OTHER
+    fraction: 0.01
+  undecane:
+    megan_species: OTHER
+    fraction: 0.01
+  tetradecene_1:
+    megan_species: OTHER
+    fraction: 0.01
+  diallyl_2s:
+    megan_species: OTHER
+    fraction: 0.01
+  PPPP_2s:
+    megan_species: OTHER
+    fraction: 0.01
+  met_propenyl_2s:
+    megan_species: OTHER
+    fraction: 0.01
+  hydrogen_s:
+    megan_species: OTHER
+    fraction: 0.05
+  nitric_OXD:
+    megan_species: 'NO'
+    fraction: 1.0

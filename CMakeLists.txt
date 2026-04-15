@@ -144,6 +144,7 @@ set(CECE_SRCS
     src/physics/cece_dms.cpp
     src/physics/cece_lightning.cpp
     src/physics/cece_soil_nox.cpp
+    src/physics/cece_bdsnp.cpp
     src/physics/cece_dust.cpp
     src/physics/cece_volcano.cpp
     src/io/cece_data_ingestor.cpp

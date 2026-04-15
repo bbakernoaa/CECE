@@ -1,0 +1,446 @@
+mechanism: cracmm1
+speciation:
+  ISO:
+  - source: ISOP
+    factor: 1.0
+  OLT:
+  - source: MBO
+    factor: 1.0
+  - source: LVOC
+    factor: 0.01
+  - source: LVOC
+    factor: 0.03
+  - source: LVOC
+    factor: 0.28
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  API:
+  - source: MT_PINE
+    factor: 1.0
+  - source: MT_CAMP
+    factor: 0.33
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.18
+  - source: MT_CAMP
+    factor: 0.2
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.005
+  - source: MT_CAMP
+    factor: 0.14
+  - source: MT_CAMP
+    factor: 0.04
+  - source: MT_AROM
+    factor: 0.01
+  - source: MT_CAMP
+    factor: 0.02
+  - source: MT_CAMP
+    factor: 0.05
+  LIM:
+  - source: MT_ACYC
+    factor: 0.5
+  - source: MT_ACYC
+    factor: 0.01
+  - source: MT_ACYC
+    factor: 0.09
+  - source: MT_ACYC
+    factor: 0.4
+  - source: MT_SABI
+    factor: 0.6
+  - source: MT_SABI
+    factor: 0.1
+  - source: MT_SABI
+    factor: 0.06
+  - source: MT_SABI
+    factor: 0.07
+  - source: MT_SABI
+    factor: 0.09
+  - source: MT_SABI
+    factor: 0.075
+  - source: MT_AROM
+    factor: 0.005
+  - source: MT_AROM
+    factor: 0.2
+  HC3:
+  - source: MT_CAMP
+    factor: 0.02
+  - source: LVOC
+    factor: 0.005
+  - source: LVOC
+    factor: 0.12
+  - source: STRESS
+    factor: 0.005
+  FURAN:
+  - source: MT_SABI
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.01
+  XYE:
+  - source: MT_AROM
+    factor: 0.07
+  - source: MT_AROM
+    factor: 0.02
+  VROCP6ARO:
+  - source: MT_AROM
+    factor: 0.2
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  - source: OXPROD
+    factor: 0.02
+  - source: OXPROD
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: MT_CAMP
+    factor: 0.005
+  XYM:
+  - source: MT_AROM
+    factor: 0.05
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  VROCIOXY:
+  - source: MT_AROM
+    factor: 0.05
+  - source: MT_AROM
+    factor: 0.02
+  - source: MT_AROM
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  - source: OXPROD
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.005
+  KET:
+  - source: MT_AROM
+    factor: 0.08
+  - source: MT_AROM
+    factor: 0.005
+  - source: MT_AROM
+    factor: 0.03
+  - source: MT_AROM
+    factor: 0.02
+  - source: ACID
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  SESQ:
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.04
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.5
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.05
+  - source: SQT_HR
+    factor: 0.05
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.02
+  - source: SQT_HR
+    factor: 0.1
+  - source: SQT_HR
+    factor: 0.01
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.03
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.08
+  - source: SQT_LR
+    factor: 0.02
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.03
+  - source: SQT_LR
+    factor: 0.2
+  - source: SQT_LR
+    factor: 0.05
+  - source: SQT_LR
+    factor: 0.02
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.15
+  - source: SQT_LR
+    factor: 0.03
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.03
+  VROCP5ARO:
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_HR
+    factor: 0.005
+  - source: SQT_LR
+    factor: 0.01
+  - source: SQT_LR
+    factor: 0.15
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  VROCP2ALK:
+  - source: SQT_LR
+    factor: 0.08
+  - source: STRESS
+    factor: 0.005
+  VROCP5ALK:
+  - source: SQT_LR
+    factor: 0.01
+  VROCP1ALK:
+  - source: SQT_LR
+    factor: 0.15
+  - source: MT_AROM
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  VROCP4ALK:
+  - source: SQT_LR
+    factor: 0.01
+  MOH:
+  - source: MEOH
+    factor: 1.0
+  ACT:
+  - source: ACTO
+    factor: 1.0
+  ACD:
+  - source: ETOH
+    factor: 0.5
+  EOH:
+  - source: ETOH
+    factor: 0.5
+  ORA2:
+  - source: ACID
+    factor: 0.19
+  ORA1:
+  - source: ACID
+    factor: 0.8
+  OLI:
+  - source: LVOC
+    factor: 0.01
+  - source: LVOC
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.02
+  - source: STRESS
+    factor: 0.1
+  - source: STRESS
+    factor: 0.09
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: MT_AROM
+    factor: 0.005
+  ETH:
+  - source: LVOC
+    factor: 0.18
+  ETE:
+  - source: LVOC
+    factor: 0.36
+  ALD:
+  - source: OXPROD
+    factor: 0.005
+  - source: OXPROD
+    factor: 0.005
+  - source: STRESS
+    factor: 0.06
+  - source: OTHER
+    factor: 0.005
+  UALD:
+  - source: OXPROD
+    factor: 0.005
+  - source: STRESS
+    factor: 0.1
+  - source: STRESS
+    factor: 0.05
+  HCHO:
+  - source: OXPROD
+    factor: 0.9
+  MGLY:
+  - source: OXPROD
+    factor: 0.03
+  ROH:
+  - source: STRESS
+    factor: 0.005
+  BALD:
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.005
+  BEN:
+  - source: STRESS
+    factor: 0.005
+  CSL:
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.02
+  - source: STRESS
+    factor: 0.01
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.09
+  HC10:
+  - source: MT_AROM
+    factor: 0.2
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  SLOWROC:
+  - source: STRESS
+    factor: 0.05
+  - source: STRESS
+    factor: 0.005
+  - source: STRESS
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.03
+  - source: OTHER
+    factor: 0.03
+  - source: OTHER
+    factor: 0.15
+  - source: OTHER
+    factor: 0.22
+  MACR:
+  - source: STRESS
+    factor: 0.05
+  MVK:
+  - source: STRESS
+    factor: 0.05
+  PHEN:
+  - source: STRESS
+    factor: 0.01
+  TOL:
+  - source: STRESS
+    factor: 0.01
+  MEK:
+  - source: OTHER
+    factor: 0.07
+  HC5:
+  - source: OTHER
+    factor: 0.1
+  - source: OTHER
+    factor: 0.01
+  - source: OTHER
+    factor: 0.01
+  ECH4:
+  - source: OTHER
+    factor: 0.15
+  NAPH:
+  - source: OTHER
+    factor: 0.01
+  CO:
+  - source: CO
+    factor: 1.0
+  'NO':
+  - source: 'NO'
+    factor: 1.0
