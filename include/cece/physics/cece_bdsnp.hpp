@@ -8,6 +8,11 @@ namespace cece {
 /**
  * @class BDSNPScheme
  * @brief Native C++ implementation of the BDSNP soil NO emission scheme.
+ *
+ * Implements the Berkeley Dalhousie Soil NO Parameterization (BDSNP)
+ * for calculating soil nitric oxide emissions. The parameterization models
+ * NO emissions as a function of biome type, soil temperature, soil moisture,
+ * fertilizer application, and pulsing events following dry periods.
  */
 class BDSNPScheme : public BasePhysicsScheme {
    public:

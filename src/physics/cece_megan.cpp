@@ -131,6 +131,23 @@ double get_gamma_age(double cmlai, double pmlai, double dbtwn, double tt, double
  * @return Soil moisture correction factor (dimensionless)
  */
 KOKKOS_INLINE_FUNCTION
+/**
+ * @brief Calculate soil moisture gamma factor.
+ *
+ * Determines the suppression of isoprene emissions due to severe drought stress
+ * based on the MEGAN 3 parameterization. As soil moisture approaches the
+ * permanent wilting point for the given soil type, plants close their stomata
+ * and halt isoprene production to conserve water.
+ *
+ * The empirical parameter d1 (set to 0.04) defines the moisture range above
+ * the wilting point where linear reduction of emissions begins. Below the wilting
+ * point, emissions are zero. Above `wilt + d1`, there is no moisture stress (factor = 1).
+ *
+ * @param gwetroot Volumetric soil moisture fraction in the root-zone
+ * @param wilt Wilting point specific to the soil type
+ * @return Soil moisture correction factor (dimensionless, 0.0 to 1.0)
+ */
+KOKKOS_INLINE_FUNCTION
 double get_gamma_sm(double gwetroot, double wilt) {
     double d1 = 0.04;
     double t1 = wilt + d1;
@@ -323,8 +340,103 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
     }
 
     export_field_name_ = species_name_ + "_emissions";
+
     if (config["export_field_name"]) {
         export_field_name_ = config["export_field_name"].as<std::string>();
+    }
+
+    if (config["speciation_file"]) {
+        use_speciation_ = true;
+        std::string spec_file = config["speciation_file"].as<std::string>();
+        try {
+            YAML::Node spec_node = YAML::LoadFile(spec_file);
+            if (spec_node["speciation"]) {
+                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
+                     ++it) {
+                    std::string target_species = it->first.as<std::string>();
+                    for (auto const& src : it->second) {
+                        SpeciationEntry entry;
+                        entry.source_species = src["source"].as<std::string>();
+                        entry.factor = src["factor"].as<double>();
+                        speciation_map_[target_species].push_back(entry);
+                    }
+                }
+            }
+        } catch (const YAML::Exception& e) {
+            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
+                      << e.what()
+                      << "
+                         ";
+        }
+    }
+
+    // Base MEGAN species AEFs
+    if (config["aefs"]) {
+        for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
+            source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
+        }
+    }
+
+    if (config["speciation_file"]) {
+        use_speciation_ = true;
+        std::string spec_file = config["speciation_file"].as<std::string>();
+        try {
+            YAML::Node spec_node = YAML::LoadFile(spec_file);
+            if (spec_node["speciation"]) {
+                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
+                     ++it) {
+                    std::string target_species = it->first.as<std::string>();
+                    for (auto const& src : it->second) {
+                        SpeciationEntry entry;
+                        entry.source_species = src["source"].as<std::string>();
+                        entry.factor = src["factor"].as<double>();
+                        speciation_map_[target_species].push_back(entry);
+                    }
+                }
+            }
+        } catch (const YAML::Exception& e) {
+            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
+                      << e.what() << "\n";
+        }
+    }
+
+    // We also need AEFs for the base MEGAN species.
+    if (config["aefs"]) {
+        for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
+            source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
+        }
+    }
+
+    if (config["speciation_file"]) {
+        use_speciation_ = true;
+        std::string spec_file = config["speciation_file"].as<std::string>();
+        try {
+            YAML::Node spec_node = YAML::LoadFile(spec_file);
+            if (spec_node["speciation"]) {
+                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
+                     ++it) {
+                    std::string target_species = it->first.as<std::string>();
+                    for (auto const& src : it->second) {
+                        SpeciationEntry entry;
+                        entry.source_species = src["source"].as<std::string>();
+                        entry.factor = src["factor"].as<double>();
+                        speciation_map_[target_species].push_back(entry);
+                    }
+                }
+            }
+        } catch (const YAML::Exception& e) {
+            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
+                      << e.what() << "\n";
+        }
+
+        // We also need AEFs for the base MEGAN species.
+        // We will default them to some typical values or expect them in config.
+        // For simplicity here, we assume standard aef factors are defined if aefs block exists
+        if (config["aefs"]) {
+            for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
+                source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
+            }
+        }
     }
 
     lai_coeff_1_ = 0.49;
@@ -418,13 +530,71 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
     const double NORM_FAC = 1.0 / 1.0101081;
     double gamma_co2_const = gamma_co2_;
 
-    // Check if new optional fields exist, otherwise use fallbacks
     bool has_pmlai = (pmlai.data() != nullptr);
     bool has_gwetroot = (gwetroot.data() != nullptr);
     bool has_wilt = (wilting_point.data() != nullptr);
 
+    if (use_speciation_) {
+        for (const auto& [target_spc, sources] : speciation_map_) {
+            std::string target_field_name = target_spc + "_emissions";
+            auto target_out = ResolveExport(target_field_name, export_state);
+            if (target_out.data() == nullptr) continue;
+
+            for (const auto& source_entry : sources) {
+                double src_aef = source_aefs_.count(source_entry.source_species)
+                                     ? source_aefs_[source_entry.source_species]
+                                     : aef_;
+                double factor = source_entry.factor;
+
+                Kokkos::parallel_for(
+                    "MeganKernel_Speciated",
+                    Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<2>>({0, 0},
+                                                                                          {nx, ny}),
+                    KOKKOS_LAMBDA(int i, int j) {
+                        double T = temp(i, j, 0);
+                        double L = lai(i, j, 0);
+                        double sc = suncos(i, j, 0);
+
+                        if (L <= 0.0) return;
+
+                        double T_AVG_15 = 297.0;
+                        double PAR_AVG = 400.0;
+                        int doy = 180;
+                        double dbtwn = 30.0;
+
+                        double L_prev = has_pmlai ? pmlai(i, j, 0) : L;
+                        double gwet = has_gwetroot ? gwetroot(i, j, 0) : 1.0;
+                        double wilt = has_wilt ? wilting_point(i, j, 0) : 0.0;
+
+                        double gamma_lai = get_gamma_lai(L, lai_c1, lai_c2, is_bidirectional);
+                        double gamma_t_li = get_gamma_t_li(T, beta, std_t);
+                        double gamma_t_ld = get_gamma_t_ld(T, T_AVG_15, ct1, ceo, R, ct2, t_opt_c1,
+                                                           t_opt_c2, e_opt_c);
+                        double gamma_par = get_gamma_par_pceea(pardr(i, j, 0), pardf(i, j, 0),
+                                                               PAR_AVG, sc, doy, wm2_umol, ptoa_c1,
+                                                               ptoa_c2, gp_c1, gp_c2, gp_c3, gp_c4);
+
+                        double gamma_age =
+                            get_gamma_age(L, L_prev, dbtwn, T, anew, agro, amat, aold);
+                        double gamma_sm = get_gamma_sm(gwet, wilt);
+
+                        double megan_emis =
+                            NORM_FAC * src_aef * factor * gamma_age * gamma_sm * gamma_lai *
+                            gamma_co2_const *
+                            ((1.0 - ldf) * gamma_t_li + (ldf * gamma_par * gamma_t_ld));
+
+                        target_out(i, j, 0) += megan_emis;
+                    });
+            }
+            Kokkos::fence();
+            MarkModified(target_field_name, export_state);
+        }
+        return;
+    }
+
     Kokkos::parallel_for(
         "MeganKernel_Optimized",
+
         Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<2>>({0, 0}, {nx, ny}),
         KOKKOS_LAMBDA(int i, int j) {
             double T = temp(i, j, 0);

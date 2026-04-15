@@ -250,7 +250,8 @@ List of physics schemes to instantiate and execute during the Run phase. Physics
 | Scheme Name | Description | Key Parameters |
 | ----------- | ----------- | -------------- |
 | `sea_salt` | Marine aerosol emissions | `r_sala_min`, `r_salc_max`, `sea_salt_density` |
-| `megan` | Biogenic VOC emissions | `temperature_response`, `par_response` |
+| `megan` | Biogenic VOC emissions (MEGAN 3 algorithm port) | `temperature_response`, `par_response` |
+| `bdsnp` | Soil NO emissions (BDSNP algorithm) | `fert_scale` |
 | `dust` | Mineral dust emissions | `particle_density`, `tuning_factor` |
 | `soil_nox` | Soil nitrogen emissions | `temp_coefficient`, `moisture_response` |
 | `lightning` | Lightning NOx production | `yield_land`, `yield_ocean` |

@@ -25,6 +25,14 @@ class MeganScheme : public BasePhysicsScheme {
     double ldf_ = 1.0;
 
     // Configurable list of species and their emission factors (AEF)
+    struct SpeciationEntry {
+        std::string source_species;
+        double factor;
+    };
+    std::unordered_map<std::string, std::vector<SpeciationEntry>> speciation_map_;
+    std::unordered_map<std::string, double> source_aefs_;
+    bool use_speciation_ = false;
+
     std::string species_name_ = "isoprene";
     std::string export_field_name_ = "isoprene_emissions";
     double aef_ = 1.0e-9;
