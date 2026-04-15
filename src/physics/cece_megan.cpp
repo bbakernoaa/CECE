@@ -351,8 +351,7 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
         try {
             YAML::Node spec_node = YAML::LoadFile(spec_file);
             if (spec_node["speciation"]) {
-                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
-                     ++it) {
+                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end(); ++it) {
                     std::string target_species = it->first.as<std::string>();
                     for (auto const& src : it->second) {
                         SpeciationEntry entry;
@@ -363,81 +362,22 @@ void MeganScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* di
                 }
             }
         } catch (const YAML::Exception& e) {
-            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
-                      << e.what()
-                      << "
-                         ";
+            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": " << e.what() << "\n";
         }
     }
 
-    // Base MEGAN species AEFs
     if (config["aefs"]) {
         for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
             source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
         }
     }
 
-    if (config["speciation_file"]) {
-        use_speciation_ = true;
-        std::string spec_file = config["speciation_file"].as<std::string>();
-        try {
-            YAML::Node spec_node = YAML::LoadFile(spec_file);
-            if (spec_node["speciation"]) {
-                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
-                     ++it) {
-                    std::string target_species = it->first.as<std::string>();
-                    for (auto const& src : it->second) {
-                        SpeciationEntry entry;
-                        entry.source_species = src["source"].as<std::string>();
-                        entry.factor = src["factor"].as<double>();
-                        speciation_map_[target_species].push_back(entry);
-                    }
-                }
-            }
-        } catch (const YAML::Exception& e) {
-            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
-                      << e.what() << "\n";
-        }
-    }
 
-    // We also need AEFs for the base MEGAN species.
-    if (config["aefs"]) {
-        for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
-            source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
-        }
-    }
 
-    if (config["speciation_file"]) {
-        use_speciation_ = true;
-        std::string spec_file = config["speciation_file"].as<std::string>();
-        try {
-            YAML::Node spec_node = YAML::LoadFile(spec_file);
-            if (spec_node["speciation"]) {
-                for (auto it = spec_node["speciation"].begin(); it != spec_node["speciation"].end();
-                     ++it) {
-                    std::string target_species = it->first.as<std::string>();
-                    for (auto const& src : it->second) {
-                        SpeciationEntry entry;
-                        entry.source_species = src["source"].as<std::string>();
-                        entry.factor = src["factor"].as<double>();
-                        speciation_map_[target_species].push_back(entry);
-                    }
-                }
-            }
-        } catch (const YAML::Exception& e) {
-            std::cerr << "[CECE ERROR] Failed to load MEGAN speciation file " << spec_file << ": "
-                      << e.what() << "\n";
-        }
 
-        // We also need AEFs for the base MEGAN species.
-        // We will default them to some typical values or expect them in config.
-        // For simplicity here, we assume standard aef factors are defined if aefs block exists
-        if (config["aefs"]) {
-            for (auto it = config["aefs"].begin(); it != config["aefs"].end(); ++it) {
-                source_aefs_[it->first.as<std::string>()] = it->second.as<double>();
-            }
-        }
-    }
+
+
+
 
     lai_coeff_1_ = 0.49;
     lai_coeff_2_ = 0.2;
@@ -536,7 +476,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
 
     if (use_speciation_) {
         for (const auto& [target_spc, sources] : speciation_map_) {
-            std::string target_field_name = target_spc + "_emissions";
+            std::string target_field_name = "MEGAN_" + target_spc;
             auto target_out = ResolveExport(target_field_name, export_state);
             if (target_out.data() == nullptr) continue;
 

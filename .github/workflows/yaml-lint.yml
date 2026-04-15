@@ -1,0 +1,32 @@
+name: YAML Lint
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - '**/*.yaml'
+      - '**/*.yml'
+  pull_request:
+    branches: [ "main", "master" ]
+    paths:
+      - '**/*.yaml'
+      - '**/*.yml'
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Lint YAML files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .
+          config_data: |
+            extends: default
+            rules:
+              line-length: disable
+              document-start: disable
+              comments: disable
+              truthy:
+                allowed-values: ["true", "false"]
