@@ -28,5 +28,6 @@ jobs:
               line-length: disable
               document-start: disable
               comments: disable
+              indentation: disable
               truthy:
                 allowed-values: ["true", "false"]

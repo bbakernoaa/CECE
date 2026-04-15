@@ -1,171 +1,171 @@
 mechanism: saprc07t
 speciation:
   ISOPRENE:
-  - source: ISOP
-    factor: 1.0
+    - source: ISOP
+      factor: 1.0
   OLE2:
-  - source: MBO
-    factor: 1.0
-  - source: LVOC
-    factor: 0.025
-  - source: OXPROD
-    factor: 0.034999999999999996
-  - source: MT_AROM
-    factor: 0.2
-  - source: STRESS
-    factor: 0.15000000000000002
-  - source: OTHER
-    factor: 0.01
+    - source: MBO
+      factor: 1.0
+    - source: LVOC
+      factor: 0.025
+    - source: OXPROD
+      factor: 0.034999999999999996
+    - source: MT_AROM
+      factor: 0.2
+    - source: STRESS
+      factor: 0.15000000000000002
+    - source: OTHER
+      factor: 0.01
   TERP:
-  - source: MT_CAMP
-    factor: 1.0
-  - source: MT_ACYC
-    factor: 1.0
-  - source: MT_SABI
-    factor: 0.9999999999999999
-  - source: MT_AROM
-    factor: 0.35000000000000003
-  - source: OTHER
-    factor: 0.02
+    - source: MT_CAMP
+      factor: 1.0
+    - source: MT_ACYC
+      factor: 1.0
+    - source: MT_SABI
+      factor: 0.9999999999999999
+    - source: MT_AROM
+      factor: 0.35000000000000003
+    - source: OTHER
+      factor: 0.02
   ARO2MN:
-  - source: MT_AROM
-    factor: 0.34
+    - source: MT_AROM
+      factor: 0.34
   MEK:
-  - source: MT_AROM
-    factor: 0.08
-  - source: OTHER
-    factor: 0.07
-  - source: STRESS
-    factor: 0.005
+    - source: MT_AROM
+      factor: 0.08
+    - source: OTHER
+      factor: 0.07
+    - source: STRESS
+      factor: 0.005
   ALK5:
-  - source: MT_AROM
-    factor: 0.02
-  - source: STRESS
-    factor: 0.13
-  - source: OTHER
-    factor: 0.04
+    - source: MT_AROM
+      factor: 0.02
+    - source: STRESS
+      factor: 0.13
+    - source: OTHER
+      factor: 0.04
   SESQ:
-  - source: SQT_HR
-    factor: 1.0000000000000002
-  - source: SQT_LR
-    factor: 1.0000000000000002
+    - source: SQT_HR
+      factor: 1.0000000000000002
+    - source: SQT_LR
+      factor: 1.0000000000000002
   MEOH:
-  - source: MEOH
-    factor: 1.0
+    - source: MEOH
+      factor: 1.0
   ACETONE:
-  - source: ACTO
-    factor: 1.0
+    - source: ACTO
+      factor: 1.0
   ETOH:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
   CCHO:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
   HCOOH:
-  - source: ACID
-    factor: 0.8
+    - source: ACID
+      factor: 0.8
   CCOOH:
-  - source: ACID
-    factor: 0.19
+    - source: ACID
+      factor: 0.19
   ALK1:
-  - source: LVOC
-    factor: 0.18
+    - source: LVOC
+      factor: 0.18
   ETHENE:
-  - source: LVOC
-    factor: 0.36
+    - source: LVOC
+      factor: 0.36
   ALK2:
-  - source: LVOC
-    factor: 0.12
+    - source: LVOC
+      factor: 0.12
   OLE1:
-  - source: LVOC
-    factor: 0.03
-  - source: OTHER
-    factor: 0.02
-  - source: STRESS
-    factor: 0.005
+    - source: LVOC
+      factor: 0.03
+    - source: OTHER
+      factor: 0.02
+    - source: STRESS
+      factor: 0.005
   HCHO:
-  - source: OXPROD
-    factor: 0.9
+    - source: OXPROD
+      factor: 0.9
   HCN:
-  - source: STRESS
-    factor: 0.05
+    - source: STRESS
+      factor: 0.05
   MACR:
-  - source: STRESS
-    factor: 0.05
+    - source: STRESS
+      factor: 0.05
   MVK:
-  - source: STRESS
-    factor: 0.05
+    - source: STRESS
+      factor: 0.05
   CRES:
-  - source: STRESS
-    factor: 0.10999999999999999
+    - source: STRESS
+      factor: 0.10999999999999999
   CH4:
-  - source: OTHER
-    factor: 0.15
+    - source: OTHER
+      factor: 0.15
   CH3BR:
-  - source: OTHER
-    factor: 0.03
+    - source: OTHER
+      factor: 0.03
   CH3CL:
-  - source: OTHER
-    factor: 0.15
+    - source: OTHER
+      factor: 0.15
   CH3I:
-  - source: OTHER
-    factor: 0.22
+    - source: OTHER
+      factor: 0.22
   TRS:
-  - source: OTHER
-    factor: 0.24000000000000005
+    - source: OTHER
+      factor: 0.24000000000000005
   ALK4:
-  - source: OTHER
-    factor: 0.01
+    - source: OTHER
+      factor: 0.01
   CO:
-  - source: CO
-    factor: 1.0
+    - source: CO
+      factor: 1.0
   'NO':
-  - source: 'NO'
-    factor: 1.0
+    - source: 'NO'
+      factor: 1.0
   APIN:
-  - source: MT_PINE
-    factor: 1.0
-  - source: MT_AROM
-    factor: 0.005
+    - source: MT_PINE
+      factor: 1.0
+    - source: MT_AROM
+      factor: 0.005
   HCHO_PRIMARY:
-  - source: OXPROD
-    factor: 0.9
+    - source: OXPROD
+      factor: 0.9
   CCHO_PRIMARY:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
   RCHO:
-  - source: STRESS
-    factor: 0.06
-  - source: OTHER
-    factor: 0.005
-  - source: OXPROD
-    factor: 0.055
+    - source: STRESS
+      factor: 0.06
+    - source: OTHER
+      factor: 0.005
+    - source: OXPROD
+      factor: 0.055
   MXYL:
-  - source: STRESS
-    factor: 0.00167
+    - source: STRESS
+      factor: 0.00167
   OXYL:
-  - source: STRESS
-    factor: 0.001665
+    - source: STRESS
+      factor: 0.001665
   PXYL:
-  - source: STRESS
-    factor: 0.001665
+    - source: STRESS
+      factor: 0.001665
   NAPHTHALENE:
-  - source: OTHER
-    factor: 0.01
+    - source: OTHER
+      factor: 0.01
   TOLU:
-  - source: STRESS
-    factor: 0.01
+    - source: STRESS
+      factor: 0.01
   PROPENE:
-  - source: LVOC
-    factor: 0.28
+    - source: LVOC
+      factor: 0.28
   BACL:
-  - source: ACID
-    factor: 0.01
+    - source: ACID
+      factor: 0.01
   ARO1:
-  - source: STRESS
-    factor: 0.01
-  - source: OTHER
-    factor: 0.01
+    - source: STRESS
+      factor: 0.01
+    - source: OTHER
+      factor: 0.01
   BENZ:
-  - source: STRESS
-    factor: 0.005
+    - source: STRESS
+      factor: 0.005

@@ -1,107 +1,107 @@
 mechanism: cb6
 speciation:
   ISOP:
-  - source: ISOP
-    factor: 1.0
+    - source: ISOP
+      factor: 1.0
   OLE:
-  - source: MBO
-    factor: 1.0
-  - source: LVOC
-    factor: 0.32000000000000006
+    - source: MBO
+      factor: 1.0
+    - source: LVOC
+      factor: 0.32000000000000006
   PAR:
-  - source: MBO
-    factor: 3.0
-  - source: OTHER
-    factor: 0.6100000000000001
-  - source: LVOC
-    factor: 0.36000000000000004
+    - source: MBO
+      factor: 3.0
+    - source: OTHER
+      factor: 0.6100000000000001
+    - source: LVOC
+      factor: 0.36000000000000004
   TERP:
-  - source: MT_PINE
-    factor: 1.0
-  - source: MT_CAMP
-    factor: 1.0
-  - source: MT_ACYC
-    factor: 1.0
-  - source: MT_SABI
-    factor: 0.9999999999999999
-  - source: MT_AROM
-    factor: 0.9900000000000002
-  - source: OTHER
-    factor: 0.01
-  - source: STRESS
-    factor: 0.05
+    - source: MT_PINE
+      factor: 1.0
+    - source: MT_CAMP
+      factor: 1.0
+    - source: MT_ACYC
+      factor: 1.0
+    - source: MT_SABI
+      factor: 0.9999999999999999
+    - source: MT_AROM
+      factor: 0.9900000000000002
+    - source: OTHER
+      factor: 0.01
+    - source: STRESS
+      factor: 0.05
   SESQ:
-  - source: SQT_HR
-    factor: 1.0000000000000002
-  - source: SQT_LR
-    factor: 1.0000000000000002
+    - source: SQT_HR
+      factor: 1.0000000000000002
+    - source: SQT_LR
+      factor: 1.0000000000000002
   MEOH:
-  - source: MEOH
-    factor: 1.0
+    - source: MEOH
+      factor: 1.0
   ACET:
-  - source: ACTO
-    factor: 1.0
+    - source: ACTO
+      factor: 1.0
   ETOH:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
   ALD2:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
   FACD:
-  - source: ACID
-    factor: 0.8
+    - source: ACID
+      factor: 0.8
   AACD:
-  - source: ACID
-    factor: 0.19
+    - source: ACID
+      factor: 0.19
   ETHA:
-  - source: LVOC
-    factor: 0.18
+    - source: LVOC
+      factor: 0.18
   ETH:
-  - source: LVOC
-    factor: 0.36
+    - source: LVOC
+      factor: 0.36
   PRPA:
-  - source: LVOC
-    factor: 0.12
+    - source: LVOC
+      factor: 0.12
   IOLE:
-  - source: LVOC
-    factor: 0.015
+    - source: LVOC
+      factor: 0.015
   FORM:
-  - source: OXPROD
-    factor: 0.9
+    - source: OXPROD
+      factor: 0.9
   ISPD:
-  - source: OXPROD
-    factor: 0.06
-  - source: STRESS
-    factor: 0.61
-  - source: OTHER
-    factor: 0.07
+    - source: OXPROD
+      factor: 0.06
+    - source: STRESS
+      factor: 0.61
+    - source: OTHER
+      factor: 0.07
   HCN:
-  - source: STRESS
-    factor: 0.05
+    - source: STRESS
+      factor: 0.05
   CH4:
-  - source: OTHER
-    factor: 0.15
+    - source: OTHER
+      factor: 0.15
   CH3BR:
-  - source: OTHER
-    factor: 0.03
+    - source: OTHER
+      factor: 0.03
   CH3CL:
-  - source: OTHER
-    factor: 0.15
+    - source: OTHER
+      factor: 0.15
   CH3I:
-  - source: OTHER
-    factor: 0.22
+    - source: OTHER
+      factor: 0.22
   TRS:
-  - source: OTHER
-    factor: 0.24000000000000005
+    - source: OTHER
+      factor: 0.24000000000000005
   CO:
-  - source: CO
-    factor: 1.0
+    - source: CO
+      factor: 1.0
   'NO':
-  - source: 'NO'
-    factor: 1.0
+    - source: 'NO'
+      factor: 1.0
   FORM_PRIMARY:
-  - source: OXPROD
-    factor: 0.9
+    - source: OXPROD
+      factor: 0.9
   ALD2_PRIMARY:
-  - source: ETOH
-    factor: 0.5
+    - source: ETOH
+      factor: 0.5
