@@ -131,17 +131,17 @@ double get_gamma_age(double cmlai, double pmlai, double dbtwn, double tt, double
  * @return Soil moisture correction factor (dimensionless)
  */
 KOKKOS_INLINE_FUNCTION
-double get_gamma_sm(double gwetroot, bool is_ald2_or_eoh) {
+double get_gamma_sm(double gwetroot, double wilt) {
+    double d1 = 0.04;
+    double t1 = wilt + d1;
     double gamma_sm = 1.0;
-
-    // Ensure gwetroot is between 0.0 and 1.0
-    double gwetroot_clamped = std::min(std::max(gwetroot, 0.0), 1.0);
-
-    if (is_ald2_or_eoh) {
-        // GWETROOT = degree of saturation or wetness in the root-zone
-        gamma_sm = std::max(20.0 * gwetroot_clamped - 17.0, 1.0);
+    if (gwetroot < wilt) {
+        gamma_sm = 0.0;
+    } else if (gwetroot >= wilt && gwetroot < t1) {
+        gamma_sm = (gwetroot - wilt) / d1;
+    } else {
+        gamma_sm = 1.0;
     }
-
     return gamma_sm;
 }
 
@@ -377,6 +377,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
     // Attempt to read new required fields for gamma_age and gamma_sm
     auto pmlai = ResolveImport("leaf_area_index_prev", import_state);
     auto gwetroot = ResolveImport("soil_moisture_root", import_state);
+    auto wilting_point = ResolveImport("wilting_point", import_state);
 
     if (temp.data() == nullptr || emissions_out.data() == nullptr || lai.data() == nullptr ||
         pardr.data() == nullptr || pardf.data() == nullptr || suncos.data() == nullptr) {
@@ -420,6 +421,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
     // Check if new optional fields exist, otherwise use fallbacks
     bool has_pmlai = (pmlai.data() != nullptr);
     bool has_gwetroot = (gwetroot.data() != nullptr);
+    bool has_wilt = (wilting_point.data() != nullptr);
 
     Kokkos::parallel_for(
         "MeganKernel_Optimized",
@@ -440,6 +442,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
 
             double L_prev = has_pmlai ? pmlai(i, j, 0) : L;
             double gwet = has_gwetroot ? gwetroot(i, j, 0) : 1.0;
+            double wilt = has_wilt ? wilting_point(i, j, 0) : 0.0;
 
             double gamma_lai = get_gamma_lai(L, lai_c1, lai_c2, is_bidirectional);
             double gamma_t_li = get_gamma_t_li(T, beta, std_t);
@@ -450,7 +453,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
                                     ptoa_c1, ptoa_c2, gp_c1, gp_c2, gp_c3, gp_c4);
 
             double gamma_age = get_gamma_age(L, L_prev, dbtwn, T, anew, agro, amat, aold);
-            double gamma_sm = get_gamma_sm(gwet, is_ald2_or_eoh);
+            double gamma_sm = get_gamma_sm(gwet, wilt);
 
             double megan_emis = NORM_FAC * aef * gamma_age * gamma_sm * gamma_lai *
                                 gamma_co2_const *

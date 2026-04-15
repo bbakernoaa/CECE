@@ -126,10 +126,10 @@ void BDSNPScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
     double fert_scale = fert_scale_;
 
     // Device copies of arrays
-    Kokkos::View<double[24]> d_a_biome("a_biome");
-    auto h_a_biome = Kokkos::create_mirror_view(d_a_biome);
-    for (int i = 0; i < 24; ++i) h_a_biome(i) = a_biome_[i];
-    Kokkos::deep_copy(d_a_biome, h_a_biome);
+    Kokkos::Array<double, 24> k_a_biome;
+    for (int i = 0; i < 24; ++i) {
+        k_a_biome[i] = a_biome_[i];
+    }
 
     Kokkos::parallel_for(
         "BDSNPKernel",
@@ -164,7 +164,7 @@ void BDSNPScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
                 dryperiod(i, j, 0) = dp;
             }
 
-            double a_biome_val = d_a_biome(lt - 1);
+            double a_biome_val = k_a_biome[lt - 1];
 
             // FERTADD
             double a_fert = (fert_val + depn_val) / (86400.0 * 365.0) * fert_scale;

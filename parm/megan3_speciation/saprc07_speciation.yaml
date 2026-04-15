@@ -1,0 +1,108 @@
+mechanism: saprc07
+speciation:
+  ISOP:
+  - source: ISOP
+    factor: 1.0
+  OLE2:
+  - source: MBO
+    factor: 1.0
+  - source: LVOC
+    factor: 0.015
+  TERP:
+  - source: MT_PINE
+    factor: 1.0
+  - source: MT_CAMP
+    factor: 0.9950000000000001
+  - source: MT_ACYC
+    factor: 1.0
+  - source: MT_SABI
+    factor: 0.9999999999999999
+  - source: MT_AROM
+    factor: 0.5900000000000002
+  - source: OTHER
+    factor: 0.02
+  SESQ:
+  - source: SQT_HR
+    factor: 1.0000000000000002
+  - source: SQT_LR
+    factor: 1.0000000000000002
+  MEOH:
+  - source: MEOH
+    factor: 1.0
+  ACET:
+  - source: ACTO
+    factor: 1.0
+  ALK3:
+  - source: ETOH
+    factor: 0.5
+  CCHO:
+  - source: ETOH
+    factor: 0.5
+  FACD:
+  - source: ACID
+    factor: 0.8
+  AACD:
+  - source: ACID
+    factor: 0.19
+  ALK2:
+  - source: LVOC
+    factor: 0.3
+  ETHE:
+  - source: LVOC
+    factor: 0.36
+  OLE1:
+  - source: LVOC
+    factor: 0.32000000000000006
+  HCHO:
+  - source: OXPROD
+    factor: 0.9
+  IPRD:
+  - source: OXPROD
+    factor: 0.06
+  - source: STRESS
+    factor: 0.66
+  - source: MT_AROM
+    factor: 0.4
+  - source: OTHER
+    factor: 0.07
+  - source: MT_CAMP
+    factor: 0.005
+  HCN:
+  - source: STRESS
+    factor: 0.05
+  ALK1:
+  - source: OTHER
+    factor: 0.15
+  CH3BR:
+  - source: OTHER
+    factor: 0.03
+  CH3CL:
+  - source: OTHER
+    factor: 0.15
+  CH3I:
+  - source: OTHER
+    factor: 0.22
+  TRS:
+  - source: OTHER
+    factor: 0.24000000000000005
+  ALK4:
+  - source: OTHER
+    factor: 0.01
+  ALK5:
+  - source: OTHER
+    factor: 0.05
+  CO:
+  - source: CO
+    factor: 1.0
+  'NO':
+  - source: 'NO'
+    factor: 1.0
+  APIN:
+  - source: MT_PINE
+    factor: 1.0
+  HCHO_PRIMARY:
+  - source: OXPROD
+    factor: 0.9
+  CCHO_PRIMARY:
+  - source: ETOH
+    factor: 0.5
