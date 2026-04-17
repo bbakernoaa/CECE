@@ -46,8 +46,9 @@ option(Kokkos_ENABLE_HIP "Enable Kokkos HIP execution space for AMD GPUs" OFF)
 # Python bindings support
 option(BUILD_PYTHON_BINDINGS "Build Python bindings for CECE" OFF)
 
-# CCPP and NUOPC interface options
+# CCPP, NUOPC, and FMS interface options
 option(CECE_ENABLE_CCPP "Build CCPP interface for CECE" OFF)
+option(CECE_ENABLE_FMS "Build FMS interface for CECE" OFF)
 option(CECE_ENABLE_NUOPC "Build NUOPC/ESMF interface for CECE" ON)
 
 # Validate that at most one GPU backend is enabled
@@ -227,6 +228,30 @@ if(CECE_ENABLE_CCPP)
     endif()
 endif()
 
+# FMS interface sources — when FMS is enabled
+if(CECE_ENABLE_FMS)
+    message(STATUS "FMS interface enabled")
+    # C++ API can be compiled regardless of Fortran availability
+    list(APPEND CECE_SRCS src/fms/cece_fms_api.cpp)
+
+    # Fortran FMS driver schemes require Fortran compiler
+    if(CECE_HAS_FORTRAN)
+        list(APPEND CECE_SRCS
+            src/fms/cece_fms_state.F90
+            src/fms/cece_fms_sea_salt.F90
+            src/fms/cece_fms_megan.F90
+            src/fms/cece_fms_dust.F90
+            src/fms/cece_fms_dms.F90
+            src/fms/cece_fms_lightning.F90
+            src/fms/cece_fms_soil_nox.F90
+            src/fms/cece_fms_volcano.F90
+            src/fms/cece_fms_example.F90
+            src/fms/cece_fms_stacking.F90)
+    else()
+        message(STATUS "FMS Fortran driver schemes disabled (no Fortran compiler)")
+    endif()
+endif()
+
 add_library(cece SHARED ${CECE_SRCS})
 
 if(CECE_HAS_FORTRAN)
@@ -237,6 +262,10 @@ endif()
 
 if(CECE_ENABLE_CCPP)
     target_compile_definitions(cece PRIVATE CECE_ENABLE_CCPP)
+endif()
+
+if(CECE_ENABLE_FMS)
+    target_compile_definitions(cece PRIVATE CECE_ENABLE_FMS)
 endif()
 
 if(CECE_ENABLE_NUOPC)

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suite name="cece_emissions_suite" version="1.0">
+  <group name="cece_emissions">
+    <scheme>cece_fms_stacking</scheme>
+    <scheme>cece_fms_sea_salt</scheme>
+    <scheme>cece_fms_megan</scheme>
+    <scheme>cece_fms_dust</scheme>
+    <scheme>cece_fms_dms</scheme>
+    <scheme>cece_fms_lightning</scheme>
+    <scheme>cece_fms_soil_nox</scheme>
+    <scheme>cece_fms_volcano</scheme>
+  </group>
+</suite>
