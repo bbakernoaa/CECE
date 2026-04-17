@@ -222,8 +222,8 @@ void cece_fms_scheme_init(void* data_ptr, const char* scheme_name, int scheme_na
                     return;
                 }
                 found = true;
-                std::cout << "INFO: cece_fms_scheme_init — scheme '" << name << "' verified ready (nx=" << nx << ", ny=" << ny << ", nz=" << nz
-                          << ")" << std::endl;
+                std::cout << "INFO: cece_fms_scheme_init — scheme '" << name << "' verified ready (nx=" << nx
+                          << ", ny=" << ny << ", nz=" << nz << ")" << std::endl;
                 break;
             }
         }
