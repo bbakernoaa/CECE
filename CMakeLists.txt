@@ -204,51 +204,49 @@ if(CECE_HAS_FORTRAN)
     endif()
 endif()
 
-# CCPP interface sources — when CCPP is enabled (Req 10.2)
-if(CECE_ENABLE_CCPP)
-    message(STATUS "CCPP interface enabled")
+# CCPP/FMS interface sources — when CCPP or FMS is enabled
+if(CECE_ENABLE_CCPP OR CECE_ENABLE_FMS)
+    if(CECE_ENABLE_CCPP)
+        message(STATUS "CCPP interface enabled")
+    endif()
+    if(CECE_ENABLE_FMS)
+        message(STATUS "FMS interface enabled")
+    endif()
+
     # C++ API can be compiled regardless of Fortran availability
+    # Both CCPP and FMS leverage the exact same C++ API, so include it if either is enabled
     list(APPEND CECE_SRCS src/ccpp/cece_ccpp_api.cpp)
 
-    # Fortran CCPP driver schemes require Fortran compiler
     if(CECE_HAS_FORTRAN)
-        list(APPEND CECE_SRCS
-            src/ccpp/cece_ccpp_state.F90
-            src/ccpp/cece_ccpp_sea_salt.F90
-            src/ccpp/cece_ccpp_megan.F90
-            src/ccpp/cece_ccpp_dust.F90
-            src/ccpp/cece_ccpp_dms.F90
-            src/ccpp/cece_ccpp_lightning.F90
-            src/ccpp/cece_ccpp_soil_nox.F90
-            src/ccpp/cece_ccpp_volcano.F90
-            src/ccpp/cece_ccpp_example.F90
-            src/ccpp/cece_ccpp_stacking.F90)
-    else()
-        message(STATUS "CCPP Fortran driver schemes disabled (no Fortran compiler)")
-    endif()
-endif()
+        if(CECE_ENABLE_CCPP)
+            list(APPEND CECE_SRCS
+                src/ccpp/cece_ccpp_state.F90
+                src/ccpp/cece_ccpp_sea_salt.F90
+                src/ccpp/cece_ccpp_megan.F90
+                src/ccpp/cece_ccpp_dust.F90
+                src/ccpp/cece_ccpp_dms.F90
+                src/ccpp/cece_ccpp_lightning.F90
+                src/ccpp/cece_ccpp_soil_nox.F90
+                src/ccpp/cece_ccpp_volcano.F90
+                src/ccpp/cece_ccpp_example.F90
+                src/ccpp/cece_ccpp_stacking.F90)
+        endif()
 
-# FMS interface sources — when FMS is enabled
-if(CECE_ENABLE_FMS)
-    message(STATUS "FMS interface enabled")
-    # C++ API can be compiled regardless of Fortran availability
-    list(APPEND CECE_SRCS src/fms/cece_fms_api.cpp)
-
-    # Fortran FMS driver schemes require Fortran compiler
-    if(CECE_HAS_FORTRAN)
-        list(APPEND CECE_SRCS
-            src/fms/cece_fms_state.F90
-            src/fms/cece_fms_sea_salt.F90
-            src/fms/cece_fms_megan.F90
-            src/fms/cece_fms_dust.F90
-            src/fms/cece_fms_dms.F90
-            src/fms/cece_fms_lightning.F90
-            src/fms/cece_fms_soil_nox.F90
-            src/fms/cece_fms_volcano.F90
-            src/fms/cece_fms_example.F90
-            src/fms/cece_fms_stacking.F90)
+        if(CECE_ENABLE_FMS)
+            list(APPEND CECE_SRCS
+                src/fms/cece_fms_state.F90
+                src/fms/cece_fms_sea_salt.F90
+                src/fms/cece_fms_megan.F90
+                src/fms/cece_fms_dust.F90
+                src/fms/cece_fms_dms.F90
+                src/fms/cece_fms_lightning.F90
+                src/fms/cece_fms_soil_nox.F90
+                src/fms/cece_fms_volcano.F90
+                src/fms/cece_fms_example.F90
+                src/fms/cece_fms_stacking.F90)
+        endif()
     else()
-        message(STATUS "FMS Fortran driver schemes disabled (no Fortran compiler)")
+        message(STATUS "Fortran driver schemes disabled (no Fortran compiler)")
     endif()
 endif()
 

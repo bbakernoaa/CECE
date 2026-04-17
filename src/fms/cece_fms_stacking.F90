@@ -8,7 +8,7 @@ module cece_fms_stacking
 
   ! C API interfaces
   interface
-    subroutine cece_fms_core_init(data_ptr, config_path, path_len, &
+    subroutine cece_ccpp_core_init(data_ptr, config_path, path_len, &
                                    nx, ny, nz, rc) bind(C)
       import :: c_ptr, c_char, c_int
       type(c_ptr), intent(out) :: data_ptr
@@ -17,26 +17,26 @@ module cece_fms_stacking
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_run_stacking(data_ptr, hour, day_of_week, rc) bind(C)
+    subroutine cece_ccpp_run_stacking(data_ptr, hour, day_of_week, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), value :: hour, day_of_week
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_core_finalize(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_core_finalize(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_sync_import_to_device(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_sync_import_to_device(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_sync_export_to_host(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_sync_export_to_host(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
@@ -60,7 +60,7 @@ contains
 
     if (.not. g_initialized) then
       ! First scheme to init — create core
-      call cece_fms_core_init(new_ptr, &
+      call cece_ccpp_core_init(new_ptr, &
         trim(cece_configuration_file_path)//c_null_char, &
         len_trim(cece_configuration_file_path), &
         horizontal_loop_extent, 1, vertical_layer_dimension, rc)
@@ -87,7 +87,7 @@ contains
     errmsg = ''
     errflg = 0
 
-    call cece_fms_run_stacking(g_cece_data_ptr, current_hour, current_day_of_week, rc)
+    call cece_ccpp_run_stacking(g_cece_data_ptr, current_hour, current_day_of_week, rc)
     if (rc /= 0) then
       errflg = 1
       errmsg = 'cece_stacking_run: stacking failed'
@@ -103,7 +103,7 @@ contains
     errmsg = ''
     errflg = 0
 
-    call cece_fms_sync_import_to_device(g_cece_data_ptr, rc)
+    call cece_ccpp_sync_import_to_device(g_cece_data_ptr, rc)
     if (rc /= 0) then
       errflg = 1
       errmsg = 'cece_stacking_timestep_init: sync failed'
@@ -119,7 +119,7 @@ contains
     errmsg = ''
     errflg = 0
 
-    call cece_fms_sync_export_to_host(g_cece_data_ptr, rc)
+    call cece_ccpp_sync_export_to_host(g_cece_data_ptr, rc)
     if (rc /= 0) then
       errflg = 1
       errmsg = 'cece_stacking_timestep_finalize: sync failed'
@@ -143,7 +143,7 @@ contains
 
     g_init_count = g_init_count - 1
     if (g_init_count <= 0) then
-      call cece_fms_core_finalize(g_cece_data_ptr, rc)
+      call cece_ccpp_core_finalize(g_cece_data_ptr, rc)
       g_cece_data_ptr = c_null_ptr
       g_initialized = .false.
       g_init_count = 0

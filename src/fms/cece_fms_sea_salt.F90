@@ -8,7 +8,7 @@ module cece_fms_sea_salt
 
   ! C API interfaces
   interface
-    subroutine cece_fms_core_init(data_ptr, config_path, path_len, &
+    subroutine cece_ccpp_core_init(data_ptr, config_path, path_len, &
                                    nx, ny, nz, rc) bind(C)
       import :: c_ptr, c_char, c_int
       type(c_ptr), intent(out) :: data_ptr
@@ -17,7 +17,7 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_scheme_init(data_ptr, name, name_len, &
+    subroutine cece_ccpp_scheme_init(data_ptr, name, name_len, &
                                      nx, ny, nz, rc) bind(C)
       import :: c_ptr, c_char, c_int
       type(c_ptr), value :: data_ptr
@@ -26,7 +26,7 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_set_import_field(data_ptr, name, name_len, &
+    subroutine cece_ccpp_set_import_field(data_ptr, name, name_len, &
                                           field_data, nx, ny, nz, rc) bind(C)
       import :: c_ptr, c_char, c_int, c_double
       type(c_ptr), value :: data_ptr
@@ -36,7 +36,7 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_scheme_run(data_ptr, name, name_len, rc) bind(C)
+    subroutine cece_ccpp_scheme_run(data_ptr, name, name_len, rc) bind(C)
       import :: c_ptr, c_char, c_int
       type(c_ptr), value :: data_ptr
       character(kind=c_char), intent(in) :: name(*)
@@ -44,7 +44,7 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_get_export_field(data_ptr, name, name_len, &
+    subroutine cece_ccpp_get_export_field(data_ptr, name, name_len, &
                                           field_data, nx, ny, nz, rc) bind(C)
       import :: c_ptr, c_char, c_int, c_double
       type(c_ptr), value :: data_ptr
@@ -54,7 +54,7 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_scheme_finalize(data_ptr, name, name_len, rc) bind(C)
+    subroutine cece_ccpp_scheme_finalize(data_ptr, name, name_len, rc) bind(C)
       import :: c_ptr, c_char, c_int
       type(c_ptr), value :: data_ptr
       character(kind=c_char), intent(in) :: name(*)
@@ -62,19 +62,19 @@ module cece_fms_sea_salt
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_core_finalize(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_core_finalize(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_sync_import_to_device(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_sync_import_to_device(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    subroutine cece_fms_sync_export_to_host(data_ptr, rc) bind(C)
+    subroutine cece_ccpp_sync_export_to_host(data_ptr, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), intent(out) :: rc
@@ -98,7 +98,7 @@ contains
 
     if (.not. g_initialized) then
       ! First scheme to init — create core
-      call cece_fms_core_init(new_ptr, &
+      call cece_ccpp_core_init(new_ptr, &
         trim(cece_configuration_file_path)//c_null_char, &
         len_trim(cece_configuration_file_path), &
         horizontal_loop_extent, 1, vertical_layer_dimension, rc)
@@ -111,7 +111,7 @@ contains
       g_initialized = .true.
     end if
 
-    call cece_fms_scheme_init(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, &
+    call cece_ccpp_scheme_init(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, &
       horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then
       errflg = 1
@@ -141,28 +141,28 @@ contains
     errflg = 0
 
     ! Marshal inputs
-    call cece_fms_set_import_field(g_cece_data_ptr, 'temperature'//c_null_char, 11, &
+    call cece_ccpp_set_import_field(g_cece_data_ptr, 'temperature'//c_null_char, 11, &
       air_temperature, horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: set temperature failed'; return; end if
 
-    call cece_fms_set_import_field(g_cece_data_ptr, 'wind_speed'//c_null_char, 10, &
+    call cece_ccpp_set_import_field(g_cece_data_ptr, 'wind_speed'//c_null_char, 10, &
       surface_wind_speed, horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: set wind_speed failed'; return; end if
 
-    call cece_fms_set_import_field(g_cece_data_ptr, 'sst'//c_null_char, 3, &
+    call cece_ccpp_set_import_field(g_cece_data_ptr, 'sst'//c_null_char, 3, &
       sea_surface_temperature, horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: set sst failed'; return; end if
 
     ! Execute scheme
-    call cece_fms_scheme_run(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, rc)
+    call cece_ccpp_scheme_run(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: scheme run failed'; return; end if
 
     ! Marshal outputs
-    call cece_fms_get_export_field(g_cece_data_ptr, 'EmissSS_SALA'//c_null_char, 12, &
+    call cece_ccpp_get_export_field(g_cece_data_ptr, 'EmissSS_SALA'//c_null_char, 12, &
       sea_salt_emission_flux_fine, horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: get SALA failed'; return; end if
 
-    call cece_fms_get_export_field(g_cece_data_ptr, 'EmissSS_SALC'//c_null_char, 12, &
+    call cece_ccpp_get_export_field(g_cece_data_ptr, 'EmissSS_SALC'//c_null_char, 12, &
       sea_salt_emission_flux_coarse, horizontal_loop_extent, 1, vertical_layer_dimension, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_run: get SALC failed'; return; end if
   end subroutine
@@ -173,7 +173,7 @@ contains
     integer(c_int) :: rc
     errmsg = ''
     errflg = 0
-    call cece_fms_sync_import_to_device(g_cece_data_ptr, rc)
+    call cece_ccpp_sync_import_to_device(g_cece_data_ptr, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_timestep_init: sync failed'; return; end if
   end subroutine
 
@@ -183,7 +183,7 @@ contains
     integer(c_int) :: rc
     errmsg = ''
     errflg = 0
-    call cece_fms_sync_export_to_host(g_cece_data_ptr, rc)
+    call cece_ccpp_sync_export_to_host(g_cece_data_ptr, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_timestep_finalize: sync failed'; return; end if
   end subroutine
 
@@ -200,12 +200,12 @@ contains
       return
     end if
 
-    call cece_fms_scheme_finalize(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, rc)
+    call cece_ccpp_scheme_finalize(g_cece_data_ptr, 'sea_salt'//c_null_char, 8, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'sea_salt_finalize: scheme finalize failed'; return; end if
 
     g_init_count = g_init_count - 1
     if (g_init_count <= 0) then
-      call cece_fms_core_finalize(g_cece_data_ptr, rc)
+      call cece_ccpp_core_finalize(g_cece_data_ptr, rc)
       g_cece_data_ptr = c_null_ptr
       g_initialized = .false.
       g_init_count = 0
