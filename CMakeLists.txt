@@ -46,8 +46,9 @@ option(Kokkos_ENABLE_HIP "Enable Kokkos HIP execution space for AMD GPUs" OFF)
 # Python bindings support
 option(BUILD_PYTHON_BINDINGS "Build Python bindings for CECE" OFF)
 
-# CCPP and NUOPC interface options
+# CCPP, NUOPC, and FMS interface options
 option(CECE_ENABLE_CCPP "Build CCPP interface for CECE" OFF)
+option(CECE_ENABLE_FMS "Build FMS component interface for CECE" OFF)
 option(CECE_ENABLE_NUOPC "Build NUOPC/ESMF interface for CECE" ON)
 
 # Validate that at most one GPU backend is enabled
@@ -227,6 +228,18 @@ if(CECE_ENABLE_CCPP)
     endif()
 endif()
 
+# FMS component interface sources — when FMS is enabled
+if(CECE_ENABLE_FMS)
+    message(STATUS "FMS interface enabled")
+    if(CECE_HAS_FORTRAN)
+        # Note: Compiling the FMS cap requires FMS libraries (fms_mod, time_manager_mod, etc.)
+        # This will only succeed in environments where FMS is provided.
+        list(APPEND CECE_SRCS src/fms/cece_fms_model.F90)
+    else()
+        message(STATUS "FMS Fortran component disabled (no Fortran compiler)")
+    endif()
+endif()
+
 add_library(cece SHARED ${CECE_SRCS})
 
 if(CECE_HAS_FORTRAN)
@@ -237,6 +250,10 @@ endif()
 
 if(CECE_ENABLE_CCPP)
     target_compile_definitions(cece PRIVATE CECE_ENABLE_CCPP)
+endif()
+
+if(CECE_ENABLE_FMS)
+    target_compile_definitions(cece PRIVATE CECE_ENABLE_FMS)
 endif()
 
 if(CECE_ENABLE_NUOPC)
