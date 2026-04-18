@@ -134,11 +134,12 @@ contains
   end subroutine cece_fms_init
 
   !> @brief Update (Advance) the CECE FMS component for a timestep.
-  !> Passes calculated emissions into the provided FMS coupler boundary type.
-  subroutine cece_fms_update(Time, nx, ny, Atmos_bc)
+  !> Passes calculated emissions into a 3D FMS tracer array for atmospheric integration.
+  subroutine cece_fms_update(Time, nx, ny, nz, Atmos_tracers)
     type(time_type), intent(in) :: Time
-    integer, intent(in) :: nx, ny
-    type(coupler_2d_bc_type), intent(inout) :: Atmos_bc
+    integer, intent(in) :: nx, ny, nz
+    ! Assume Atmos_tracers contains 3D tendencies for multiple tracers
+    real(kind=8), intent(inout) :: Atmos_tracers(:,:,:,:)
 
     integer :: year, month, day, hour, minute, second
     integer :: day_of_week
@@ -147,7 +148,7 @@ contains
 
     integer(c_int) :: num_species, i, tr_idx
     character(len=256) :: species_name
-    real(kind=8), allocatable :: export_field(:,:)
+    real(kind=8), allocatable :: export_field(:,:,:)
 
     if (.not. module_is_initialized) then
       call error_mesg('cece_fms_model', 'cece_fms_update called before initialization', FATAL)
@@ -168,26 +169,26 @@ contains
       call error_mesg('cece_fms_model', 'cece_core_run failed', FATAL)
     end if
 
-    ! Extract configured species from CECE and populate the FMS coupler boundary object
+    ! Extract configured species from CECE and populate the FMS 3D tracer array
     call cece_core_get_species_count(g_cece_data_ptr, num_species, rc)
 
     if (num_species > 0) then
-      allocate(export_field(nx, ny))
+      allocate(export_field(nx, ny, nz))
 
       do i = 1, num_species
         species_name = ''
         call cece_core_get_species_name(g_cece_data_ptr, int(i-1, c_int), species_name, 256_c_int, rc)
 
-        ! Pull the 2D emission slice from CECE
+        ! Pull the full 3D emission array from CECE (including aloft plumes and scaling)
         call cece_ccpp_get_export_field(g_cece_data_ptr, trim(species_name)//c_null_char, &
-             len_trim(species_name), export_field, int(nx, c_int), int(ny, c_int), 1_c_int, rc)
+             len_trim(species_name), export_field, int(nx, c_int), int(ny, c_int), int(nz, c_int), rc)
 
         if (rc == 0) then
           ! Find corresponding tracer index in the FMS tracer manager
           tr_idx = get_tracer_index('atmos_mod', trim(species_name))
           if (tr_idx > 0) then
-            ! Load data into the FMS coupler boundary struct for upstream components (e.g. Atmosphere)
-            Atmos_bc%flux(tr_idx)%field = export_field
+            ! Load data into the FMS 3D state/tendency array for upstream components (e.g. Atmosphere)
+            Atmos_tracers(:,:,:,tr_idx) = export_field
           end if
         end if
       end do
