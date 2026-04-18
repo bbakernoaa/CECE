@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <yaml-cpp/yaml.h>
 
 #include <Kokkos_Core.hpp>
 
@@ -12,9 +13,6 @@ class BDSNPTest : public ::testing::Test {
         if (!Kokkos::is_initialized()) {
             Kokkos::initialize();
         }
-    }
-    void TearDown() override {
-        // Kokkos::finalize() is typically handled by main
     }
 };
 
@@ -31,44 +29,43 @@ TEST_F(BDSNPTest, BasicExecution) {
     cece::CeceImportState import_state;
     cece::CeceExportState export_state;
 
-    // Create required input fields
-    Kokkos::View<double***> soilt("soil_temperature", 2, 2, 1);
-    Kokkos::View<double***> soilm("soil_moisture", 2, 2, 1);
+    cece::DualView3D soilt("soil_temperature", 2, 2, 1);
+    cece::DualView3D soilm("soil_moisture", 2, 2, 1);
+    cece::DualView3D landtype("landtype", 2, 2, 1);
 
-    // Create optional input fields
-    Kokkos::View<double***> landtype("landtype", 2, 2, 1);
-
-    auto h_soilt = Kokkos::create_mirror_view(soilt);
-    auto h_soilm = Kokkos::create_mirror_view(soilm);
-    auto h_landtype = Kokkos::create_mirror_view(landtype);
+    auto h_soilt = soilt.view_host();
+    auto h_soilm = soilm.view_host();
+    auto h_landtype = landtype.view_host();
 
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {
-            h_soilt(i, j, 0) = 293.15;  // 20 C
-            h_soilm(i, j, 0) = 0.25;    // 25% WFPS
-            h_landtype(i, j, 0) = 10;   // Some active biome
+            h_soilt(i, j, 0) = 293.15;
+            h_soilm(i, j, 0) = 0.25;
+            h_landtype(i, j, 0) = 10;
         }
     }
 
-    Kokkos::deep_copy(soilt, h_soilt);
-    Kokkos::deep_copy(soilm, h_soilm);
-    Kokkos::deep_copy(landtype, h_landtype);
+    soilt.modify<Kokkos::HostSpace>();
+    soilm.modify<Kokkos::HostSpace>();
+    landtype.modify<Kokkos::HostSpace>();
+
+    soilt.sync<Kokkos::DefaultExecutionSpace>();
+    soilm.sync<Kokkos::DefaultExecutionSpace>();
+    landtype.sync<Kokkos::DefaultExecutionSpace>();
 
     import_state.fields["soil_temperature"] = soilt;
     import_state.fields["soil_moisture"] = soilm;
     import_state.fields["landtype"] = landtype;
 
-    // Create export field
-    Kokkos::View<double***> bdsnp_no("bdsnp_no", 2, 2, 1);
-    Kokkos::deep_copy(bdsnp_no, 0.0);
+    cece::DualView3D bdsnp_no("bdsnp_no", 2, 2, 1);
+    Kokkos::deep_copy(bdsnp_no.view_device(), 0.0);
+    bdsnp_no.modify<Kokkos::DefaultExecutionSpace>();
     export_state.fields["bdsnp_no"] = bdsnp_no;
 
-    // Run scheme
     bdsnp.Run(import_state, export_state);
 
-    // Verify results
-    auto h_bdsnp_no = Kokkos::create_mirror_view(bdsnp_no);
-    Kokkos::deep_copy(h_bdsnp_no, bdsnp_no);
+    bdsnp_no.sync<Kokkos::HostSpace>();
+    auto h_bdsnp_no = bdsnp_no.view_host();
 
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {

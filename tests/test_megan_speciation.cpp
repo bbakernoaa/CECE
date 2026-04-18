@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <yaml-cpp/yaml.h>
 
 #include <Kokkos_Core.hpp>
 #include <fstream>
@@ -14,7 +15,6 @@ class MeganSpeciationTest : public ::testing::Test {
             Kokkos::initialize();
         }
 
-        // Create a dummy speciation yaml
         std::ofstream spec_file("dummy_spec.yaml");
         spec_file << "speciation:\n"
                   << "  ISOP:\n"
@@ -47,18 +47,17 @@ TEST_F(MeganSpeciationTest, SpeciationExecution) {
     cece::CeceImportState import_state;
     cece::CeceExportState export_state;
 
-    // Create required input fields
-    Kokkos::View<double***> temp("temperature", 2, 2, 1);
-    Kokkos::View<double***> lai("leaf_area_index", 2, 2, 1);
-    Kokkos::View<double***> pardr("par_direct", 2, 2, 1);
-    Kokkos::View<double***> pardf("par_diffuse", 2, 2, 1);
-    Kokkos::View<double***> suncos("solar_cosine", 2, 2, 1);
+    cece::DualView3D temp("temperature", 2, 2, 1);
+    cece::DualView3D lai("leaf_area_index", 2, 2, 1);
+    cece::DualView3D pardr("par_direct", 2, 2, 1);
+    cece::DualView3D pardf("par_diffuse", 2, 2, 1);
+    cece::DualView3D suncos("solar_cosine", 2, 2, 1);
 
-    auto h_temp = Kokkos::create_mirror_view(temp);
-    auto h_lai = Kokkos::create_mirror_view(lai);
-    auto h_pardr = Kokkos::create_mirror_view(pardr);
-    auto h_pardf = Kokkos::create_mirror_view(pardf);
-    auto h_suncos = Kokkos::create_mirror_view(suncos);
+    auto h_temp = temp.view_host();
+    auto h_lai = lai.view_host();
+    auto h_pardr = pardr.view_host();
+    auto h_pardf = pardf.view_host();
+    auto h_suncos = suncos.view_host();
 
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {
@@ -70,11 +69,17 @@ TEST_F(MeganSpeciationTest, SpeciationExecution) {
         }
     }
 
-    Kokkos::deep_copy(temp, h_temp);
-    Kokkos::deep_copy(lai, h_lai);
-    Kokkos::deep_copy(pardr, h_pardr);
-    Kokkos::deep_copy(pardf, h_pardf);
-    Kokkos::deep_copy(suncos, h_suncos);
+    temp.modify<Kokkos::HostSpace>();
+    lai.modify<Kokkos::HostSpace>();
+    pardr.modify<Kokkos::HostSpace>();
+    pardf.modify<Kokkos::HostSpace>();
+    suncos.modify<Kokkos::HostSpace>();
+
+    temp.sync<Kokkos::DefaultExecutionSpace>();
+    lai.sync<Kokkos::DefaultExecutionSpace>();
+    pardr.sync<Kokkos::DefaultExecutionSpace>();
+    pardf.sync<Kokkos::DefaultExecutionSpace>();
+    suncos.sync<Kokkos::DefaultExecutionSpace>();
 
     import_state.fields["temperature"] = temp;
     import_state.fields["leaf_area_index"] = lai;
@@ -82,29 +87,28 @@ TEST_F(MeganSpeciationTest, SpeciationExecution) {
     import_state.fields["par_diffuse"] = pardf;
     import_state.fields["solar_cosine"] = suncos;
 
-    // Create export fields
-    Kokkos::View<double***> isop("MEGAN_ISOP", 2, 2, 1);
-    Kokkos::View<double***> ole("MEGAN_OLE", 2, 2, 1);
-    Kokkos::deep_copy(isop, 0.0);
-    Kokkos::deep_copy(ole, 0.0);
+    cece::DualView3D isop("MEGAN_ISOP", 2, 2, 1);
+    cece::DualView3D ole("MEGAN_OLE", 2, 2, 1);
+    Kokkos::deep_copy(isop.view_device(), 0.0);
+    Kokkos::deep_copy(ole.view_device(), 0.0);
+    isop.modify<Kokkos::DefaultExecutionSpace>();
+    ole.modify<Kokkos::DefaultExecutionSpace>();
+
     export_state.fields["MEGAN_ISOP"] = isop;
     export_state.fields["MEGAN_OLE"] = ole;
 
-    // Run scheme
     megan.Run(import_state, export_state);
 
-    // Verify results
-    auto h_isop = Kokkos::create_mirror_view(isop);
-    auto h_ole = Kokkos::create_mirror_view(ole);
-    Kokkos::deep_copy(h_isop, isop);
-    Kokkos::deep_copy(h_ole, ole);
+    isop.sync<Kokkos::HostSpace>();
+    ole.sync<Kokkos::HostSpace>();
+
+    auto h_isop = isop.view_host();
+    auto h_ole = ole.view_host();
 
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) {
             EXPECT_GT(h_isop(i, j, 0), 0.0);
             EXPECT_GT(h_ole(i, j, 0), 0.0);
-            // ISOP aef is double MBO aef, and MBO factor is 0.5
-            // so ISOP should be roughly 4x OLE in this specific dummy setup
             EXPECT_GT(h_isop(i, j, 0), h_ole(i, j, 0));
         }
     }
