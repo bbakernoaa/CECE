@@ -298,6 +298,10 @@ target_link_libraries(test_suite_idempotence PRIVATE cece GTest::gtest_main)
 add_executable(test_repro_failure tests/repro_failure.cpp)
 target_link_libraries(test_repro_failure PRIVATE cece GTest::gtest_main)
 
+# Vulnerability Reproduction Test
+add_executable(test_repro_vulnerability tests/repro_vulnerability.cpp)
+target_link_libraries(test_repro_vulnerability PRIVATE cece GTest::gtest_main)
+
 # Unit tests for field creation (Requirement R4)
 add_executable(test_field_creation tests/test_field_creation.cpp)
 if(CECE_HAS_FORTRAN AND TARGET test_helpers)
@@ -398,6 +402,7 @@ gtest_discover_tests(test_kokkos_configuration)
 gtest_discover_tests(test_properties)
 gtest_discover_tests(test_suite_idempotence)
 gtest_discover_tests(test_repro_failure)
+gtest_discover_tests(test_repro_vulnerability)
 gtest_discover_tests(test_field_creation)
 gtest_discover_tests(test_field_pointer_passing)
 

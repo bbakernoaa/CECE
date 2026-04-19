@@ -186,7 +186,8 @@ void cece_core_get_driver_config(const char* config_file, int config_file_len, c
             std::strncpy(start_time, start_str.c_str(), start_time_len - 1);
             start_time[start_time_len - 1] = '\0';
         } else {
-            std::strcpy(start_time, start_str.c_str());
+            std::strncpy(start_time, start_str.c_str(), start_time_len - 1);
+            start_time[start_str.length()] = '\0';
         }
 
         // Copy end_time
@@ -195,7 +196,8 @@ void cece_core_get_driver_config(const char* config_file, int config_file_len, c
             std::strncpy(end_time, end_str.c_str(), end_time_len - 1);
             end_time[end_time_len - 1] = '\0';
         } else {
-            std::strcpy(end_time, end_str.c_str());
+            std::strncpy(end_time, end_str.c_str(), end_time_len - 1);
+            end_time[end_str.length()] = '\0';
         }
 
         // Copy timestep_seconds
