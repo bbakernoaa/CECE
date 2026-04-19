@@ -1,0 +1,813 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Community Emissions Computing Engine">
+      
+      
+        <meta name="author" content="CECE Team">
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.33">
+    
+    
+      
+        <title>CECE Developer Guide - CECE Documentation</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../assets/stylesheets/modern/main.53a7feaf.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cece-developer-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="./.." title="CECE Documentation" class="md-header__button md-logo" aria-label="CECE Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CECE Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CECE Developer Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="./.." title="CECE Documentation" class="md-nav__button md-logo" aria-label="CECE Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    CECE Documentation
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripts & Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#project-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-architecture-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Architecture &amp; Philosophy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-coding-standards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Coding Standards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#physics-scheme-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Physics Scheme Development
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vertical-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vertical Distribution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration System
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#development-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development Environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#important-no-mocking-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠️ IMPORTANT: No Mocking Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+<h1 id="cece-developer-guide">CECE Developer Guide<a class="headerlink" href="#cece-developer-guide" title="Permanent link">&para;</a></h1>
+<h2 id="project-overview">Project Overview<a class="headerlink" href="#project-overview" title="Permanent link">&para;</a></h2>
+<p>CECE (Community Emissions Computing Engine) is a C++20 emissions compute component designed for high performance using Kokkos and ESMF.</p>
+<h2 id="core-architecture-philosophy">Core Architecture &amp; Philosophy<a class="headerlink" href="#core-architecture-philosophy" title="Permanent link">&para;</a></h2>
+<p>CECE is designed as a modular, performance-portable emissions framework. Key components include:</p>
+<ul>
+<li><strong>StackingEngine:</strong> Manages the aggregation of emission layers using sophisticated hierarchy-based processing, kernel fusion optimization, and advanced temporal/spatial scaling. See the <a href="../stacking_engine/">Stacking Engine Documentation</a> for comprehensive technical details.</li>
+<li><strong>Vertical Distribution:</strong> Multiple algorithms for mapping 2D emissions to 3D atmospheric grids with strict mass conservation. See the <a href="../vertical_distribution/">Vertical Distribution Documentation</a> for complete algorithm descriptions and usage examples.</li>
+<li><strong>PhysicsFactory:</strong> A self-registration registry for physics schemes. New schemes should inherit from <code>BasePhysicsScheme</code> and use the <code>PhysicsRegistration&lt;T&gt;</code> pattern.</li>
+<li><strong>Internal State:</strong> Persisted via <code>CeceInternalData</code> to maintain field handles and metadata across ESMF phases, avoiding redundant lookups.</li>
+<li><strong>TIDE Integration:</strong> High-performance data ingestion for external emission inventories via the TIDE (Temporal Interpolation &amp; Data Extraction) library with smart caching and regridding capabilities.</li>
+</ul>
+<h2 id="global-coding-standards">Global Coding Standards<a class="headerlink" href="#global-coding-standards" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Language:</strong> C++20 and Fortran 2008+.</li>
+<li><strong>Style:</strong> Google C++ Style Guide for C++.</li>
+<li><strong>Namespace:</strong> <code>cece::</code> (defined in <code>include/cece/cece.hpp</code>).</li>
+<li><strong>Documentation:</strong> Doxygen format (<code>/** ... */</code>) required for all public APIs.</li>
+<li><strong>Memory:</strong> Use <code>Kokkos::View</code> for data. Avoid raw pointers.</li>
+<li><strong>ESMF:</strong> Use <code>ESMC_</code> C API for C++ bridge. Wrap data in <code>Kokkos::View</code> with <code>Kokkos::MemoryTraits&lt;Kokkos::Unmanaged&gt;</code>.</li>
+<li><strong>Performance Portability:</strong><ul>
+<li>All compute kernels MUST use Kokkos parallel primitives (<code>parallel_for</code>, <code>parallel_reduce</code>).</li>
+<li>Avoid hardware-specific code (e.g., Cuda intrinsics).</li>
+<li>Use <code>Kokkos::DefaultExecutionSpace</code> for dispatch.</li>
+<li>Strictly avoid <code>std::cout</code> or blocking I/O inside kernels.</li>
+</ul>
+</li>
+</ul>
+<h2 id="physics-scheme-development">Physics Scheme Development<a class="headerlink" href="#physics-scheme-development" title="Permanent link">&para;</a></h2>
+<p>When implementing or modifying physics schemes:
+1.  <strong>Configurability:</strong> NEVER hardcode physical constants or tuning factors. All parameters must be read from the YAML <code>options</code> block in <code>Initialize</code>.
+2.  <strong>BasePhysicsScheme Helpers:</strong> Use provided scientist-friendly helpers:
+    *   <code>ResolveImport(name, state)</code>: Retrieve input fields.
+    *   <code>ResolveExport(name, state)</code>: Retrieve output fields.
+    *   <code>MarkModified(name, state)</code>: Signal that an export field has been updated.
+    *   <code>ResolveDiagnostic(name, nx, ny, nz)</code>: Register/retrieve diagnostic fields.
+3.  <strong>Optimization:</strong> Use Horner's Method for evaluating polynomials (e.g., Schmidt numbers, SST scaling) to minimize floating-point operations.</p>
+<h2 id="vertical-distribution">Vertical Distribution<a class="headerlink" href="#vertical-distribution" title="Permanent link">&para;</a></h2>
+<p>CECE supports multiple vertical distribution methods for mapping 2D emissions to 3D grids:
+*   <strong>SINGLE:</strong> Place all emissions in a single specific layer.
+*   <strong>RANGE:</strong> Distribute evenly over a range of layer indices.
+*   <strong>PRESSURE:</strong> Distribute based on a pressure range (Pa).
+*   <strong>HEIGHT:</strong> Distribute based on a height range (m).
+*   <strong>PBL:</strong> Distribute within the Planetary Boundary Layer.
+*   <strong>Conservation:</strong> All methods ensure strict column mass conservation.</p>
+<p>For complete algorithm descriptions, performance characteristics, and usage examples, see the <a href="../vertical_distribution/">Vertical Distribution Documentation</a>.</p>
+<h2 id="configuration-system">Configuration System<a class="headerlink" href="#configuration-system" title="Permanent link">&para;</a></h2>
+<p>CECE uses a comprehensive YAML configuration system that supports:
+- Hierarchical emission layer processing with categories and priorities
+- Temporal scaling profiles (diurnal, weekly, seasonal)
+- Environmental dependencies and dynamic scaling factors
+- Multiple vertical distribution algorithms
+- TIDE data stream integration with smart caching
+- Physics scheme configuration and parameter tuning</p>
+<p>For complete configuration reference with all available options and examples, see the <a href="../configuration/">Configuration Documentation</a>.</p>
+<h2 id="development-environment">Development Environment<a class="headerlink" href="#development-environment" title="Permanent link">&para;</a></h2>
+<p>The required development environment is the <code>jcsda/docker-gnu-openmpi-dev:1.9</code> Docker container. This container provides the necessary compilers, MPI, and ESMF dependencies.</p>
+<h3 id="important-no-mocking-policy">⚠️ IMPORTANT: No Mocking Policy<a class="headerlink" href="#important-no-mocking-policy" title="Permanent link">&para;</a></h3>
+<p><strong>Mocking ESMF or NUOPC is strictly forbidden.</strong> All development and verification must be performed using real ESMF dependencies within the JCSDA Docker environment to ensure real-world parity and stability.</p>
+<h3 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Run the Setup Script:</strong>
+    Execute the provided <code>setup.sh</code> script to pull the Docker image and drop into a shell.
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./setup.sh
+</span></code></pre></div>
+    If you encounter Docker overlayfs issues or need to fix the environment, run:
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./scripts/fix_docker_and_setup.sh
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Build:</strong>
+    Inside the container:
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>mkdir<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>build
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cmake<span class="w"> </span>..
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>make<span class="w"> </span>-j4
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Run Example Driver:</strong>
+    To see CECE in action with external data (ESMF fields):
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./example_driver
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Test:</strong>
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>ctest<span class="w"> </span>--output-on-failure
+</span></code></pre></div></p>
+</li>
+</ol>
+<h3 id="python-dependencies">Python Dependencies<a class="headerlink" href="#python-dependencies" title="Permanent link">&para;</a></h3>
+<p>The physics scheme generator and other scripts require <code>jinja2</code>, <code>pyyaml</code>, and <code>pytest</code>.
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python3<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>jinja2<span class="w"> </span>pyyaml<span class="w"> </span>pytest
+</span></code></pre></div></p>
+<h2 id="documentation-resources">Documentation Resources<a class="headerlink" href="#documentation-resources" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>ESMF User Guide:</strong> <a href="https://earthsystemmodeling.org/docs/release/latest/ESMF_usrdoc">https://earthsystemmodeling.org/docs/release/latest/ESMF_usrdoc</a></li>
+<li><strong>ESMF Reference Manual:</strong> <a href="https://earthsystemmodeling.org/docs/release/latest/ESMF_refdoc/">https://earthsystemmodeling.org/docs/release/latest/ESMF_refdoc/</a></li>
+<li><strong>NUOPC Reference Manual:</strong> <a href="https://earthsystemmodeling.org/docs/release/latest/NUOPC_refdoc">https://earthsystemmodeling.org/docs/release/latest/NUOPC_refdoc</a></li>
+<li><strong>TIDE Documentation:</strong> Located at <code>src/io/tide</code> in the CECE repository</li>
+<li><strong>Fortran Standards:</strong> <a href="https://www.iso.org/standard/44473.html">Fortran 2008 Standard (ISO/IEC 1539-1:2010)</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 CECE Authors
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.annotate","content.code.copy","navigation.footer","navigation.path","navigation.sections","navigation.top","search.highlight"],"search":"../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.63456bd9.min.js"></script>
+      
+    
+  </body>
+</html>
