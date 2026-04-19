@@ -325,33 +325,14 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 return -1;
             }
 
-            // Reorder from Kokkos (nx, ny, nz) to NetCDF (lev, lat, lon)
-            // CRITICAL FIX: CECE stores data as (longitude, latitude, level) internally
-            // This matches ESMF field layout: fptr(nx, ny, nz) = fptr(longitude, latitude, level)
-            for (int k = 0; k < nz_; k++) {          // level
-                for (int j = 0; j < ny_; j++) {      // latitude index
-                    for (int i = 0; i < nx_; i++) {  // longitude index
-                        // Correct indexing: CECE uses (lon, lat, lev) order - i=longitude,
-                        // j=latitude
-                        size_t kokkos_idx =
-                            i + j * nx_ +
-                            k * static_cast<size_t>(nx_) * ny_;  // (lon, lat, lev) order
-                        size_t netcdf_idx = k * static_cast<size_t>(ny_) * nx_ + j * nx_ +
-                                            i;  // (lev, lat, lon) order
-
-                        // Bounds check for safety
-                        if (kokkos_idx >= total_elements || netcdf_idx >= total_elements) {
-                            CECE_LOG_ERROR("Index out of bounds in field '" + name +
-                                           "': kokkos_idx=" + std::to_string(kokkos_idx) +
-                                           " netcdf_idx=" + std::to_string(netcdf_idx) +
-                                           " total=" + std::to_string(total_elements));
-                            return -1;
-                        }
-
-                        netcdf_buffer[netcdf_idx] = h_view.data()[kokkos_idx];
-                    }
-                }
-            }
+            // Directly copy data from Kokkos (nx, ny, nz) LayoutLeft to NetCDF buffer.
+            // CECE stores data as (longitude, latitude, level) internally.
+            // ESMF and CECE LayoutLeft (nx, ny, nz) maps to linear memory as:
+            // index = i + j*nx + k*nx*ny.
+            // NetCDF (lev, lat, lon) in C-order (LayoutRight) maps to linear memory as:
+            // index = k*ny*nx + j*nx + i.
+            // These indices are identical, so a direct copy is sufficient and highly efficient.
+            std::copy(h_view.data(), h_view.data() + total_elements, netcdf_buffer.begin());
 
             size_t start_field[4] = {0, 0, 0, 0};
             size_t count_field[4] = {1, (size_t)nz_, (size_t)ny_,
