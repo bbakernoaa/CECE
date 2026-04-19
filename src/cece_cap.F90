@@ -52,6 +52,19 @@ module cece_cap_mod
   real(c_double), allocatable, save, target :: g_dummy_data_buffer(:,:)
   logical, save :: g_dummy_initialized = .false.
 
+  !> @brief Temporal metadata structure for C interoperability.
+  !> Matches CeceClock struct in include/cece/cece_state.hpp.
+  type, bind(C) :: cece_clock_t
+    integer(c_int) :: year = 0
+    integer(c_int) :: month = 0
+    integer(c_int) :: day = 0
+    integer(c_int) :: hour = 0
+    integer(c_int) :: minute = 0
+    integer(c_int) :: second = 0
+    integer(c_int) :: day_of_week = 0
+    integer(c_int) :: day_of_year = 0
+  end type cece_clock_t
+
 
   ! C interface to CECE core
   interface
@@ -170,13 +183,10 @@ module cece_cap_mod
       integer(c_int), intent(out) :: path_len
       integer(c_int), intent(out) :: rc
     end subroutine
-    subroutine cece_core_run(data_ptr, hour, minute, second, day_of_week, rc) bind(C)
-      import :: c_ptr, c_int
+    subroutine cece_core_run(data_ptr, clock_ptr, rc) bind(C)
+      import :: c_ptr, c_int, cece_clock_t
       type(c_ptr), value :: data_ptr
-      integer(c_int), value :: hour
-      integer(c_int), value :: minute
-      integer(c_int), value :: second
-      integer(c_int), value :: day_of_week
+      type(cece_clock_t), intent(in) :: clock_ptr
       integer(c_int), intent(out) :: rc
     end subroutine
     subroutine cece_core_finalize(data_ptr, rc) bind(C)
@@ -772,7 +782,7 @@ contains
 
     integer(c_int) :: c_rc, c_step_rc
     real(c_double) :: time_seconds
-    integer :: hour, minute, second, day_of_week
+    type(cece_clock_t) :: cece_clock
 
     integer :: tide_rc, num_fields, i
     type(ESMF_Clock) :: run_clock
@@ -867,23 +877,34 @@ contains
     write(*,'(A)') "INFO: [CECE] CECE_Run proceeding with valid data pointer"
 
     ! Extract time components from the component clock (Fortran ESMF API is safe here)
-    hour = 0
-    minute = 0
-    second = 0
-    day_of_week = 0
+    cece_clock%year = 0
+    cece_clock%month = 0
+    cece_clock%day = 0
+    cece_clock%hour = 0
+    cece_clock%minute = 0
+    cece_clock%second = 0
+    cece_clock%day_of_week = 0
+    cece_clock%day_of_year = 0
+
     block
       type(ESMF_Clock) :: run_clock_local
       type(ESMF_Time)  :: curr_time
-      integer :: yy, mm, dd, h, m, s, local_rc
+      integer :: yy, mm, dd, h, m, s, doy, dow, local_rc
       call ESMF_GridCompGet(comp, clock=run_clock_local, rc=local_rc)
       if (local_rc == ESMF_SUCCESS) then
         call ESMF_ClockGet(run_clock_local, currTime=curr_time, rc=local_rc)
         if (local_rc == ESMF_SUCCESS) then
-          call ESMF_TimeGet(curr_time, yy=yy, mm=mm, dd=dd, h=h, m=m, s=s, rc=local_rc)
+          call ESMF_TimeGet(curr_time, yy=yy, mm=mm, dd=dd, h=h, m=m, s=s, &
+                            dayOfYr=doy, dayOfWeek=dow, rc=local_rc)
           if (local_rc == ESMF_SUCCESS) then
-             hour = h
-             minute = m
-             second = s
+             cece_clock%year = int(yy, c_int)
+             cece_clock%month = int(mm, c_int)
+             cece_clock%day = int(dd, c_int)
+             cece_clock%hour = int(h, c_int)
+             cece_clock%minute = int(m, c_int)
+             cece_clock%second = int(s, c_int)
+             cece_clock%day_of_year = int(doy, c_int)
+             cece_clock%day_of_week = int(dow, c_int)
           end if
         end if
       end if
@@ -977,8 +998,7 @@ contains
       end if
     endif
 
-    call cece_core_run(g_cece_data_ptr, int(hour, c_int), int(minute, c_int), &
-                       int(second, c_int), int(day_of_week, c_int), c_rc)
+    call cece_core_run(g_cece_data_ptr, cece_clock, c_rc)
     rc = int(c_rc)
     if (rc /= ESMF_SUCCESS) return
 

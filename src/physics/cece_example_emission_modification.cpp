@@ -52,7 +52,7 @@ void ExampleEmissionModification::Run(CeceImportState& import_state,
     int nz = emissions.extent(2);
 
     // Get current hour from the clock (populated by the framework)
-    int current_hour = import_state.hour;
+    int current_hour = import_state.clock.hour;
 
     // ========================================================================
     // Kokkos Parallel Kernel: Apply Diurnal Cycle

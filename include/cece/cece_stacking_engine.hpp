@@ -80,7 +80,7 @@ class StackingEngine {
     void Execute(
         FieldResolver& resolver, int nx, int ny, int nz,
         Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace> default_mask,
-        int hour, int day_of_week, int month = 0, ProvenanceTracker* provenance = nullptr);
+        const CeceClock& clock, ProvenanceTracker* provenance = nullptr);
 
     /**
      * @brief Resets the bound field handles.
@@ -153,7 +153,7 @@ class StackingEngine {
 
     void PreCompile();
     void BindFields(CompiledSpecies& spec, FieldResolver& resolver, int nx, int ny, int nz) const;
-    void UpdateTemporalScales(CompiledSpecies& spec, int hour, int day_of_week, int month = 0);
+    void UpdateTemporalScales(CompiledSpecies& spec, const CeceClock& clock);
 };
 
 }  // namespace cece

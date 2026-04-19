@@ -172,11 +172,9 @@ void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, 
  * @brief Updates the temporal scaling factors for the currently bound layers.
  * @details Performs a deep_copy of the metadata to the device after updating.
  * @param spec The species to update.
- * @param hour Current hour.
- * @param day_of_week Current day of week.
+ * @param clock Temporal metadata.
  */
-void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int day_of_week,
-                                          int month) {
+void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, const CeceClock& clock) {
     for (size_t i = 0; i < spec.layers.size(); ++i) {
         const auto& layer = spec.layers[i];
         DeviceLayer& dev = spec.host_layers(i);
@@ -187,37 +185,41 @@ void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int d
         if (!layer.diurnal_cycle.empty()) {
             auto it_p = m_config.temporal_profiles.find(layer.diurnal_cycle);
             if (it_p != m_config.temporal_profiles.end() && it_p->second.factors.size() == 24) {
-                scale *= it_p->second.factors[hour % 24];
+                scale *= it_p->second.factors[clock.hour % 24];
             } else {
                 auto it_c = m_config.temporal_cycles.find(layer.diurnal_cycle);
                 if (it_c != m_config.temporal_cycles.end() && it_c->second.factors.size() == 24) {
-                    scale *= it_c->second.factors[hour % 24];
+                    scale *= it_c->second.factors[clock.hour % 24];
                 }
             }
         }
 
         // Apply day-of-week cycle (7 daily factors)
+        // ESMF day_of_week is typically 1-based (1=Sunday), StackingEngine expects 0-indexed.
+        // We use % 7 to ensure it's in 0-6 range.
         if (!layer.weekly_cycle.empty()) {
+            int dow_index = (clock.day_of_week > 0) ? (clock.day_of_week - 1) : 0;
             auto it_p = m_config.temporal_profiles.find(layer.weekly_cycle);
             if (it_p != m_config.temporal_profiles.end() && it_p->second.factors.size() == 7) {
-                scale *= it_p->second.factors[day_of_week % 7];
+                scale *= it_p->second.factors[dow_index % 7];
             } else {
                 auto it_c = m_config.temporal_cycles.find(layer.weekly_cycle);
                 if (it_c != m_config.temporal_cycles.end() && it_c->second.factors.size() == 7) {
-                    scale *= it_c->second.factors[day_of_week % 7];
+                    scale *= it_c->second.factors[dow_index % 7];
                 }
             }
         }
 
-        // Apply seasonal cycle (12 monthly factors, month is 0-indexed)
+        // Apply seasonal cycle (12 monthly factors, month is 1-based in CeceClock)
         if (!layer.seasonal_cycle.empty()) {
+            int month_index = (clock.month > 0) ? (clock.month - 1) : 0;
             auto it_p = m_config.temporal_profiles.find(layer.seasonal_cycle);
             if (it_p != m_config.temporal_profiles.end() && it_p->second.factors.size() == 12) {
-                scale *= it_p->second.factors[month % 12];
+                scale *= it_p->second.factors[month_index % 12];
             } else {
                 auto it_c = m_config.temporal_cycles.find(layer.seasonal_cycle);
                 if (it_c != m_config.temporal_cycles.end() && it_c->second.factors.size() == 12) {
-                    scale *= it_c->second.factors[month % 12];
+                    scale *= it_c->second.factors[month_index % 12];
                 }
             }
         }
@@ -323,15 +325,13 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
  * @param ny Y dimension.
  * @param nz Z dimension.
  * @param default_mask Fallback 1.0 mask.
- * @param hour Current hour (0-23) for temporal cycles.
- * @param day_of_week Current day of week (0-6) for weekly cycles.
- * @param month Current month (0-11) for seasonal cycles.
+ * @param clock Temporal metadata.
  * @param provenance Optional provenance tracker for external logging.
  */
 void StackingEngine::Execute(
     FieldResolver& resolver, int nx, int ny, int nz,
     Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace> default_mask,
-    int hour, int day_of_week, int month, ProvenanceTracker* provenance) {
+    const CeceClock& clock, ProvenanceTracker* provenance) {
     if (default_mask.data() == nullptr) {
         default_mask = Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace>(
             "default_mask_internal", nx, ny, nz);
@@ -348,7 +348,7 @@ void StackingEngine::Execute(
             continue;
         }
 
-        UpdateTemporalScales(spec, hour, day_of_week, month);
+        UpdateTemporalScales(spec, clock);
 
         // Update provenance with effective scales for this timestep
         {
@@ -356,10 +356,11 @@ void StackingEngine::Execute(
             for (size_t li = 0; li < spec.layers.size(); ++li) {
                 eff_scales[li] = spec.host_layers(li).scale;
             }
-            m_provenance_tracker.UpdateTemporalScales(spec.name, hour, day_of_week, month,
-                                                      eff_scales);
+            m_provenance_tracker.UpdateTemporalScales(spec.name, clock.hour, clock.day_of_week,
+                                                      clock.month - 1, eff_scales);
             if (provenance != nullptr) {
-                provenance->UpdateTemporalScales(spec.name, hour, day_of_week, month, eff_scales);
+                provenance->UpdateTemporalScales(spec.name, clock.hour, clock.day_of_week,
+                                                 clock.month - 1, eff_scales);
             }
         }
 

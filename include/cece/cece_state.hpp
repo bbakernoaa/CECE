@@ -15,6 +15,22 @@
 namespace cece {
 
 /**
+ * @brief Unified structure for temporal metadata in CECE.
+ *
+ * Decouples physics schemes from framework-specific clock types (like ESMF_Clock).
+ */
+struct CeceClock {
+    int year = 0;
+    int month = 0;        ///< 1-12
+    int day = 0;          ///< 1-31
+    int hour = 0;         ///< 0-23
+    int minute = 0;       ///< 0-59
+    int second = 0;       ///< 0-59
+    int day_of_week = 0;  ///< 0=Sunday..6=Saturday
+    int day_of_year = 0;  ///< 1-366
+};
+
+/**
  * @brief Structure containing all meteorology and base emissions imported from
  * other components.
  *
@@ -25,14 +41,8 @@ struct CeceImportState {
     /// Map of field names to their respective DualViews.
     std::unordered_map<std::string, DualView3D> fields;
 
-    /// Current hour (0-23).
-    int hour = 0;
-    /// Current minute (0-59).
-    int minute = 0;
-    /// Current second (0-59).
-    int second = 0;
-    /// Day of week (0=Sunday..6=Saturday).
-    int day_of_week = 0;
+    /// Unified temporal information.
+    CeceClock clock;
 };
 
 /**

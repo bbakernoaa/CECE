@@ -435,7 +435,7 @@ void MeganScheme::Run(CeceImportState& import_state, CeceExportState& export_sta
 
             double T_AVG_15 = 297.0;
             double PAR_AVG = 400.0;
-            int doy = 180;
+            int doy = import_state.clock.day_of_year;
             double dbtwn = 30.0;  // Assume 1 month if not dynamically passed
 
             double L_prev = has_pmlai ? pmlai(i, j, 0) : L;
