@@ -41,13 +41,16 @@ extern "C" {
  * @brief CECE Run phase.
  * @param data_ptr    Pointer to CeceInternalData.
  * @param hour        Hour of day (0-23), extracted by Fortran cap from ESMF_Clock.
+ * @param minute      Minute of hour (0-59).
+ * @param second      Second of minute (0-59).
  * @param day_of_week Day of week (0=Sunday..6=Saturday).
  * @param rc          0 on success, -1 on failure.
  */
-void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
+void cece_core_run(void* data_ptr, int hour, int minute, int second, int day_of_week, int* rc) {
     *rc = 0;
     try {
-        std::cout << "CECE_Run: executing step (hour=" << hour << ", day=" << day_of_week << ")\n";
+        std::cout << "CECE_Run: executing step (time=" << hour << ":" << minute << ":" << second
+                  << ", day=" << day_of_week << ")\n";
 
         auto* d = static_cast<cece::CeceInternalData*>(data_ptr);
         if (!d) {
@@ -55,6 +58,12 @@ void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
             *rc = -1;
             return;
         }
+
+        // Populate temporal information in import state from framework parameters
+        d->import_state.hour = hour;
+        d->import_state.minute = minute;
+        d->import_state.second = second;
+        d->import_state.day_of_week = day_of_week;
 
         // Ingest emissions from configured streams before stacking
         if (!d->config.cece_data.streams.empty()) {

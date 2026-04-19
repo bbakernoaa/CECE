@@ -170,10 +170,12 @@ module cece_cap_mod
       integer(c_int), intent(out) :: path_len
       integer(c_int), intent(out) :: rc
     end subroutine
-    subroutine cece_core_run(data_ptr, hour, day_of_week, rc) bind(C)
+    subroutine cece_core_run(data_ptr, hour, minute, second, day_of_week, rc) bind(C)
       import :: c_ptr, c_int
       type(c_ptr), value :: data_ptr
       integer(c_int), value :: hour
+      integer(c_int), value :: minute
+      integer(c_int), value :: second
       integer(c_int), value :: day_of_week
       integer(c_int), intent(out) :: rc
     end subroutine
@@ -770,7 +772,7 @@ contains
 
     integer(c_int) :: c_rc, c_step_rc
     real(c_double) :: time_seconds
-    integer :: hour, day_of_week
+    integer :: hour, minute, second, day_of_week
 
     integer :: tide_rc, num_fields, i
     type(ESMF_Clock) :: run_clock
@@ -864,19 +866,25 @@ contains
 
     write(*,'(A)') "INFO: [CECE] CECE_Run proceeding with valid data pointer"
 
-    ! Extract hour-of-day from the component clock (Fortran ESMF API is safe here)
+    ! Extract time components from the component clock (Fortran ESMF API is safe here)
     hour = 0
+    minute = 0
+    second = 0
     day_of_week = 0
     block
       type(ESMF_Clock) :: run_clock_local
       type(ESMF_Time)  :: curr_time
-      integer :: h, yy, mm, dd, local_rc
+      integer :: yy, mm, dd, h, m, s, local_rc
       call ESMF_GridCompGet(comp, clock=run_clock_local, rc=local_rc)
       if (local_rc == ESMF_SUCCESS) then
         call ESMF_ClockGet(run_clock_local, currTime=curr_time, rc=local_rc)
         if (local_rc == ESMF_SUCCESS) then
-          call ESMF_TimeGet(curr_time, yy=yy, mm=mm, dd=dd, h=h, rc=local_rc)
-          if (local_rc == ESMF_SUCCESS) hour = h
+          call ESMF_TimeGet(curr_time, yy=yy, mm=mm, dd=dd, h=h, m=m, s=s, rc=local_rc)
+          if (local_rc == ESMF_SUCCESS) then
+             hour = h
+             minute = m
+             second = s
+          end if
         end if
       end if
     end block
@@ -969,7 +977,8 @@ contains
       end if
     endif
 
-    call cece_core_run(g_cece_data_ptr, int(hour, c_int), int(day_of_week, c_int), c_rc)
+    call cece_core_run(g_cece_data_ptr, int(hour, c_int), int(minute, c_int), &
+                       int(second, c_int), int(day_of_week, c_int), c_rc)
     rc = int(c_rc)
     if (rc /= ESMF_SUCCESS) return
 

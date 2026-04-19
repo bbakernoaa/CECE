@@ -51,10 +51,8 @@ void ExampleEmissionModification::Run(CeceImportState& import_state,
     int ny = emissions.extent(1);
     int nz = emissions.extent(2);
 
-    // Get current hour from the clock (in a real implementation)
-    // For this example, we'll use a fixed hour
-    // In practice, this would come from ESMF_Clock
-    int current_hour = 12;  // TODO: Get from ESMF_Clock
+    // Get current hour from the clock (populated by the framework)
+    int current_hour = import_state.hour;
 
     // ========================================================================
     // Kokkos Parallel Kernel: Apply Diurnal Cycle

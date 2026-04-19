@@ -24,6 +24,15 @@ namespace cece {
 struct CeceImportState {
     /// Map of field names to their respective DualViews.
     std::unordered_map<std::string, DualView3D> fields;
+
+    /// Current hour (0-23).
+    int hour = 0;
+    /// Current minute (0-59).
+    int minute = 0;
+    /// Current second (0-59).
+    int second = 0;
+    /// Day of week (0=Sunday..6=Saturday).
+    int day_of_week = 0;
 };
 
 /**
