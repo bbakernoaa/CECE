@@ -23,5 +23,4 @@ void cece_core_initialize_p2_impl(void* data_ptr, int* nx, int* ny, int* nz, int
 void cece_core_initialize_p2(void* data_ptr, int* nx, int* ny, int* nz, int* rc) {
     cece_core_initialize_p2_impl(data_ptr, nx, ny, nz, rc);
 }
-
 }
