@@ -18,6 +18,7 @@ module tide_yaml_mod
     integer(c_int) :: year_last
     integer(c_int) :: year_align
     integer(c_int) :: offset
+    integer(c_int) :: read_frequency
     type(c_ptr) :: input_files
     integer(c_int) :: num_files
     type(c_ptr) :: file_vars

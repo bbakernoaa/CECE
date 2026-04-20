@@ -15,6 +15,8 @@ module tide_mod
     type(shr_strdata_type), allocatable :: sdat(:) !< Core stream data structures (one per stream)
     integer :: num_streams !< Number of streams
     integer :: year_first, year_last
+    integer, allocatable :: read_frequency_seconds(:)
+    type(ESMF_Time), allocatable :: last_read_time(:)
   end type tide_type
 
   !> @brief PIO subsystem for standalone TIDE usage
@@ -89,6 +91,8 @@ contains
     ! Allocate array of stream data structures
     tide%num_streams = cfg%num_streams
     allocate(tide%sdat(tide%num_streams))
+    allocate(tide%read_frequency_seconds(tide%num_streams))
+    allocate(tide%last_read_time(tide%num_streams))
 
     ! Initialize each stream separately
     do i = 1, cfg%num_streams
@@ -150,6 +154,10 @@ contains
            int(s_cfg_ptr(i)%year_first), int(s_cfg_ptr(i)%year_last), int(s_cfg_ptr(i)%year_align), &
            int(s_cfg_ptr(i)%offset), trim(tax_mode), real(s_cfg_ptr(i)%dt_limit, r8), trim(time_interp), &
            rc=rc)
+
+      ! Set frequency-based update parameters
+      tide%read_frequency_seconds(i) = int(s_cfg_ptr(i)%read_frequency)
+      call ESMF_TimeSet(tide%last_read_time(i), yy=0, rc=rc) ! Initialize to a far-past time
 
       ! Clean up arrays for next iteration
       deallocate(file_names, fld_list_file, fld_list_model)
@@ -282,10 +290,31 @@ contains
 
     ! Advance all streams
     do i = 1, tide%num_streams
-      call shr_strdata_advance(tide%sdat(i), ymd, tod, 6, "TIDE", rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,*) "ERROR: [TIDE] Failed to advance TIDE stream ", i, " to current time."
-        return
+      logical :: do_read
+      type(ESMF_TimeInterval) :: elapsed
+
+      do_read = .true.
+      if (tide%read_frequency_seconds(i) > 0) then
+        ! Check if we've initialized last_read_time (year > 0)
+        integer :: last_yy
+        call ESMF_TimeGet(tide%last_read_time(i), yy=last_yy, rc=rc)
+        if (last_yy > 0) then
+          call ESMF_TimeDiff(currTime, tide%last_read_time(i), elapsed, rc=rc)
+          integer(i8) :: elapsed_s
+          call ESMF_TimeIntervalGet(elapsed, s_i8=elapsed_s, rc=rc)
+          if (elapsed_s < int(tide%read_frequency_seconds(i), i8)) then
+            do_read = .false.
+          end if
+        end if
+      end if
+
+      if (do_read) then
+        call shr_strdata_advance(tide%sdat(i), ymd, tod, 6, "TIDE", rc=rc)
+        if (rc /= ESMF_SUCCESS) then
+          write(*,*) "ERROR: [TIDE] Failed to advance TIDE stream ", i, " to current time."
+          return
+        end if
+        tide%last_read_time(i) = currTime
       end if
     end do
   end subroutine tide_advance
@@ -344,6 +373,12 @@ contains
     ! Deallocate stream data structures
     if (allocated(tide%sdat)) then
       deallocate(tide%sdat)
+    end if
+    if (allocated(tide%read_frequency_seconds)) then
+      deallocate(tide%read_frequency_seconds)
+    end if
+    if (allocated(tide%last_read_time)) then
+      deallocate(tide%last_read_time)
     end if
 
     rc = ESMF_SUCCESS

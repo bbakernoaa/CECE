@@ -28,6 +28,7 @@ typedef struct {
     int year_last;
     int year_align;
     int offset;
+    int read_frequency;
     char** input_files;
     int num_files;
     char** file_vars;
@@ -106,6 +107,7 @@ tide_config_t* tide_parse_yaml(const char* filename) {
             sc.year_last = s["year_last"].as<int>();
             sc.year_align = s["year_align"].as<int>();
             sc.offset = s["offset"] ? s["offset"].as<int>() : 0;
+            sc.read_frequency = s["read_frequency"] ? s["read_frequency"].as<int>() : 0;
 
             // Parse input files list
             auto files = s["input_files"];
