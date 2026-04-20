@@ -7,7 +7,8 @@ module tide_mod
   use ESMF
   use pio
   use, intrinsic :: iso_c_binding
-  use shr_kind_mod, only : r8 => shr_kind_r8, cl => shr_kind_cl, cs => shr_kind_cs
+  use shr_kind_mod, only : r8 => shr_kind_r8, cl => shr_kind_cl, cs => shr_kind_cs, &
+                           i8 => shr_kind_i8
   implicit none
 
   !> @brief TIDE handle type containing stream data information.
@@ -267,6 +268,10 @@ contains
     type(ESMF_Time) :: currTime
     integer :: yy, mm, dd, tod, ymd
     integer :: i
+    logical :: do_read
+    type(ESMF_TimeInterval) :: elapsed
+    integer :: last_yy
+    integer(i8) :: elapsed_s
 
     ! Get current time from clock
     call ESMF_ClockGet(clock, currTime=currTime, rc=rc)
@@ -290,17 +295,12 @@ contains
 
     ! Advance all streams
     do i = 1, tide%num_streams
-      logical :: do_read
-      type(ESMF_TimeInterval) :: elapsed
-
       do_read = .true.
       if (tide%read_frequency_seconds(i) > 0) then
         ! Check if we've initialized last_read_time (year > 0)
-        integer :: last_yy
         call ESMF_TimeGet(tide%last_read_time(i), yy=last_yy, rc=rc)
         if (last_yy > 0) then
           call ESMF_TimeDiff(currTime, tide%last_read_time(i), elapsed, rc=rc)
-          integer(i8) :: elapsed_s
           call ESMF_TimeIntervalGet(elapsed, s_i8=elapsed_s, rc=rc)
           if (elapsed_s < int(tide%read_frequency_seconds(i), i8)) then
             do_read = .false.
