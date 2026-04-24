@@ -183,60 +183,34 @@ include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
 
     # 5. Update suite_info.py to include defaults for the new suite
     suite_info_path = os.path.join(scm_root, "scm", "etc", "suite_info.py")
-    print(f"Checking for {suite_info_path}")
+    print(f"DEBUG: Checking for suite_info.py at {suite_info_path}")
     if os.path.exists(suite_info_path):
         with open(suite_info_path, "r") as f:
             suite_info_content = f.read()
 
-        if "SCM_GFS_v16_CECE" not in suite_info_content:
-            print("SCM_GFS_v16_CECE not found in suite_info.py, attempting to patch...")
-            # We look for a suite key that exists
-            base_suite = None
-            for key in ["SCM_GFS_v16", "GFS_v16", "SCM_GFS_v15p2"]:
-                if f"'{key}'" in suite_info_content or f'"{key}"' in suite_info_content:
-                    base_suite = key
-                    break
-
-            if base_suite:
-                print(f"Found base suite '{base_suite}' for cloning.")
-                # Using a safer regex that doesn't use nested f-string braces
-                pattern = r"(['\"]" + re.escape(base_suite) + r"['\"]\s*:\s*\{)"
-                match = re.search(pattern, suite_info_content)
-                if match:
-                    start_idx = match.start()
-                    brace_start = suite_info_content.find("{", start_idx)
-                    if brace_start != -1:
-                        brace_count = 0
-                        end_idx = -1
-                        for i in range(brace_start, len(suite_info_content)):
-                            if suite_info_content[i] == "{":
-                                brace_count += 1
-                            elif suite_info_content[i] == "}":
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end_idx = i + 1
-                                    break
-
-                        if end_idx != -1:
-                            base_entry = suite_info_content[start_idx:end_idx]
-                            # Only replace the first occurrence (the key)
-                            cece_entry = base_entry.replace(
-                                base_suite, "SCM_GFS_v16_CECE", 1
-                            )
-                            # Insert after the base entry
-                            suite_info_content = (
-                                suite_info_content[:end_idx]
-                                + ",\n    "
-                                + cece_entry
-                                + suite_info_content[end_idx:]
-                            )
-                            print(f"Cloned {base_suite} entry to SCM_GFS_v16_CECE")
-
-            with open(suite_info_path, "w") as f:
-                f.write(suite_info_content)
-            print(f"Updated {suite_info_path}")
+        if "SCM_GFS_v16_CECE" in suite_info_content:
+            print("DEBUG: SCM_GFS_v16_CECE already in suite_info.py")
+        else:
+            print("DEBUG: Appending SCM_GFS_v16_CECE registration to suite_info.py")
+            # Append a code block that dynamically clones the best available suite defaults
+            append_code = """
+# CECE Integration: register new suite defaults
+if 'SCM_GFS_v16' in suites:
+    suites['SCM_GFS_v16_CECE'] = suites['SCM_GFS_v16']
+elif 'GFS_v16' in suites:
+    suites['SCM_GFS_v16_CECE'] = suites['GFS_v16']
+elif 'SCM_GFS_v15p2' in suites:
+    suites['SCM_GFS_v16_CECE'] = suites['SCM_GFS_v15p2']
+elif suites:
+    # Fallback to the first available suite if others not found
+    first_suite = list(suites.keys())[0]
+    suites['SCM_GFS_v16_CECE'] = suites[first_suite]
+"""
+            with open(suite_info_path, "a") as f:
+                f.write(append_code)
+            print(f"DEBUG: Updated {suite_info_path} with append logic")
     else:
-        print(f"WARNING: {suite_info_path} not found")
+        print(f"CRITICAL: {suite_info_path} not found")
 
 
 if __name__ == "__main__":
