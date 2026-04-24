@@ -75,6 +75,14 @@ def integrate(scm_root, cece_root_relative_to_scm):
                 if "libyaml-cpp.a" in files:
                     yaml_lib_dir = root
 
+            # Convert absolute paths to CMake-relative paths
+            kokkos_rel = kokkos_lib_dir.replace(
+                cece_abs_path, "${CMAKE_SOURCE_DIR}/../../" + cece_root_relative_to_scm
+            )
+            yaml_rel = yaml_lib_dir.replace(
+                cece_abs_path, "${CMAKE_SOURCE_DIR}/../../" + cece_root_relative_to_scm
+            )
+
             insertion = f"""
 # CECE Integration
 set(CECE_BUILD_DIR "${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build")
@@ -82,8 +90,8 @@ include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/incl
 include_directories(${{CECE_BUILD_DIR}}/_deps/kokkos-src/core/src)
 include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
 link_directories(${{CECE_BUILD_DIR}})
-link_directories("{kokkos_lib_dir.replace(cece_abs_path, '${CMAKE_SOURCE_DIR}/../../' + cece_root_relative_to_scm)}")
-link_directories("{yaml_lib_dir.replace(cece_abs_path, '${CMAKE_SOURCE_DIR}/../../' + cece_root_relative_to_scm)}")
+link_directories("{kokkos_rel}")
+link_directories("{yaml_rel}")
 """
             cmake_content = cmake_content.replace(
                 "project(scm", insertion + "\nproject(scm"
@@ -163,6 +171,28 @@ link_directories("{yaml_lib_dir.replace(cece_abs_path, '${CMAKE_SOURCE_DIR}/../.
             with open(scm_f90_path, "w") as f:
                 f.write(scm_f90_content)
             print(f"Updated {scm_f90_path}")
+
+    # 5. Update suite_info.py to include defaults for the new suite
+    suite_info_path = os.path.join(scm_root, "scm", "etc", "suite_info.py")
+    if os.path.exists(suite_info_path):
+        with open(suite_info_path, "r") as f:
+            suite_info_content = f.read()
+
+        if "SCM_GFS_v16_CECE" not in suite_info_content:
+            # We clone the GFS_v16 entry
+            if "'SCM_GFS_v16'" in suite_info_content:
+                # Find the end of the GFS_v16 entry
+                match = re.search(r"'SCM_GFS_v16'\s*:\s*{[^}]*}", suite_info_content)
+                if match:
+                    gfs_entry = match.group(0)
+                    cece_entry = gfs_entry.replace("SCM_GFS_v16", "SCM_GFS_v16_CECE")
+                    suite_info_content = suite_info_content.replace(
+                        gfs_entry, gfs_entry + ",\n    " + cece_entry
+                    )
+
+            with open(suite_info_path, "w") as f:
+                f.write(suite_info_content)
+            print(f"Updated {suite_info_path}")
 
 
 if __name__ == "__main__":
