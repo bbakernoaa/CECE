@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>Lightning NOx - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#lightning-nox" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              Lightning NOx
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,117 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="lightning-nox">Lightning NOx<a class="headerlink" href="#lightning-nox" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes lightning-produced nitrogen oxide (NOx) emissions based on convective cloud top height and empirical flash rate–yield relationships. Lightning is a significant natural source of NOx in the middle and upper troposphere, affecting ozone chemistry and atmospheric composition.</p>
+<p>The flash rate is parameterized as a power law of cloud top height, with separate NOx yield factors for land and ocean regions.</p>
+<p>References:
+- Price, C., et al. (1997), Vertical distributions of lightning NOx for use in regional and global chemical transport models, <em>JGR</em>, 102(D5), 5943–5941.</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"lightning"</code></li>
+<li>Fortran bridge: <code>"lightning_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>yield_land</code></td>
+<td>double</td>
+<td>3.011e26</td>
+<td>NOx yield factor for land regions [molecules/flash]</td>
+</tr>
+<tr>
+<td><code>yield_ocean</code></td>
+<td>double</td>
+<td>1.566e26</td>
+<td>NOx yield factor for ocean regions [molecules/flash]</td>
+</tr>
+<tr>
+<td><code>flash_rate_coeff</code></td>
+<td>double</td>
+<td>3.44e-5</td>
+<td>Flash rate coefficient</td>
+</tr>
+<tr>
+<td><code>flash_rate_power</code></td>
+<td>double</td>
+<td>4.9</td>
+<td>Flash rate power-law exponent</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cloud_top_height</code></td>
+<td>m</td>
+<td>Convective cloud top height</td>
+</tr>
+<tr>
+<td><code>land_mask</code></td>
+<td>dimensionless</td>
+<td>Land fraction (&gt;0.5 = land); optional</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lightning_nox_emissions</code></td>
+<td>kg/s/grid_cell</td>
+<td>Lightning NOx production rate (3D, vertically distributed)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Convert cloud top height to km: <code>h_km = h / 1000</code>.</li>
+<li>Compute flash rate: <code>flash_rate = coeff * h_km^power</code>.</li>
+<li>Select yield based on land mask (land vs. ocean).</li>
+<li>Compute total NOx yield: <code>yield = (flash_rate * yield_factor) * (MW_NO / 1000) / (Avogadro * 1e6)</code>.</li>
+<li>Distribute uniformly across vertical levels: <code>level_yield = total_yield / nz</code>.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lightning</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">yield_land</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.011e26</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">yield_ocean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.566e26</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">flash_rate_coeff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.44e-5</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">flash_rate_power</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4.9</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>The land mask is optional; if absent, all cells are treated as land</li>
+<li>Vertical distribution is currently uniform across all levels (Ott et al. proxy); a more sophisticated C-shape profile could be added</li>
+<li>The scheme produces 3D output (emissions distributed across vertical levels)</li>
+</ul>
 
 
 

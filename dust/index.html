@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>Dust (Ginoux Legacy) - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#dust-ginoux-legacy" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              Dust (Ginoux Legacy)
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,126 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="dust-ginoux-legacy">Dust (Ginoux Legacy)<a class="headerlink" href="#dust-ginoux-legacy" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes mineral dust emissions using the Ginoux et al. (2001) parameterization. This is the legacy GOCART dust scheme that calculates dust flux based on wind speed exceeding a moisture-adjusted threshold velocity, scaled by a surface erodibility source function.</p>
+<p>Ported from HEMCO's <code>hcox_dustginoux_mod.F90</code>.</p>
+<p>References:
+- Ginoux, P., et al. (2001), Sources and distributions of dust aerosols simulated with the GOCART model, <em>JGR</em>, 106, 20255–20273.</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"dust"</code></li>
+<li>Fortran bridge: <code>"dust_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>g_constant</code></td>
+<td>double</td>
+<td>980.665</td>
+<td>Gravitational acceleration [cm/s²]</td>
+</tr>
+<tr>
+<td><code>air_density</code></td>
+<td>double</td>
+<td>1.25e-3</td>
+<td>Air density [g/cm³]</td>
+</tr>
+<tr>
+<td><code>particle_density</code></td>
+<td>double</td>
+<td>2500.0</td>
+<td>Particle density [kg/m³] (converted internally to g/cm³)</td>
+</tr>
+<tr>
+<td><code>particle_diameter</code></td>
+<td>double</td>
+<td>1.46e-6</td>
+<td>Particle diameter [m] (converted internally to cm)</td>
+</tr>
+<tr>
+<td><code>tuning_factor</code></td>
+<td>double</td>
+<td>9.375e-10</td>
+<td>Emission tuning constant (CH_DUST)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wind_speed</code></td>
+<td>m/s</td>
+<td>10-meter wind speed</td>
+</tr>
+<tr>
+<td><code>soil_moisture</code></td>
+<td>fraction</td>
+<td>Surface soil wetness [0–1]</td>
+</tr>
+<tr>
+<td><code>erodibility</code></td>
+<td>dimensionless</td>
+<td>Surface erodibility / dust source function</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dust_emissions</code></td>
+<td>kg/m²/s</td>
+<td>Dust emission flux</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>During initialization, compute dry-soil threshold velocity <code>u_ts0</code> using the Ginoux formulation based on particle density, diameter, gravity, and air density.</li>
+<li>At each grid cell, adjust threshold for soil moisture: if <code>gw &lt; 0.2</code>, <code>u_ts = u_ts0 * (1.2 + 0.2 * log10(max(1e-3, gw)))</code>; otherwise <code>u_ts = 100</code> (no emission).</li>
+<li>If <code>u10 &gt; u_ts</code>: <code>flux = tuning * erodibility * u10² * (u10 − u_ts)</code>.</li>
+<li>Emission is clamped to non-negative values.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dust</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">tuning_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">9.375e-10</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">particle_density</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2500.0</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">particle_diameter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.46e-6</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>This is the legacy single-bin Ginoux scheme; for multi-bin GOCART2G Ginoux, see the <code>ginoux</code> scheme</li>
+<li>Threshold velocity is computed once during <code>Initialize</code> and reused each timestep</li>
+<li>The scheme operates on 2D (surface) fields only</li>
+</ul>
 
 
 

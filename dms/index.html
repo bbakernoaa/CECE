@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>DMS - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#dms" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              DMS
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,106 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="dms">DMS<a class="headerlink" href="#dms" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes dimethyl sulfide (DMS) sea-air exchange fluxes based on seawater DMS concentrations, wind speed, and a gas transfer velocity parameterization. DMS is the dominant natural source of sulfur to the marine atmosphere and plays a critical role in marine aerosol formation and cloud processes.</p>
+<p>The gas transfer velocity uses a Schmidt number formulation with wind-speed dependence following Nightingale et al. (2000).</p>
+<p>References:
+- Nightingale, P.D., et al. (2000), In situ evaluation of air-sea gas exchange parameterizations using novel conservative and volatile tracers, <em>Global Biogeochem. Cycles</em>, 14(1), 373–387.</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"dms"</code></li>
+<li>Fortran bridge: <code>"dms_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>schmidt_coeff</code></td>
+<td>sequence[4]</td>
+<td>[2674.0, -147.12, 3.726, -0.038]</td>
+<td>Schmidt number polynomial coefficients (c0–c3 vs. temperature in °C)</td>
+</tr>
+<tr>
+<td><code>kw_coeff</code></td>
+<td>sequence[2]</td>
+<td>[0.222, 0.333]</td>
+<td>Transfer velocity coefficients [c0 for u², c1 for u]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wind_speed</code></td>
+<td>m/s</td>
+<td>10-meter wind speed</td>
+</tr>
+<tr>
+<td><code>tskin</code></td>
+<td>K</td>
+<td>Sea surface skin temperature</td>
+</tr>
+<tr>
+<td><code>seawater_conc</code></td>
+<td>mol/L or kg/m³</td>
+<td>Seawater DMS concentration</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dms_emissions</code></td>
+<td>kg/m²/s</td>
+<td>DMS sea-air flux</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Convert skin temperature to Celsius: <code>tc = T − 273.15</code>. Skip cells where <code>tc &lt; −10</code>.</li>
+<li>Compute Schmidt number using Horner's method: <code>Sc = c0 + tc*(c1 + tc*(c2 + tc*c3))</code>.</li>
+<li>Compute gas transfer velocity: <code>k_w = (c0*u² + c1*u) * (Sc/600)^(−0.5)</code> in cm/hr, then convert to m/s by dividing by 360000.</li>
+<li>Compute flux: <code>emission = k_w * seawater_conc</code>.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dms</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">schmidt_coeff</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">2674.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-147.12</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">3.726</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-0.038</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">kw_coeff</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.222</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.333</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>Schmidt number coefficients are specific to DMS solubility; different gases require different coefficients</li>
+<li>The scheme operates on 2D (surface) fields only</li>
+</ul>
 
 
 

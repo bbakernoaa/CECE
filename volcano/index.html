@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>Volcano - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#volcano" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              Volcano
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,121 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="volcano">Volcano<a class="headerlink" href="#volcano" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes volcanic sulfur dioxide (SO₂) emissions as a point source with vertical distribution based on eruption plume height. The scheme injects SO₂ into the atmospheric column at a specified grid location, distributing emissions vertically between the volcanic vent elevation and cloud top height, concentrated in the upper third of the plume (eruptive profile).</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"volcano"</code></li>
+<li>Fortran bridge: <code>"volcano_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target_i</code></td>
+<td>int</td>
+<td>1</td>
+<td>Grid i-index for volcanic source location</td>
+</tr>
+<tr>
+<td><code>target_j</code></td>
+<td>int</td>
+<td>1</td>
+<td>Grid j-index for volcanic source location</td>
+</tr>
+<tr>
+<td><code>sulfur_emission</code></td>
+<td>double</td>
+<td>1.0</td>
+<td>SO₂ emission rate [kg/s]</td>
+</tr>
+<tr>
+<td><code>elevation</code></td>
+<td>double</td>
+<td>600.0</td>
+<td>Volcanic vent elevation [m]</td>
+</tr>
+<tr>
+<td><code>cloud_top</code></td>
+<td>double</td>
+<td>2000.0</td>
+<td>Cloud top / plume top height [m]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>surface_altitude</code></td>
+<td>m</td>
+<td>Surface elevation</td>
+</tr>
+<tr>
+<td><code>layer_thickness</code></td>
+<td>m</td>
+<td>Thickness of each vertical layer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>volcanic_so2</code></td>
+<td>kg/s</td>
+<td>Volcanic SO₂ emission rate (3D)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Determine plume vertical extent: bottom = <code>max(elevation, surface_altitude)</code>, top = <code>max(cloud_top, surface_altitude)</code>.</li>
+<li>For eruptive profile, concentrate emissions in the upper &#8531; of the plume: <code>z_bot_volc = z_top − (z_top − z_bot) / 3</code>.</li>
+<li>For each vertical level, compute the fractional overlap between the model layer and the plume injection zone.</li>
+<li>Distribute <code>sulfur_emission * fraction</code> into each overlapping level.</li>
+<li>If plume height is zero or negative, all emissions go into the surface level.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">volcano</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">target_i</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">target_j</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">sulfur_emission</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000.0</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">elevation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">cloud_top</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000.0</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>The scheme is a point source — it only modifies a single (i, j) column</li>
+<li>The Kokkos kernel iterates over vertical levels only (not the full 3D grid)</li>
+<li>In a real coupled model, <code>target_i</code>/<code>target_j</code> would need to be mapped to local process bounds</li>
+</ul>
 
 
 

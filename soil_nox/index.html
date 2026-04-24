@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>Soil NOx - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#soil-nox" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              Soil NOx
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,123 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="soil-nox">Soil NOx<a class="headerlink" href="#soil-nox" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes soil nitrogen oxide (NOx) emissions from microbial nitrification and denitrification processes. The parameterization uses exponential temperature dependence and a Poisson-like soil moisture response function based on water-filled pore space (WFPS).</p>
+<p>Based on the Yienger and Levy (1995) empirical model with Hudman et al. (2012) updates.</p>
+<p>References:
+- Yienger, J.J. and H. Levy II (1995), Empirical model of global soil-biogenic NOx emissions, <em>JGR</em>, 100(D6), 11447–11464.</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"soil_nox"</code></li>
+<li>Fortran bridge: <code>"soil_nox_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>biome_coefficient_wet</code></td>
+<td>double</td>
+<td>0.5</td>
+<td>Biome-dependent emission coefficient for wet conditions</td>
+</tr>
+<tr>
+<td><code>temp_limit</code></td>
+<td>double</td>
+<td>30.0</td>
+<td>Maximum temperature for emission calculation [°C]</td>
+</tr>
+<tr>
+<td><code>temp_exp_coeff</code></td>
+<td>double</td>
+<td>0.103</td>
+<td>Exponential temperature coefficient [1/°C]</td>
+</tr>
+<tr>
+<td><code>wet_coeff_1</code></td>
+<td>double</td>
+<td>5.5</td>
+<td>Moisture response coefficient 1</td>
+</tr>
+<tr>
+<td><code>wet_coeff_2</code></td>
+<td>double</td>
+<td>-5.55</td>
+<td>Moisture response coefficient 2 [1/WFPS²]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>temperature</code></td>
+<td>K</td>
+<td>Surface air temperature</td>
+</tr>
+<tr>
+<td><code>soil_moisture</code></td>
+<td>fraction</td>
+<td>Water-filled pore space fraction [0–1]</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>soil_nox_emissions</code></td>
+<td>kg NO/m²/s</td>
+<td>Soil NOx emission flux</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Convert temperature to Celsius: <code>tc = T − 273.15</code>.</li>
+<li>Compute temperature factor: <code>t_term = exp(coeff * min(tc_max, tc))</code> (zero below freezing).</li>
+<li>Compute moisture factor: <code>w_term = c1 * gw * exp(c2 * gw²)</code> (Poisson-like, peaks near WFPS ≈ 0.3).</li>
+<li>Apply unit conversion: <code>UNITCONV = 1e-12 / 14 * 30</code> (ng N → kg NO).</li>
+<li>Compute emission: <code>emiss = a_biome * UNITCONV * t_term * w_term * pulse</code>.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">soil_nox</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">biome_coefficient_wet</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">temp_limit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30.0</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">temp_exp_coeff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.103</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">wet_coeff_1</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.5</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">wet_coeff_2</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-5.55</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>The pulse factor (rain-induced emission burst) is currently a placeholder set to 1.0; HEMCO uses complex stateful pulsing logic</li>
+<li>The scheme operates on 2D (surface) fields only</li>
+</ul>
 
 
 

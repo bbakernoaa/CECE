@@ -23,7 +23,7 @@
     
     
       
-        <title>Test idempotence - CECE Documentation</title>
+        <title>Sea Salt - CECE Documentation</title>
       
     
     
@@ -78,7 +78,8 @@
     <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
     <div data-md-component="skip">
       
-        <a href="#__skip" class="md-skip">
+        
+        <a href="#sea-salt" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Test idempotence
+              Sea Salt
             
           </span>
         </div>
@@ -461,6 +462,13 @@
                     
                     
                     
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
                     
                   
                   <div class="md-sidebar__inner">
@@ -471,6 +479,104 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registration-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#import-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Import Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Export Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Algorithm
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        YAML Configuration Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation Notes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -493,9 +599,151 @@
                 
                   
 
-  <h1 id="__skip">Test idempotence</h1>
-
-
+<h1 id="sea-salt">Sea Salt<a class="headerlink" href="#sea-salt" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Computes size-resolved sea salt aerosol emissions from ocean surfaces using the Gong (2003) source function. The scheme integrates the normalized particle source function over accumulation mode (SALA) and coarse mode (SALC) size ranges, then scales by wind speed and sea surface temperature (SST).</p>
+<p>References:
+- Gong, S.L., et al. (2003), A parameterization of sea-salt aerosol source function for sub- and super-micron particles, <em>Global Biogeochem. Cycles</em>, 17(4).</p>
+<h2 id="registration-names">Registration Names<a class="headerlink" href="#registration-names" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Native C++: <code>"sea_salt"</code></li>
+<li>Fortran bridge: <code>"sea_salt_fortran"</code></li>
+</ul>
+<h2 id="configuration-parameters">Configuration Parameters<a class="headerlink" href="#configuration-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>YAML Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>integration_step</code></td>
+<td>double</td>
+<td>0.05</td>
+<td>Integration step size for Gong source function [μm]</td>
+</tr>
+<tr>
+<td><code>r80_dry_ratio</code></td>
+<td>double</td>
+<td>2.0</td>
+<td>Ratio of r80 (radius at 80% RH) to dry radius</td>
+</tr>
+<tr>
+<td><code>sea_salt_density</code></td>
+<td>double</td>
+<td>2200.0</td>
+<td>Sea salt particle density [kg/m³]</td>
+</tr>
+<tr>
+<td><code>r_sala_min</code></td>
+<td>double</td>
+<td>0.01</td>
+<td>Minimum dry radius for accumulation mode [μm]</td>
+</tr>
+<tr>
+<td><code>r_sala_max</code></td>
+<td>double</td>
+<td>0.5</td>
+<td>Maximum dry radius for accumulation mode [μm]</td>
+</tr>
+<tr>
+<td><code>r_salc_min</code></td>
+<td>double</td>
+<td>0.5</td>
+<td>Minimum dry radius for coarse mode [μm]</td>
+</tr>
+<tr>
+<td><code>r_salc_max</code></td>
+<td>double</td>
+<td>8.0</td>
+<td>Maximum dry radius for coarse mode [μm]</td>
+</tr>
+<tr>
+<td><code>sst_coeff</code></td>
+<td>sequence[4]</td>
+<td>[0.329, 0.0904, -0.00717, 0.000207]</td>
+<td>SST scaling polynomial coefficients</td>
+</tr>
+<tr>
+<td><code>u_power</code></td>
+<td>double</td>
+<td>3.41</td>
+<td>Wind speed power-law exponent</td>
+</tr>
+</tbody>
+</table>
+<h2 id="import-fields">Import Fields<a class="headerlink" href="#import-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wind_speed</code></td>
+<td>m/s</td>
+<td>10-meter wind speed</td>
+</tr>
+<tr>
+<td><code>tskin</code></td>
+<td>K</td>
+<td>Sea surface skin temperature</td>
+</tr>
+</tbody>
+</table>
+<h2 id="export-fields">Export Fields<a class="headerlink" href="#export-fields" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field Name</th>
+<th>Units</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>secondary_input</code></td>
+<td>kg/m²/s</td>
+<td>Accumulation mode (SALA) sea salt emissions</td>
+</tr>
+<tr>
+<td><code>coarse_input</code></td>
+<td>kg/m²/s</td>
+<td>Coarse mode (SALC) sea salt emissions</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h2>
+<ol>
+<li>During initialization, integrate the Gong (2003) normalized source function <code>dF/dr80</code> over the SALA and SALC size ranges to compute reference mass emission rates (<code>srrc_SALA_</code>, <code>srrc_SALC_</code>).</li>
+<li>At each grid cell, compute SST scaling using a cubic polynomial (Horner's method): <code>scale = c0 + SST*(c1 + SST*(c2 + SST*c3))</code>, with SST clamped to [0, 30] °C.</li>
+<li>Compute wind factor as <code>u^u_pow</code> (default u^3.41).</li>
+<li>Emission = <code>scale * u_factor * reference_rate</code> for each mode.</li>
+</ol>
+<h2 id="yaml-configuration-example">YAML Configuration Example<a class="headerlink" href="#yaml-configuration-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">physics</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sea_salt</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">r_sala_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.01</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">r_sala_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">r_salc_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">r_salc_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8.0</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">u_power</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.41</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">sst_coeff</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.329</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0904</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-0.00717</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.000207</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<h2 id="implementation-notes">Implementation Notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Available as both native C++ (Kokkos) and Fortran bridge implementations</li>
+<li>SALA and SALC are computed in separate Kokkos kernels and independently <code>MarkModified</code></li>
+<li>The Gong source function integration is performed once during <code>Initialize</code>; only the wind/SST scaling runs per timestep</li>
+</ul>
 
 
 
