@@ -27,22 +27,24 @@ endif()
 
 # --- Dependencies ---
 
-# Always try to find NetCDF as it's used by standalone writer
-if(NOT NetCDF_FOUND)
-  find_package(PkgConfig QUIET)
-  if(PKG_CONFIG_FOUND)
-    pkg_check_modules(NETCDF QUIET netcdf)
+# NetCDF Discovery
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+  pkg_check_modules(NETCDF QUIET netcdf)
+endif()
+
+if(NOT NETCDF_FOUND)
+  find_path(NetCDF_INCLUDE_DIR netcdf.h)
+  find_library(NetCDF_LIBRARY netcdf)
+  if(NetCDF_INCLUDE_DIR AND NetCDF_LIBRARY)
+    set(NETCDF_FOUND TRUE)
+    set(NETCDF_LIBRARIES ${NetCDF_LIBRARY})
+    set(NETCDF_INCLUDE_DIRS ${NetCDF_INCLUDE_DIR})
   endif()
-  if(NETCDF_FOUND)
-    set(NetCDF_ROOT ${NETCDF_PREFIX})
-  else()
-    find_path(NetCDF_INCLUDE_DIR netcdf.h)
-    find_library(NetCDF_LIBRARY netcdf)
-    if(NetCDF_INCLUDE_DIR AND NetCDF_LIBRARY)
-      set(NetCDF_FOUND TRUE)
-      get_filename_component(NetCDF_ROOT "${NetCDF_INCLUDE_DIR}/.." ABSOLUTE)
-    endif()
-  endif()
+endif()
+
+if(NETCDF_FOUND)
+  message(STATUS "Found NetCDF: ${NETCDF_LIBRARIES}")
 endif()
 
 include(FetchContent)
@@ -152,15 +154,12 @@ if(CECE_ENABLE_NUOPC)
   find_root_by_file(PIO_ROOT "pio.h")
 
   if(NetCDF_ROOT)
-    set(NetCDF_FOUND TRUE)
     set(ENV{NetCDF_ROOT} "${NetCDF_ROOT}")
   endif()
   if(NetCDFF_ROOT)
-    set(NetCDFF_FOUND TRUE)
     set(ENV{NetCDFF_ROOT} "${NetCDFF_ROOT}")
   endif()
   if(PIO_ROOT)
-    set(PIO_FOUND TRUE)
     set(ENV{PIO_ROOT} "${PIO_ROOT}")
   endif()
 else()
@@ -301,10 +300,10 @@ if(CECE_HAS_FORTRAN AND CECE_ENABLE_NUOPC)
   target_link_libraries(cece PUBLIC tide)
 endif()
 
-if(NetCDF_ROOT)
-  if(EXISTS "${NetCDF_ROOT}/lib/libnetcdf.so")
-    target_link_libraries(cece PUBLIC "${NetCDF_ROOT}/lib/libnetcdf.so")
-  endif()
+if(NETCDF_FOUND)
+  target_link_libraries(cece PUBLIC ${NETCDF_LIBRARIES})
+  target_include_directories(cece PUBLIC ${NETCDF_INCLUDE_DIRS})
+  target_compile_definitions(cece PRIVATE CECE_HAS_NETCDF)
 endif()
 
 if(MPI_FOUND)
@@ -317,12 +316,13 @@ enable_testing()
 
 if(CECE_ENABLE_NUOPC)
   add_executable(test_driver_configuration tests/test_driver_configuration.cpp)
-  target_link_libraries(test_driver_configuration PRIVATE cece GTest::gtest_main)
+  target_link_libraries(test_driver_configuration PRIVATE cece
+                                                          GTest::gtest_main)
 
   add_executable(test_driver_config_validation
                  tests/test_driver_config_validation.cpp)
-  target_link_libraries(test_driver_config_validation PRIVATE cece iso8601_utils
-                                                              GTest::gtest_main)
+  target_link_libraries(test_driver_config_validation
+                        PRIVATE cece iso8601_utils GTest::gtest_main)
 endif()
 
 add_executable(test_driver_clock_management
@@ -436,7 +436,8 @@ if(CECE_ENABLE_NUOPC)
   endif()
 
   # Unit tests for field pointer passing (Requirement R5)
-  add_executable(test_field_pointer_passing tests/test_field_pointer_passing.cpp)
+  add_executable(test_field_pointer_passing
+                 tests/test_field_pointer_passing.cpp)
   if(CECE_HAS_FORTRAN AND TARGET test_helpers)
     target_link_libraries(test_field_pointer_passing PRIVATE cece test_helpers
                                                              GTest::gtest_main)
