@@ -179,16 +179,36 @@ link_directories("{yaml_rel}")
             suite_info_content = f.read()
 
         if "SCM_GFS_v16_CECE" not in suite_info_content:
-            # We clone the GFS_v16 entry
-            if "'SCM_GFS_v16'" in suite_info_content:
-                # Find the end of the GFS_v16 entry
-                match = re.search(r"'SCM_GFS_v16'\s*:\s*{[^}]*}", suite_info_content)
-                if match:
-                    gfs_entry = match.group(0)
-                    cece_entry = gfs_entry.replace("SCM_GFS_v16", "SCM_GFS_v16_CECE")
-                    suite_info_content = suite_info_content.replace(
-                        gfs_entry, gfs_entry + ",\n    " + cece_entry
-                    )
+            # Use regex to find the SCM_GFS_v16 entry
+            # It looks like 'SCM_GFS_v16' : { ... } or "SCM_GFS_v16" : { ... }
+            match = re.search(r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)", suite_info_content)
+            if match:
+                start_idx = match.start()
+                brace_start = suite_info_content.find("{", start_idx)
+                if brace_start != -1:
+                    brace_count = 0
+                    end_idx = -1
+                    for i in range(brace_start, len(suite_info_content)):
+                        if suite_info_content[i] == "{":
+                            brace_count += 1
+                        elif suite_info_content[i] == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_idx = i + 1
+                                break
+
+                    if end_idx != -1:
+                        gfs_entry = suite_info_content[start_idx:end_idx]
+                        cece_entry = gfs_entry.replace(
+                            "SCM_GFS_v16", "SCM_GFS_v16_CECE"
+                        )
+                        # Insert after the GFS v16 entry
+                        suite_info_content = (
+                            suite_info_content[:end_idx]
+                            + ",\n    "
+                            + cece_entry
+                            + suite_info_content[end_idx:]
+                        )
 
             with open(suite_info_path, "w") as f:
                 f.write(suite_info_content)
