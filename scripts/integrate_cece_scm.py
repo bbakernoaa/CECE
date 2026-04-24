@@ -12,51 +12,54 @@ def integrate(scm_root, cece_root_relative_to_scm):
 
     # 1. Update ccpp_prebuild_config.py
     config_path = os.path.join(scm_root, "ccpp", "config", "ccpp_prebuild_config.py")
-    with open(config_path, "r") as f:
-        content = f.read()
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            content = f.read()
 
-    # Add CECE state to VARIABLE_DEFINITION_FILES
-    cece_state_file = os.path.join(cece_src_relative, "cece_ccpp_state.F90")
-    if cece_state_file not in content:
-        content = content.replace(
-            "VARIABLE_DEFINITION_FILES = [",
-            f"VARIABLE_DEFINITION_FILES = [\n    '{cece_state_file}',",
-        )
+        # Add CECE state to VARIABLE_DEFINITION_FILES
+        cece_state_file = os.path.join(cece_src_relative, "cece_ccpp_state.F90")
+        if cece_state_file not in content:
+            content = content.replace(
+                "VARIABLE_DEFINITION_FILES = [",
+                f"VARIABLE_DEFINITION_FILES = [\n    '{cece_state_file}',",
+            )
 
-    # Add CECE to TYPEDEFS_NEW_METADATA
-    if "'cece_ccpp_state' :" not in content:
-        content = content.replace(
-            "TYPEDEFS_NEW_METADATA = {",
-            "TYPEDEFS_NEW_METADATA = {\n    'cece_ccpp_state' : {\n        'cece_ccpp_state' : '',\n    },",
-        )
+        # Add CECE to TYPEDEFS_NEW_METADATA
+        if "'cece_ccpp_state' :" not in content:
+            content = content.replace(
+                "TYPEDEFS_NEW_METADATA = {",
+                "TYPEDEFS_NEW_METADATA = {\n    'cece_ccpp_state' : {\n        'cece_ccpp_state' : '',\n    },",
+            )
 
-    # Add CECE schemes to SCHEME_FILES
-    cece_schemes = [
-        "cece_ccpp_dms.F90",
-        "cece_ccpp_dust.F90",
-        "cece_ccpp_example.F90",
-        "cece_ccpp_fengsha.F90",
-        "cece_ccpp_ginoux.F90",
-        "cece_ccpp_k14.F90",
-        "cece_ccpp_lightning.F90",
-        "cece_ccpp_megan.F90",
-        "cece_ccpp_sea_salt.F90",
-        "cece_ccpp_soil_nox.F90",
-        "cece_ccpp_stacking.F90",
-        "cece_ccpp_volcano.F90",
-    ]
+        # Add CECE schemes to SCHEME_FILES
+        cece_schemes = [
+            "cece_ccpp_dms.F90",
+            "cece_ccpp_dust.F90",
+            "cece_ccpp_example.F90",
+            "cece_ccpp_fengsha.F90",
+            "cece_ccpp_ginoux.F90",
+            "cece_ccpp_k14.F90",
+            "cece_ccpp_lightning.F90",
+            "cece_ccpp_megan.F90",
+            "cece_ccpp_sea_salt.F90",
+            "cece_ccpp_soil_nox.F90",
+            "cece_ccpp_stacking.F90",
+            "cece_ccpp_volcano.F90",
+        ]
 
-    scheme_paths = [os.path.join(cece_src_relative, s) for s in cece_schemes]
-    scheme_block = "\n".join([f"    '{s}'," for s in scheme_paths])
+        scheme_paths = [os.path.join(cece_src_relative, s) for s in cece_schemes]
+        scheme_block = "\n".join([f"    '{s}'," for s in scheme_paths])
 
-    if scheme_paths[0] not in content:
-        content = content.replace(
-            "SCHEME_FILES = [", f"SCHEME_FILES = [\n{scheme_block}"
-        )
+        if scheme_paths[0] not in content:
+            content = content.replace(
+                "SCHEME_FILES = [", f"SCHEME_FILES = [\n{scheme_block}"
+            )
 
-    with open(config_path, "w") as f:
-        f.write(content)
-    print(f"Updated {config_path}")
+        with open(config_path, "w") as f:
+            f.write(content)
+        print(f"Updated {config_path}")
+    else:
+        print(f"CRITICAL: {config_path} not found")
 
     # 2. Update SCM CMakeLists.txt to link CECE
     cmake_path = os.path.join(scm_root, "scm", "src", "CMakeLists.txt")
@@ -81,6 +84,8 @@ def integrate(scm_root, cece_root_relative_to_scm):
 
             # Convert to relative paths from scm/src
             def to_cmake_path(abs_path):
+                if not abs_path:
+                    return ""
                 return abs_path.replace(scm_root, "${CMAKE_SOURCE_DIR}/../..")
 
             libcece_cmake = to_cmake_path(libcece_path)
@@ -178,41 +183,54 @@ include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
 
     # 5. Update suite_info.py to include defaults for the new suite
     suite_info_path = os.path.join(scm_root, "scm", "etc", "suite_info.py")
+    print(f"Checking for {suite_info_path}")
     if os.path.exists(suite_info_path):
         with open(suite_info_path, "r") as f:
             suite_info_content = f.read()
 
         if "SCM_GFS_v16_CECE" not in suite_info_content:
-            # Use regex to find the SCM_GFS_v16 entry
-            match = re.search(r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)", suite_info_content)
-            if match:
-                start_idx = match.start()
-                brace_start = suite_info_content.find("{", start_idx)
-                if brace_start != -1:
-                    brace_count = 0
-                    end_idx = -1
-                    for i in range(brace_start, len(suite_info_content)):
-                        if suite_info_content[i] == "{":
-                            brace_count += 1
-                        elif suite_info_content[i] == "}":
-                            brace_count -= 1
-                            if brace_count == 0:
-                                end_idx = i + 1
-                                break
+            print("SCM_GFS_v16_CECE not found in suite_info.py, attempting to patch...")
+            # We look for a suite key that exists
+            base_suite = None
+            for key in ["SCM_GFS_v16", "GFS_v16", "SCM_GFS_v15p2"]:
+                if f"'{key}'" in suite_info_content or f'"{key}"' in suite_info_content:
+                    base_suite = key
+                    break
 
-                    if end_idx != -1:
-                        gfs_entry = suite_info_content[start_idx:end_idx]
-                        cece_entry = gfs_entry.replace(
-                            "SCM_GFS_v16", "SCM_GFS_v16_CECE"
-                        )
-                        # Insert after the GFS v16 entry
-                        suite_info_content = (
-                            suite_info_content[:end_idx]
-                            + ",\n    "
-                            + cece_entry
-                            + suite_info_content[end_idx:]
-                        )
-                        print("Cloned SCM_GFS_v16 entry to SCM_GFS_v16_CECE")
+            if base_suite:
+                print(f"Found base suite '{base_suite}' for cloning.")
+                # Using a safer regex that doesn't use nested f-string braces
+                pattern = r"(['\"]" + re.escape(base_suite) + r"['\"]\s*:\s*\{)"
+                match = re.search(pattern, suite_info_content)
+                if match:
+                    start_idx = match.start()
+                    brace_start = suite_info_content.find("{", start_idx)
+                    if brace_start != -1:
+                        brace_count = 0
+                        end_idx = -1
+                        for i in range(brace_start, len(suite_info_content)):
+                            if suite_info_content[i] == "{":
+                                brace_count += 1
+                            elif suite_info_content[i] == "}":
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end_idx = i + 1
+                                    break
+
+                        if end_idx != -1:
+                            base_entry = suite_info_content[start_idx:end_idx]
+                            # Only replace the first occurrence (the key)
+                            cece_entry = base_entry.replace(
+                                base_suite, "SCM_GFS_v16_CECE", 1
+                            )
+                            # Insert after the base entry
+                            suite_info_content = (
+                                suite_info_content[:end_idx]
+                                + ",\n    "
+                                + cece_entry
+                                + suite_info_content[end_idx:]
+                            )
+                            print(f"Cloned {base_suite} entry to SCM_GFS_v16_CECE")
 
             with open(suite_info_path, "w") as f:
                 f.write(suite_info_content)
