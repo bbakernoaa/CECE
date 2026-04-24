@@ -6,6 +6,8 @@ import re
 def integrate(scm_root, cece_root_relative_to_scm):
     scm_root = os.path.abspath(scm_root)
     cece_src_relative = os.path.join(cece_root_relative_to_scm, "src", "ccpp")
+    cece_abs_path = os.path.join(scm_root, cece_root_relative_to_scm)
+    cece_build_dir = os.path.join(cece_abs_path, "build")
 
     # 1. Update ccpp_prebuild_config.py
     config_path = os.path.join(scm_root, "ccpp", "config", "ccpp_prebuild_config.py")
@@ -62,13 +64,26 @@ def integrate(scm_root, cece_root_relative_to_scm):
             cmake_content = f.read()
 
         if "CECE Integration" not in cmake_content:
+            # Dynamically find dependency paths
+            kokkos_lib_dir = ""
+            yaml_lib_dir = ""
+
+            # CECE uses FetchContent, so we look in build/_deps
+            for root, dirs, files in os.walk(cece_build_dir):
+                if "libkokkoscore.a" in files:
+                    kokkos_lib_dir = root
+                if "libyaml-cpp.a" in files:
+                    yaml_lib_dir = root
+
             insertion = f"""
 # CECE Integration
-set(CECE_DIR "${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build")
+set(CECE_BUILD_DIR "${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build")
 include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/include)
-include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build/_deps/kokkos-src/core/src)
-include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build/_deps/yaml-cpp-src/include)
-link_directories(${{CECE_DIR}})
+include_directories(${{CECE_BUILD_DIR}}/_deps/kokkos-src/core/src)
+include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
+link_directories(${{CECE_BUILD_DIR}})
+link_directories("{kokkos_lib_dir.replace(cece_abs_path, '${CMAKE_SOURCE_DIR}/../../' + cece_root_relative_to_scm)}")
+link_directories("{yaml_lib_dir.replace(cece_abs_path, '${CMAKE_SOURCE_DIR}/../../' + cece_root_relative_to_scm)}")
 """
             cmake_content = cmake_content.replace(
                 "project(scm", insertion + "\nproject(scm"
