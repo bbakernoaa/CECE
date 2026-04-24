@@ -4,8 +4,8 @@ module cece_ccpp_k14
     cece_ccpp_core_finalize, cece_ccpp_core_init, cece_ccpp_get_export_field, &
     cece_ccpp_scheme_finalize, cece_ccpp_scheme_init, cece_ccpp_scheme_run, &
     cece_ccpp_set_import_field, cece_ccpp_sync_export_to_host, &
-    cece_ccpp_sync_import_to_devic_ &
-    &e
+    &
+    &cece_ccpp_sync_import_to_dev
   implicit none
   private
   public :: cece_ccpp_k14_init, cece_ccpp_k14_run, &
@@ -195,8 +195,8 @@ contains
     integer(c_int) :: rc
     errmsg = ''
     errflg = 0
-    call cece_ccpp_sync_import_to_devic_ &
-    &e(g_cece_data_ptr, rc)
+    call &
+    &cece_ccpp_sync_import_to_dev(g_cece_data_ptr, rc)
     if (rc /= 0) then; errflg = 1; errmsg = 'k14_timestep_init: sync failed'; return; end if
   end subroutine
 
