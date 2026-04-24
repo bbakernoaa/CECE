@@ -4,6 +4,7 @@ import re
 
 
 def integrate(scm_root, cece_root_relative_to_scm):
+    print(f"Integrating CECE from {cece_root_relative_to_scm} into SCM at {scm_root}")
     scm_root = os.path.abspath(scm_root)
     cece_src_relative = os.path.join(cece_root_relative_to_scm, "src", "ccpp")
     cece_abs_path = os.path.join(scm_root, cece_root_relative_to_scm)
@@ -64,24 +65,27 @@ def integrate(scm_root, cece_root_relative_to_scm):
             cmake_content = f.read()
 
         if "CECE Integration" not in cmake_content:
-            # Dynamically find dependency paths
-            kokkos_lib_dir = ""
-            yaml_lib_dir = ""
+            # Dynamically find library files
+            libcece_path = ""
+            libkokkos_path = ""
+            libyaml_path = ""
 
-            # CECE uses FetchContent, so we look in build/_deps
-            for root, dirs, files in os.walk(cece_build_dir):
-                if "libkokkoscore.a" in files:
-                    kokkos_lib_dir = root
-                if "libyaml-cpp.a" in files:
-                    yaml_lib_dir = root
+            for root, _, files in os.walk(cece_build_dir):
+                for f in files:
+                    if f == "libcece.so":
+                        libcece_path = os.path.join(root, f)
+                    if f == "libkokkoscore.a":
+                        libkokkos_path = os.path.join(root, f)
+                    if f == "libyaml-cpp.a":
+                        libyaml_path = os.path.join(root, f)
 
-            # Convert absolute paths to CMake-relative paths
-            kokkos_rel = kokkos_lib_dir.replace(
-                cece_abs_path, "${CMAKE_SOURCE_DIR}/../../" + cece_root_relative_to_scm
-            )
-            yaml_rel = yaml_lib_dir.replace(
-                cece_abs_path, "${CMAKE_SOURCE_DIR}/../../" + cece_root_relative_to_scm
-            )
+            # Convert to relative paths from scm/src
+            def to_cmake_path(abs_path):
+                return abs_path.replace(scm_root, "${CMAKE_SOURCE_DIR}/../..")
+
+            libcece_cmake = to_cmake_path(libcece_path)
+            libkokkos_cmake = to_cmake_path(libkokkos_path)
+            libyaml_cmake = to_cmake_path(libyaml_path)
 
             insertion = f"""
 # CECE Integration
@@ -89,17 +93,15 @@ set(CECE_BUILD_DIR "${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/buil
 include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/include)
 include_directories(${{CECE_BUILD_DIR}}/_deps/kokkos-src/core/src)
 include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
-link_directories(${{CECE_BUILD_DIR}})
-link_directories("{kokkos_rel}")
-link_directories("{yaml_rel}")
 """
             cmake_content = cmake_content.replace(
                 "project(scm", insertion + "\nproject(scm"
             )
 
+            # Link using full paths to avoid library search issues
             cmake_content = cmake_content.replace(
                 "TARGET_LINK_LIBRARIES(scm ccpp_physics)",
-                "TARGET_LINK_LIBRARIES(scm ccpp_physics cece kokkoscore yaml-cpp)",
+                f'TARGET_LINK_LIBRARIES(scm ccpp_physics "{libcece_cmake}" "{libkokkos_cmake}" "{libyaml_cmake}")',
             )
 
         with open(cmake_path, "w") as f:
@@ -108,11 +110,12 @@ link_directories("{yaml_rel}")
 
     # 3. Add cece_configuration_file_path to scm_type_defs.F90 to satisfy CCPP dependencies
     scm_type_defs_meta = os.path.join(scm_root, "scm", "src", "scm_type_defs.meta")
-    with open(scm_type_defs_meta, "r") as f:
-        meta_content = f.read()
+    if os.path.exists(scm_type_defs_meta):
+        with open(scm_type_defs_meta, "r") as f:
+            meta_content = f.read()
 
-    if "cece_configuration_file_path" not in meta_content:
-        new_var_meta = """
+        if "cece_configuration_file_path" not in meta_content:
+            new_var_meta = """
 [cece_config_path]
   standard_name = cece_configuration_file_path
   long_name = path to CECE YAML configuration file
@@ -122,32 +125,33 @@ link_directories("{yaml_rel}")
   kind = len=512
   intent = inout
 """
-        parts = re.split(r"(\[ccpp-arg-table\])", meta_content)
-        for i in range(len(parts)):
-            if parts[i] == "[ccpp-arg-table]" and i + 1 < len(parts):
-                if "name = physics_type" in parts[i + 1]:
-                    parts[i + 1] = parts[i + 1].replace(
-                        "type = ddt", "type = ddt" + new_var_meta
-                    )
-                    break
-        meta_content = "".join(parts)
+            parts = re.split(r"(\[ccpp-arg-table\])", meta_content)
+            for i in range(len(parts)):
+                if parts[i] == "[ccpp-arg-table]" and i + 1 < len(parts):
+                    if "name = physics_type" in parts[i + 1]:
+                        parts[i + 1] = parts[i + 1].replace(
+                            "type = ddt", "type = ddt" + new_var_meta
+                        )
+                        break
+            meta_content = "".join(parts)
 
-        with open(scm_type_defs_meta, "w") as f:
-            f.write(meta_content)
-        print(f"Updated {scm_type_defs_meta}")
+            with open(scm_type_defs_meta, "w") as f:
+                f.write(meta_content)
+            print(f"Updated {scm_type_defs_meta}")
 
     scm_type_defs_f90 = os.path.join(scm_root, "scm", "src", "scm_type_defs.F90")
-    with open(scm_type_defs_f90, "r") as f:
-        f90_content = f.read()
+    if os.path.exists(scm_type_defs_f90):
+        with open(scm_type_defs_f90, "r") as f:
+            f90_content = f.read()
 
-    if "cece_config_path" not in f90_content:
-        f90_content = f90_content.replace(
-            "type physics_type",
-            "type physics_type\n    character(len=512) :: cece_config_path = 'cece_config.yaml'",
-        )
-        with open(scm_type_defs_f90, "w") as f:
-            f.write(f90_content)
-        print(f"Updated {scm_type_defs_f90}")
+        if "cece_config_path" not in f90_content:
+            f90_content = f90_content.replace(
+                "type physics_type",
+                "type physics_type\n    character(len=512) :: cece_config_path = 'cece_config.yaml'",
+            )
+            with open(scm_type_defs_f90, "w") as f:
+                f.write(f90_content)
+            print(f"Updated {scm_type_defs_f90}")
 
     # 4. Patch scm.F90 to call cece_emissions group
     scm_f90_path = os.path.join(scm_root, "scm", "src", "scm.F90")
@@ -180,7 +184,6 @@ link_directories("{yaml_rel}")
 
         if "SCM_GFS_v16_CECE" not in suite_info_content:
             # Use regex to find the SCM_GFS_v16 entry
-            # It looks like 'SCM_GFS_v16' : { ... } or "SCM_GFS_v16" : { ... }
             match = re.search(r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)", suite_info_content)
             if match:
                 start_idx = match.start()
@@ -209,10 +212,13 @@ link_directories("{yaml_rel}")
                             + cece_entry
                             + suite_info_content[end_idx:]
                         )
+                        print("Cloned SCM_GFS_v16 entry to SCM_GFS_v16_CECE")
 
             with open(suite_info_path, "w") as f:
                 f.write(suite_info_content)
             print(f"Updated {suite_info_path}")
+    else:
+        print(f"WARNING: {suite_info_path} not found")
 
 
 if __name__ == "__main__":
