@@ -191,59 +191,70 @@ include_directories("${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include")
 
             if "SCM_GFS_v16_CECE" in suite_info_content:
                 print(f"DEBUG: SCM_GFS_v16_CECE already in {suite_info_path}")
-                continue
-
-            print(f"DEBUG: Patching {suite_info_path}")
-
-            # Format A: suite_list.append(suite('NAME', ...))
-            match = re.search(
-                r"suite_list\.append\(suite\('SCM_GFS_v16'.*?\)\)", suite_info_content
-            )
-            if match:
-                gfs_line = match.group(0)
-                cece_line = gfs_line.replace("SCM_GFS_v16", "SCM_GFS_v16_CECE")
-                suite_info_content = suite_info_content.replace(
-                    gfs_line, gfs_line + "\n" + cece_line
-                )
-                print("DEBUG: Cloned SCM_GFS_v16 in suite_list (List format)")
             else:
-                # Format B: suites = { 'NAME': { ... }, }
-                pattern = r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)"
-                match = re.search(pattern, suite_info_content)
-                if match:
-                    start_idx = match.start()
-                    brace_start = suite_info_content.find("{", start_idx)
-                    if brace_start != -1:
-                        brace_count = 0
-                        end_idx = -1
-                        for i in range(brace_start, len(suite_info_content)):
-                            if suite_info_content[i] == "{":
-                                brace_count += 1
-                            elif suite_info_content[i] == "}":
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end_idx = i + 1
-                                    break
-                        if end_idx != -1:
-                            base_entry = suite_info_content[start_idx:end_idx]
-                            cece_entry = base_entry.replace(
-                                "SCM_GFS_v16", "SCM_GFS_v16_CECE", 1
-                            )
-                            suite_info_content = (
-                                suite_info_content[:end_idx]
-                                + ",\n    "
-                                + cece_entry
-                                + suite_info_content[end_idx:]
-                            )
-                            print(
-                                "DEBUG: Cloned SCM_GFS_v16 in suites dict (Dict format)"
-                            )
+                print(f"DEBUG: Patching {suite_info_path}")
 
-            with open(suite_info_path, "w") as f:
-                f.write(suite_info_content)
-            print(f"Updated {suite_info_path}")
-    else:
-        print("Done processing suite_info.py locations")
+                # Format A: suite_list.append(suite('NAME', ...))
+                match = re.search(
+                    r"suite_list\.append\(suite\('SCM_GFS_v16'.*?\)\)",
+                    suite_info_content,
+                )
+                if match:
+                    gfs_line = match.group(0)
+                    # SCM_GFS_v16_CECE
+                    cece_line = gfs_line.replace("SCM_GFS_v16", "SCM_GFS_v16_CECE")
+                    # SCM_GFS_v16_CECE_ps
+                    cece_ps_line = cece_line.replace(
+                        "SCM_GFS_v16_CECE", "SCM_GFS_v16_CECE_ps"
+                    )
+
+                    suite_info_content = suite_info_content.replace(
+                        gfs_line, gfs_line + "\n" + cece_line + "\n" + cece_ps_line
+                    )
+                    print("DEBUG: Cloned SCM_GFS_v16 in suite_list (List format)")
+                else:
+                    # Format B: suites = { 'NAME': { ... }, }
+                    pattern = r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)"
+                    match = re.search(pattern, suite_info_content)
+                    if match:
+                        start_idx = match.start()
+                        brace_start = suite_info_content.find("{", start_idx)
+                        if brace_start != -1:
+                            brace_count = 0
+                            end_idx = -1
+                            for i in range(brace_start, len(suite_info_content)):
+                                if suite_info_content[i] == "{":
+                                    brace_count += 1
+                                elif suite_info_content[i] == "}":
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        end_idx = i + 1
+                                        break
+                            if end_idx != -1:
+                                base_entry = suite_info_content[start_idx:end_idx]
+                                cece_entry = base_entry.replace(
+                                    "SCM_GFS_v16", "SCM_GFS_v16_CECE", 1
+                                )
+                                cece_ps_entry = cece_entry.replace(
+                                    "SCM_GFS_v16_CECE", "SCM_GFS_v16_CECE_ps", 1
+                                )
+                                suite_info_content = (
+                                    suite_info_content[:end_idx]
+                                    + ",\n    "
+                                    + cece_entry
+                                    + ",\n    "
+                                    + cece_ps_entry
+                                    + suite_info_content[end_idx:]
+                                )
+                                print(
+                                    "DEBUG: Cloned SCM_GFS_v16 in suites dict (Dict format)"
+                                )
+
+                with open(suite_info_path, "w") as f:
+                    f.write(suite_info_content)
+                print(f"Updated {suite_info_path}")
+        else:
+            print(f"DEBUG: {suite_info_path} not found")
 
 
 if __name__ == "__main__":
