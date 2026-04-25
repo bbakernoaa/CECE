@@ -243,7 +243,7 @@ include_directories("${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include")
                 f.write(suite_info_content)
             print(f"Updated {suite_info_path}")
     else:
-        print(f"Done processing suite_info.py locations")
+        print("Done processing suite_info.py locations")
 
 
 if __name__ == "__main__":
