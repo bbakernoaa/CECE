@@ -1,0 +1,21 @@
+# Minimal CECE configuration for CCPP SCM integration
+driver:
+  start_time: "2020-01-01T00:00:00"
+  end_time: "2020-01-01T23:00:00"
+  timestep_seconds: 600
+
+grid:
+  nx: 1
+  ny: 1
+  nz: 64
+
+meteorology: {}
+
+species: {}
+
+cece_data:
+  streams: []
+
+diagnostics:
+  output_interval_seconds: 3600
+  variables: []

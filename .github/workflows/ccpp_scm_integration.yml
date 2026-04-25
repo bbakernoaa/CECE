@@ -41,6 +41,32 @@ jobs:
           # Move CECE into SCM tree
           mv cece ccpp-scm/cece
 
+          # Create SCM config for CECE in scm/bin where model runs
+          mkdir -p ccpp-scm/scm/bin
+          cat > ccpp-scm/scm/bin/cece_config_scm.yaml <<CONFIG
+          # Minimal CECE configuration for CCPP SCM integration
+          driver:
+            start_time: "2020-01-01T00:00:00"
+            end_time: "2020-01-01T23:00:00"
+            timestep_seconds: 600
+
+          grid:
+            nx: 1
+            ny: 1
+            nz: 64
+
+          meteorology: {}
+
+          species: {}
+
+          cece_data:
+            streams: []
+
+          diagnostics:
+            output_interval_seconds: 3600
+            variables: []
+          CONFIG
+
           # Run integration script to patch SCM with CECE metadata and schemes
           python3 ccpp-scm/cece/scripts/integrate_cece_scm.py ccpp-scm cece
 
@@ -56,7 +82,7 @@ jobs:
       - name: Configure and Run CCPP Prebuild
         run: |
           cd ${SCM_ROOT}/scm
-          mkdir bin && cd bin
+          mkdir -p bin && cd bin
           # Create directory for snippets to avoid prebuild failure
           mkdir -p ccpp/physics/physics
           # Run cmake which triggers ccpp_prebuild.py using the patched config
@@ -67,7 +93,6 @@ jobs:
       - name: Verify Cap Generation
         run: |
           # Verify that the caps for the CECE-integrated suite were generated correctly
-          # This confirms that the metadata mapping and integration script worked.
           if [ -f "${SCM_ROOT}/scm/bin/ccpp/physics/physics/ccpp_scm_gfs_v16_cece_cece_emissions_cap.F90" ]; then
             echo "SUCCESS: CCPP Cap for cece_emissions group in SCM_GFS_v16_CECE generated."
           else
@@ -79,8 +104,6 @@ jobs:
       - name: Build Integrated SCM
         run: |
           cd ${SCM_ROOT}/scm/bin
-          # Attempt to build. We expect success on infrastructure but maybe failure on linking
-          # if CECE symbols are missing in the SCM's main loop.
           make -j$(nproc)
         continue-on-error: true
 

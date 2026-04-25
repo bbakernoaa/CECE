@@ -95,9 +95,9 @@ def integrate(scm_root, cece_root_relative_to_scm):
             insertion = f"""
 # CECE Integration
 set(CECE_BUILD_DIR "${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/build")
-include_directories(${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/include)
-include_directories(${{CECE_BUILD_DIR}}/_deps/kokkos-src/core/src)
-include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
+include_directories("${{CMAKE_SOURCE_DIR}}/../../{cece_root_relative_to_scm}/include")
+include_directories("${{CECE_BUILD_DIR}}/_deps/kokkos-src/core/src")
+include_directories("${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include")
 """
             cmake_content = cmake_content.replace(
                 "project(scm", insertion + "\nproject(scm"
@@ -152,7 +152,7 @@ include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
         if "cece_config_path" not in f90_content:
             f90_content = f90_content.replace(
                 "type physics_type",
-                "type physics_type\n    character(len=512) :: cece_config_path = 'cece_config.yaml'",
+                "type physics_type\n    character(len=512) :: cece_config_path = 'cece_config_scm.yaml'",
             )
             with open(scm_type_defs_f90, "w") as f:
                 f.write(f90_content)
@@ -208,9 +208,8 @@ include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
                 print("DEBUG: Cloned SCM_GFS_v16 in suite_list (List format)")
             else:
                 # Format B: suites = { 'NAME': { ... }, }
-                match = re.search(
-                    r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)", suite_info_content
-                )
+                pattern = r"(['\"]SCM_GFS_v16['\"]\s*:\s*\{)"
+                match = re.search(pattern, suite_info_content)
                 if match:
                     start_idx = match.start()
                     brace_start = suite_info_content.find("{", start_idx)
@@ -243,6 +242,8 @@ include_directories(${{CECE_BUILD_DIR}}/_deps/yaml-cpp-src/include)
             with open(suite_info_path, "w") as f:
                 f.write(suite_info_content)
             print(f"Updated {suite_info_path}")
+    else:
+        print(f"Done processing suite_info.py locations")
 
 
 if __name__ == "__main__":
