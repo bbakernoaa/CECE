@@ -41,4 +41,3 @@ primary = "indigo"
 accent = "indigo"
 toggle.icon = "material/brightness-4"
 toggle.name = "Switch to light mode"
-
