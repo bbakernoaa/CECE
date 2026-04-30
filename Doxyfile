@@ -42,7 +42,7 @@ TAB_SIZE               = 4
 ALIASES                =
 
 # Output format
-GENERATE_HTML          = YES
+GENERATE_HTML          = NO
 HTML_OUTPUT            = html
 HTML_FILE_EXTENSION    = .html
 HTML_HEADER            =
