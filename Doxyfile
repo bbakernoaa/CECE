@@ -70,7 +70,7 @@ GENERATE_AUTOGEN_DEF   = NO
 GENERATE_HTML          = NO
 
 # Diagram generation
-HAVE_DOT               = YES
+HAVE_DOT               = NO
 DOT_NUM_THREADS        = 4
 DOT_FONTNAME           = Helvetica
 DOT_FONTSIZE           = 10
