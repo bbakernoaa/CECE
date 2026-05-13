@@ -2,7 +2,7 @@ name: Run all CI tests
 on:
   push:
     branches: [main, develop]
-  pull_request:
+  pull_request: [main]
   workflow_dispatch:
 
 jobs:
