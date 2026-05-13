@@ -16,11 +16,11 @@ cece_data_streams.yaml
 
 # OS and IDE files
 .DS_Store
+.vscode/settings.json
 
 # Generated documentation
 docs/api/
 docs/api.md
-.vscode/settings.json
 
 # Python cache
 __pycache__/
