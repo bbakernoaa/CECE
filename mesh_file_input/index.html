@@ -19,11 +19,11 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="zensical-0.0.40">
+      <meta name="generator" content="zensical-0.0.43">
     
     
       
-        <title>Mesh File Input Support - CECE Documentation</title>
+        <title>GRIDSPEC File Input Support - CECE Documentation</title>
       
     
     
@@ -79,7 +79,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#mesh-file-input-support" class="md-skip">
+        <a href="#gridspec-file-input-support" class="md-skip">
           Skip to content
         </a>
       
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Mesh File Input Support
+              GRIDSPEC File Input Support
             
           </span>
         </div>
@@ -502,6 +502,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#generating-a-gridspec-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Generating a GRIDSPEC File
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gridmesh-selection-logic" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -513,82 +524,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mesh-file-requirements" class="md-nav__link">
+  <a href="#gridspec-file-requirements" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Mesh File Requirements
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validation
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#error-handling" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Error Handling
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Error Handling">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#file-not-found" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        File Not Found
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#invalid-mesh-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Invalid Mesh Format
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#invalid-connectivity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Invalid Connectivity
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#logging" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Logging
+        GRIDSPEC File Requirements
       </span>
     </span>
   </a>
@@ -608,10 +547,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#using-a-mesh-file" class="md-nav__link">
+  <a href="#using-a-pre-generated-gridspec-file" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Using a Mesh File
+        Using a pre-generated GRIDSPEC file
       </span>
     </span>
   </a>
@@ -619,10 +558,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#generating-a-grid-default" class="md-nav__link">
+  <a href="#generating-a-grid-at-runtime-default" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Generating a Grid (Default)
+        Generating a grid at runtime (default)
       </span>
     </span>
   </a>
@@ -647,10 +586,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fortran-driver-standalone_nuopcsimple_driverf90" class="md-nav__link">
+  <a href="#c-config-struct-includecececece_confighpp" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Fortran Driver (standalone_nuopc/simple_driver.F90)
+        C++ config struct (<code>include/cece/cece_config.hpp</code>)
       </span>
     </span>
   </a>
@@ -658,10 +597,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#c-configuration-srccece_core_driver_configcpp" class="md-nav__link">
+  <a href="#c-accessor-srccece_core_field_helperscpp" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        C++ Configuration (src/cece_core_driver_config.cpp)
+        C accessor (<code>src/cece_core_field_helpers.cpp</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fortran-cap-srccece_capf90" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Fortran cap (<code>src/cece_cap.F90</code>)
       </span>
     </span>
   </a>
@@ -670,39 +620,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#requirements-satisfied" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Requirements Satisfied
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#testing" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Testing
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#future-enhancements" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Future Enhancements
-      </span>
-    </span>
-  </a>
   
 </li>
       
@@ -729,138 +646,90 @@
                 
                   
 
-<h1 id="mesh-file-input-support">Mesh File Input Support<a class="headerlink" href="#mesh-file-input-support" title="Permanent link">&para;</a></h1>
+<h1 id="gridspec-file-input-support">GRIDSPEC File Input Support<a class="headerlink" href="#gridspec-file-input-support" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The CECE driver supports reading pre-existing ESMF mesh files for spatial discretization. This feature allows users to use complex geometries or pre-computed meshes instead of generating simple structured grids.</p>
+<p>The CECE driver supports loading a pre-generated ESMF GRIDSPEC NetCDF file for spatial discretization.
+This avoids constructing the structured grid at runtime, which can be slow for large grids (e.g., global 0.1° resolution).</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<p>Mesh file input is configured in the CECE configuration file under the <code>driver</code> section:</p>
+<p>Set <code>gridspec_file</code> under the <code>driver:</code> section of the CECE YAML config:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">driver</span><span class="p">:</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="c1"># Simulation timing</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="c1"># Use pre-existing ESMF mesh file</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/mesh.nc&quot;</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="c1"># Grid dimensions (ignored when mesh_file is specified)</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">360</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="c1"># Load pre-generated ESMF GRIDSPEC file (optional)</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/grid.nc&quot;</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="c1"># Grid dimensions — still used for the TIDE regridding mesh</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">lon_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-180.0</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">lon_max</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">180.0</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">lat_min</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">-90.0</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">lat_max</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">90.0</span>
 </span></code></pre></div>
+<p>If <code>gridspec_file</code> is absent or empty the grid is generated at runtime from <code>driver.grid</code> as usual.</p>
+<h2 id="generating-a-gridspec-file">Generating a GRIDSPEC File<a class="headerlink" href="#generating-a-gridspec-file" title="Permanent link">&para;</a></h2>
+<p>Use the provided Python script:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>scripts/cece_make_gridspec.py<span class="w"> </span>cece_config.yaml<span class="w"> </span><span class="o">[</span>output.nc<span class="o">]</span>
+</span></code></pre></div>
+<p>If no output filename is given, one is auto-generated from the grid parameters, e.g.:
+<code>cece_grid_nx3600_ny1800_nz1_lonN180_180_latN90_90.nc</code></p>
+<p>Requirements: <code>pyyaml</code>, <code>netCDF4</code>, <code>numpy</code>.</p>
 <h2 id="gridmesh-selection-logic">Grid/Mesh Selection Logic<a class="headerlink" href="#gridmesh-selection-logic" title="Permanent link">&para;</a></h2>
-<p>The driver uses the following logic to determine whether to use a mesh file or generate a grid:</p>
 <ol>
-<li><strong>If <code>mesh_file</code> is specified and non-empty</strong>: Read the mesh from the file</li>
-<li><strong>If <code>mesh_file</code> is empty or absent</strong>: Generate a Gaussian grid based on <code>grid.nx</code> and <code>grid.ny</code></li>
+<li><strong>If <code>gridspec_file</code> is set</strong>: Load grid via <code>ESMF_GridCreate(filename=..., fileformat=ESMF_FILEFORMAT_GRIDSPEC)</code>; skip runtime grid generation.
+   A TIDE regridding mesh is still built from <code>driver.grid</code> parameters.</li>
+<li><strong>If <code>gridspec_file</code> is absent/empty</strong>: Generate structured grid from <code>driver.grid.nx</code>/<code>ny</code>/bounds as usual.</li>
 </ol>
-<h2 id="mesh-file-requirements">Mesh File Requirements<a class="headerlink" href="#mesh-file-requirements" title="Permanent link">&para;</a></h2>
-<p>ESMF mesh files must:</p>
+<h2 id="gridspec-file-requirements">GRIDSPEC File Requirements<a class="headerlink" href="#gridspec-file-requirements" title="Permanent link">&para;</a></h2>
+<p>The NetCDF file must follow CF conventions as written by <code>cece_make_gridspec.py</code>:</p>
 <ul>
-<li>Be in ESMF mesh format (NetCDF-based)</li>
-<li>Contain proper node/element connectivity</li>
-<li>Have at least one node and one element</li>
-<li>Be readable by <code>ESMF_MeshCreate(filename=...)</code></li>
+<li>Variables <code>lon</code> (dim <code>lon</code>) and <code>lat</code> (dim <code>lat</code>) with <code>units="degrees_east"</code>/<code>"degrees_north"</code></li>
+<li>Optional <code>lon_bnds</code> / <code>lat_bnds</code> for cell bounds</li>
+<li>Global attribute <code>Conventions: CF-1.8</code></li>
 </ul>
-<h2 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h2>
-<p>When a mesh file is specified, the driver performs the following validation:</p>
-<ol>
-<li><strong>File existence check</strong>: Verifies the file exists at the specified path</li>
-<li><strong>Format validation</strong>: Attempts to read the mesh using ESMF_MeshCreate</li>
-<li><strong>Connectivity validation</strong>: Checks that the mesh has nodes and elements</li>
-<li><strong>Dimension logging</strong>: Logs the mesh dimensions (nodes, elements, spatial dimension)</li>
-</ol>
-<p>If any validation step fails, the driver logs an error and exits with a non-zero status.</p>
-<h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
-<h3 id="file-not-found">File Not Found<a class="headerlink" href="#file-not-found" title="Permanent link">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ERROR: [simple_driver] Failed to read mesh from file: /path/to/mesh.nc (rc=67)
-</span></code></pre></div>
-<p><strong>Solution</strong>: Verify the mesh file path is correct and the file exists.</p>
-<h3 id="invalid-mesh-format">Invalid Mesh Format<a class="headerlink" href="#invalid-mesh-format" title="Permanent link">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ERROR: [simple_driver] Failed to read mesh from file: /path/to/mesh.nc (rc=...)
-</span></code></pre></div>
-<p><strong>Solution</strong>: Verify the file is in ESMF mesh format. Use ESMF utilities to validate the mesh file.</p>
-<h3 id="invalid-connectivity">Invalid Connectivity<a class="headerlink" href="#invalid-connectivity" title="Permanent link">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ERROR: [validate_mesh] Mesh has no nodes (nodeCount=0)
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>ERROR: [validate_mesh] Mesh has no elements (elementCount=0)
-</span></code></pre></div>
-<p><strong>Solution</strong>: Verify the mesh file contains valid node and element data.</p>
-<h2 id="logging">Logging<a class="headerlink" href="#logging" title="Permanent link">&para;</a></h2>
-<p>When using a mesh file, the driver logs:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>INFO: [simple_driver] Mesh file: /path/to/mesh.nc
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>INFO: [simple_driver] Reading mesh from file: /path/to/mesh.nc
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>INFO: [validate_mesh] Mesh validation passed
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>INFO: [log_mesh_info] Mesh nodes: 12345
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>INFO: [log_mesh_info] Mesh elements: 10000
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>INFO: [log_mesh_info] Mesh spatial dimension: 2
-</span></code></pre></div>
 <h2 id="example-configurations">Example Configurations<a class="headerlink" href="#example-configurations" title="Permanent link">&para;</a></h2>
-<h3 id="using-a-mesh-file">Using a Mesh File<a class="headerlink" href="#using-a-mesh-file" title="Permanent link">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">driver</span><span class="p">:</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/data/meshes/global_0.25deg.nc&quot;</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1440</span><span class="w">  </span><span class="c1"># Ignored when mesh_file is specified</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">720</span><span class="w">   </span><span class="c1"># Ignored when mesh_file is specified</span>
+<h3 id="using-a-pre-generated-gridspec-file">Using a pre-generated GRIDSPEC file<a class="headerlink" href="#using-a-pre-generated-gridspec-file" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">driver</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/data/grids/global_0.1deg.nc&quot;</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">lon_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-180.0</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">lon_max</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">180.0</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">lat_min</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">-90.0</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">lat_max</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">90.0</span>
 </span></code></pre></div>
-<h3 id="generating-a-grid-default">Generating a Grid (Default)<a class="headerlink" href="#generating-a-grid-default" title="Permanent link">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">driver</span><span class="p">:</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">  </span><span class="c1"># Empty or omit to generate grid</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">360</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
+<h3 id="generating-a-grid-at-runtime-default">Generating a grid at runtime (default)<a class="headerlink" href="#generating-a-grid-at-runtime-default" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">driver</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">360</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
 </span></code></pre></div>
 <h2 id="implementation-details">Implementation Details<a class="headerlink" href="#implementation-details" title="Permanent link">&para;</a></h2>
-<h3 id="fortran-driver-standalone_nuopcsimple_driverf90">Fortran Driver (standalone_nuopc/simple_driver.F90)<a class="headerlink" href="#fortran-driver-standalone_nuopcsimple_driverf90" title="Permanent link">&para;</a></h3>
-<p>The driver implements mesh file input in the following steps:</p>
-<ol>
-<li><strong>Read configuration</strong>: Parse <code>mesh_file</code> from the CECE config file</li>
-<li><strong>Determine mode</strong>: Check if <code>mesh_file</code> is non-empty</li>
-<li><strong>Read mesh</strong>: If mesh file specified, call <code>ESMF_MeshCreate(filename=...)</code></li>
-<li><strong>Validate mesh</strong>: Check node/element counts using <code>ESMF_MeshGet</code></li>
-<li><strong>Log dimensions</strong>: Log mesh information for diagnostics</li>
-<li><strong>Create dummy grid</strong>: Create a minimal 2x2 grid for compatibility</li>
-</ol>
-<h3 id="c-configuration-srccece_core_driver_configcpp">C++ Configuration (src/cece_core_driver_config.cpp)<a class="headerlink" href="#c-configuration-srccece_core_driver_configcpp" title="Permanent link">&para;</a></h3>
-<p>The C++ configuration reader extracts the <code>mesh_file</code> parameter:</p>
-<div class="language-cpp highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">mesh_str</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">driver_cfg</span><span class="p">.</span><span class="n">mesh_file</span><span class="p">;</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">mesh_str</span><span class="p">.</span><span class="n">length</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">size_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">mesh_file_len</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cerr</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;WARNING: mesh_file buffer too small, truncating</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">;</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">strncpy</span><span class="p">(</span><span class="n">mesh_file</span><span class="p">,</span><span class="w"> </span><span class="n">mesh_str</span><span class="p">.</span><span class="n">c_str</span><span class="p">(),</span><span class="w"> </span><span class="n">mesh_file_len</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="n">mesh_file</span><span class="p">[</span><span class="n">mesh_file_len</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="sc">&#39;\0&#39;</span><span class="p">;</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">strcpy</span><span class="p">(</span><span class="n">mesh_file</span><span class="p">,</span><span class="w"> </span><span class="n">mesh_str</span><span class="p">.</span><span class="n">c_str</span><span class="p">());</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">}</span>
+<h3 id="c-config-struct-includecececece_confighpp">C++ config struct (<code>include/cece/cece_config.hpp</code>)<a class="headerlink" href="#c-config-struct-includecececece_confighpp" title="Permanent link">&para;</a></h3>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">DriverConfig</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">gridspec_file</span><span class="p">;</span><span class="w">   </span><span class="c1">// empty = generate from driver.grid</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="n">DriverGridConfig</span><span class="w"> </span><span class="n">grid</span><span class="p">;</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="p">...</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">};</span>
 </span></code></pre></div>
-<h2 id="requirements-satisfied">Requirements Satisfied<a class="headerlink" href="#requirements-satisfied" title="Permanent link">&para;</a></h2>
-<p>This implementation satisfies the following requirements:</p>
-<ul>
-<li><strong>Requirement 14.1</strong>: Read ESMF mesh from file using <code>ESMF_MeshCreate(filename=...)</code></li>
-<li><strong>Requirement 14.2</strong>: Validate mesh has proper node/element connectivity</li>
-<li><strong>Requirement 14.3</strong>: Generate Gaussian grid when mesh file is not specified</li>
-<li><strong>Requirement 14.4</strong>: Use grid dimensions from config when generating grid</li>
-<li><strong>Requirement 14.6</strong>: Log error and exit with non-zero status for invalid mesh files</li>
-</ul>
-<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
-<p>Unit tests are provided in <code>tests/test_mesh_file_input.cpp</code>:</p>
-<ul>
-<li>Configuration reading with mesh file</li>
-<li>Configuration reading without mesh file</li>
-<li>Grid/mesh selection logic</li>
-<li>Mesh file existence validation</li>
-<li>Mesh connectivity validation</li>
-<li>Logging and diagnostics</li>
-</ul>
-<p>Run tests with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./setup.sh<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;cd build &amp;&amp; ./test_mesh_file_input&quot;</span>
+<h3 id="c-accessor-srccece_core_field_helperscpp">C accessor (<code>src/cece_core_field_helpers.cpp</code>)<a class="headerlink" href="#c-accessor-srccece_core_field_helperscpp" title="Permanent link">&para;</a></h3>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kt">void</span><span class="w"> </span><span class="nf">cece_core_get_gridspec_file_path</span><span class="p">(</span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">data_ptr</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="o">*</span><span class="w"> </span><span class="n">path_len</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="o">*</span><span class="w"> </span><span class="n">rc</span><span class="p">);</span>
 </span></code></pre></div>
-<h2 id="future-enhancements">Future Enhancements<a class="headerlink" href="#future-enhancements" title="Permanent link">&para;</a></h2>
-<p>Potential future enhancements include:</p>
+<h3 id="fortran-cap-srccece_capf90">Fortran cap (<code>src/cece_cap.F90</code>)<a class="headerlink" href="#fortran-cap-srccece_capf90" title="Permanent link">&para;</a></h3>
+<p>In <code>CECE_InitializeRealize</code> standalone branch:
+1. Call <code>cece_core_get_gridspec_file_path</code> to retrieve the path.
+2. If non-empty, call <code>ESMF_GridCreate(filename=..., fileformat=ESMF_FILEFORMAT_GRIDSPEC)</code>.
+3. Regardless, call <code>CreateMeshFromConfig</code> to build the TIDE regridding mesh.</p>
 <ol>
 <li>Support for multiple mesh file formats (SCRIP, UGRID, etc.)</li>
 <li>Automatic mesh generation from grid specifications</li>
@@ -934,7 +803,7 @@
       <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.annotate","content.code.copy","navigation.footer","navigation.path","navigation.sections","navigation.top","search.highlight"],"search":"../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../assets/javascripts/bundle.6e5f0216.min.js"></script>
       
     
   </body>

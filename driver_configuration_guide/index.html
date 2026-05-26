@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="zensical-0.0.40">
+      <meta name="generator" content="zensical-0.0.43">
     
     
       
@@ -547,10 +547,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mesh_file" class="md-nav__link">
+  <a href="#gridspec_file" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        mesh_file
+        gridspec_file
       </span>
     </span>
   </a>
@@ -713,10 +713,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mesh-file-configuration" class="md-nav__link">
+  <a href="#gridspec-file-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Mesh File Configuration
+        GRIDSPEC File Configuration
       </span>
     </span>
   </a>
@@ -818,10 +818,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mesh-file-issues" class="md-nav__link">
+  <a href="#gridspec-file-issues" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Mesh File Issues
+        GRIDSPEC File Issues
       </span>
     </span>
   </a>
@@ -887,7 +887,7 @@
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span><span class="w">      </span><span class="c1"># ISO8601 format (optional, default: 2020-01-01T00:00:00)</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span><span class="w">        </span><span class="c1"># ISO8601 format (optional, default: 2020-01-02T00:00:00)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span><span class="w">                 </span><span class="c1"># Positive integer (optional, default: 3600)</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">                        </span><span class="c1"># Path to ESMF mesh file (optional, default: null - generate grid)</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">                    </span><span class="c1"># Path to ESMF GRIDSPEC NetCDF file (optional, default: null - generate grid)</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">                                </span><span class="c1"># Positive integer (optional, default: 4)</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">                                </span><span class="c1"># Positive integer (optional, default: 4)</span>
@@ -920,19 +920,19 @@
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">driver</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">  </span><span class="c1"># 30 minutes</span>
 </span></code></pre></div></p>
-<h3 id="mesh_file">mesh_file<a class="headerlink" href="#mesh_file" title="Permanent link">&para;</a></h3>
+<h3 id="gridspec_file">gridspec_file<a class="headerlink" href="#gridspec_file" title="Permanent link">&para;</a></h3>
 <p><strong>Type:</strong> String (file path) or null
 <strong>Default:</strong> <code>null</code>
-<strong>Description:</strong> Path to ESMF mesh file for spatial discretization. If null or absent, a Gaussian grid is generated based on grid.nx and grid.ny.</p>
+<strong>Description:</strong> Path to an ESMF GRIDSPEC NetCDF file for spatial discretization. If set, the grid is loaded from this file and grid generation is skipped. Generate one with <code>scripts/cece_make_gridspec.py</code>.</p>
 <p><strong>Example:</strong>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">driver</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/mesh.nc&quot;</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/grid.nc&quot;</span>
 </span></code></pre></div></p>
 <h3 id="gridnx">grid.nx<a class="headerlink" href="#gridnx" title="Permanent link">&para;</a></h3>
 <p><strong>Type:</strong> Integer
 <strong>Range:</strong> &gt; 0
 <strong>Default:</strong> <code>4</code>
-<strong>Description:</strong> Number of grid points in X direction (longitude). Only used if mesh_file is null.</p>
+<strong>Description:</strong> Number of grid points in X direction (longitude). Only used if gridspec_file is null.</p>
 <p><strong>Example:</strong>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">driver</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
@@ -942,7 +942,7 @@
 <p><strong>Type:</strong> Integer
 <strong>Range:</strong> &gt; 0
 <strong>Default:</strong> <code>4</code>
-<strong>Description:</strong> Number of grid points in Y direction (latitude). Only used if mesh_file is null.</p>
+<strong>Description:</strong> Number of grid points in Y direction (latitude). Only used if gridspec_file is null.</p>
 <p><strong>Example:</strong>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">driver</span><span class="p">:</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
@@ -1007,7 +1007,7 @@
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 </span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
 </span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
 </span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
@@ -1020,23 +1020,22 @@
 <li><strong>Start time &gt;= end time:</strong> Start time must be strictly before end time</li>
 <li><strong>Non-positive timestep:</strong> Timestep must be &gt; 0 seconds</li>
 <li><strong>Invalid grid dimensions:</strong> nx and ny must be &gt; 0</li>
-<li><strong>Missing mesh file:</strong> If mesh_file is specified, the file must exist and be valid</li>
+<li><strong>Missing gridspec file:</strong> If gridspec_file is specified, the file must exist and be a valid ESMF GRIDSPEC NetCDF file</li>
 </ol>
 <h2 id="gridmesh-selection-logic">Grid/Mesh Selection Logic<a class="headerlink" href="#gridmesh-selection-logic" title="Permanent link">&para;</a></h2>
 <p>The driver uses the following logic to select spatial discretization:</p>
 <ol>
-<li><strong>If mesh_file is specified and valid:</strong></li>
-<li>Read ESMF mesh from file</li>
-<li>Use mesh for spatial discretization</li>
+<li><strong>If gridspec_file is specified and valid:</strong></li>
+<li>Load ESMF Grid from GRIDSPEC NetCDF file</li>
 <li>Skip grid generation</li>
 <li>
-<p>Log mesh file source and dimensions</p>
+<p>Log gridspec file source</p>
 </li>
 <li>
-<p><strong>If mesh_file is null or absent:</strong></p>
+<p><strong>If gridspec_file is null or absent:</strong></p>
 </li>
-<li>Generate Gaussian grid based on grid.nx and grid.ny</li>
-<li>Create mesh from grid with proper node/element connectivity</li>
+<li>Generate structured grid based on grid.nx and grid.ny</li>
+<li>Create mesh from grid params for TIDE regridding</li>
 <li>
 <p>Log grid configuration to stdout</p>
 </li>
@@ -1085,17 +1084,17 @@
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
 </span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
 </span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 </span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">  </span><span class="nt">grid</span><span class="p">:</span>
 </span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">    </span><span class="nt">nx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">360</span>
 </span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">    </span><span class="nt">ny</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
 </span></code></pre></div>
-<h3 id="mesh-file-configuration">Mesh File Configuration<a class="headerlink" href="#mesh-file-configuration" title="Permanent link">&para;</a></h3>
+<h3 id="gridspec-file-configuration">GRIDSPEC File Configuration<a class="headerlink" href="#gridspec-file-configuration" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">driver</span><span class="p">:</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">start_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-01T00:00:00&quot;</span>
 </span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="nt">end_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2020-01-02T00:00:00&quot;</span>
 </span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="nt">timestep_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="nt">mesh_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/mesh.nc&quot;</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="nt">gridspec_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/grid.nc&quot;</span>
 </span></code></pre></div>
 <h3 id="large-grid-configuration">Large Grid Configuration<a class="headerlink" href="#large-grid-configuration" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">driver</span><span class="p">:</span>
@@ -1152,9 +1151,9 @@
 <h3 id="grid-creation-issues">Grid Creation Issues<a class="headerlink" href="#grid-creation-issues" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> "Failed to create grid"
 <strong>Solution:</strong> Verify grid.nx &gt; 0 and grid.ny &gt; 0</p>
-<h3 id="mesh-file-issues">Mesh File Issues<a class="headerlink" href="#mesh-file-issues" title="Permanent link">&para;</a></h3>
-<p><strong>Problem:</strong> "Failed to read mesh file"
-<strong>Solution:</strong> Verify mesh_file path exists and is a valid ESMF mesh file</p>
+<h3 id="gridspec-file-issues">GRIDSPEC File Issues<a class="headerlink" href="#gridspec-file-issues" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> "Failed to load GRIDSPEC file"
+  gridspec_file path does not exist or is not a valid GRIDSPEC NetCDF file</p>
 <h3 id="mpi-synchronization-issues">MPI Synchronization Issues<a class="headerlink" href="#mpi-synchronization-issues" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> "VM barrier failed"
 <strong>Solution:</strong> Check MPI configuration and ensure all processes are healthy</p>
@@ -1230,7 +1229,7 @@
       <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.annotate","content.code.copy","navigation.footer","navigation.path","navigation.sections","navigation.top","search.highlight"],"search":"../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../assets/javascripts/bundle.6e5f0216.min.js"></script>
       
     
   </body>
