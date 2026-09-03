@@ -6,9 +6,11 @@
 #include <Kokkos_Core.hpp>
 #include <algorithm>
 #include <axis/axis.hpp>
+#include <cmath>
 #include <dagr/logging.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tick/tick.hpp>
@@ -80,20 +82,9 @@ SimDateTime parse_sim_datetime(const std::string& iso8601) {
     return dt;
 }
 
-/**
- * @brief A pair of file records that bracket the current simulation time, plus a
- *        blend weight for linear temporal interpolation.
- *
- * @c weight is the fraction toward @c i1: the interpolated field is
- * @f$ (1-w)\,\mathrm{rec}[i_0] + w\,\mathrm{rec}[i_1] @f$. When @c weight is 0
- * (or @c i0 == @c i1) a single read of @c i0 suffices.
- */
-struct RecordBracket {
-    int i0 = 0;
-    int i1 = 0;
-    double weight = 0.0;
-    bool valid = false;  ///< false -> caller falls back to legacy step-index cycling.
-};
+// RecordBracket is defined in cece/cece_driver_facade.hpp so it can be used as
+// SliceCacheEntry::last_bracket; the temporal-cadence helpers below use that
+// shared definition (resolved as cece::RecordBracket).
 
 /**
  * @brief Map a simulation datetime onto a record bracket for a given cadence.
@@ -216,6 +207,246 @@ bool collective_int_matches(MPI_Comm comm, int local_value, const std::string& n
 
 }  // namespace
 
+void CeceDriverOrchestrator::ResolveStreamConfigs() {
+    // Thin wrapper: run the pure YAML->StreamConfig resolution against
+    // config_file_ and store the results into this orchestrator's members.
+    // The actual resolution lives in the static ResolveStreamConfigsFromFile so
+    // it can be exercised in isolation by tests (Property 4) via the SAME code
+    // path without constructing a full orchestrator (which requires MPI/DAGR/
+    // CeceIO setup). Production behavior is unchanged.
+    ResolveStreamConfigsFromFile(config_file_, stream_configs_, gridspec_file_);
+}
+
+void CeceDriverOrchestrator::ResolveStreamConfigsFromFile(const std::string& config_file,
+                                                          std::unordered_map<std::string, StreamConfig>& out_configs,
+                                                          std::string& out_gridspec_file) {
+    // Parse config_file exactly once. On a YAML error keep the orchestrator
+    // robust (out_gridspec_file = "", out_configs left empty) so the existing
+    // collective gates in AdvanceTime surface any downstream problem, matching
+    // the legacy inline parse which simply found no matching variable.
+    YAML::Node config;
+    try {
+        config = YAML::LoadFile(config_file);
+    } catch (const YAML::Exception& e) {
+        out_gridspec_file = "";
+        return;
+    }
+
+    // Driver-level values shared by every StreamConfig. Preserve the existing
+    // constructor validation: a < 1 value is rejected with std::invalid_argument
+    // and the same message.
+    int amio_worker_threads = 1;
+    int amio_staging_buffer_count = 8;
+    if (config["driver"]) {
+        if (config["driver"]["gridspec_file"]) {
+            out_gridspec_file = config["driver"]["gridspec_file"].as<std::string>();
+        }
+        if (config["driver"]["amio_worker_threads"]) {
+            amio_worker_threads = config["driver"]["amio_worker_threads"].as<int>();
+            if (amio_worker_threads < 1) {
+                throw std::invalid_argument("driver.amio_worker_threads must be >= 1; got " + std::to_string(amio_worker_threads) + ".");
+            }
+        }
+        if (config["driver"]["amio_staging_buffer_count"]) {
+            amio_staging_buffer_count = config["driver"]["amio_staging_buffer_count"].as<int>();
+            if (amio_staging_buffer_count < 1) {
+                throw std::invalid_argument("driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(amio_staging_buffer_count) + ".");
+            }
+        }
+    }
+
+    if (!config["cece_data"] || !config["cece_data"]["streams"]) {
+        return;
+    }
+
+    // Walk every stream and populate a StreamConfig for each model variable,
+    // keyed by model name. Field resolution + defaults mirror the legacy inline
+    // AdvanceTime parse exactly.
+    for (const auto& stream : config["cece_data"]["streams"]) {
+        for (const auto& var : stream["variables"]) {
+            std::string model_name;
+            std::string file_name;
+            if (var.IsScalar()) {
+                model_name = var.as<std::string>();
+                file_name = model_name;
+            } else if (var.IsMap() && var["model"]) {
+                model_name = var["model"].as<std::string>();
+                file_name = var["file"] ? var["file"].as<std::string>() : model_name;
+            } else {
+                continue;
+            }
+
+            StreamConfig cfg;
+            // Missing file path is recorded as empty (not thrown); the existing
+            // collective gate in AdvanceTime surfaces it later (Req 1.4).
+            if (stream["file"]) {
+                cfg.input_file_path = stream["file"].as<std::string>();
+            }
+            cfg.input_var_name = file_name;
+            if (stream["mapalgo"]) {
+                cfg.mapalgo = stream["mapalgo"].as<std::string>();
+            }
+            if (stream["cadence"]) {
+                cfg.cadence = stream["cadence"].as<std::string>();
+            }
+            if (stream["tintalgo"]) {
+                cfg.tintalgo = stream["tintalgo"].as<std::string>();
+            }
+            if (stream["data_model"]) {
+                std::string requested_model = stream["data_model"].as<std::string>();
+                std::transform(requested_model.begin(), requested_model.end(), requested_model.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (requested_model == "classic" || requested_model == "enhanced") {
+                    cfg.data_model = requested_model;
+                    cfg.data_model_explicit = true;
+                } else if (requested_model == "auto") {
+                    cfg.data_model = "enhanced";
+                    cfg.data_model_explicit = false;
+                } else {
+                    CECE_LOG_WARNING("[DRIVER] Invalid stream data_model='" + requested_model + "' for stream variable '" + model_name +
+                                     "'; using default auto behavior (enhanced then classic fallback).");
+                    cfg.data_model = "enhanced";
+                    cfg.data_model_explicit = false;
+                }
+            }
+            cfg.amio_worker_threads = amio_worker_threads;
+            cfg.amio_staging_buffer_count = amio_staging_buffer_count;
+
+            // Match the legacy inline parse's first-match-wins behavior: it
+            // stopped at the first stream/variable matching the model name.
+            out_configs.emplace(model_name, std::move(cfg));
+        }
+    }
+}
+
+std::string CeceDriverOrchestrator::BuildManifestContent(const StreamConfig& cfg, const std::string& data_model) const {
+    // Mirror the exact keys, order, values, newlines, and indentation the
+    // legacy inline AdvanceTime writer produced (the `m_file << "backend: ..."`
+    // block), just to a string instead of a file, so the resulting manifest is
+    // byte-for-byte identical (Req 2.3, 2.5, 2.6).
+    std::ostringstream m_content;
+    m_content << "backend: netcdf4\n"
+              << "path: " << cfg.input_file_path << "\n"
+              << "data_model: " << data_model << "\n"
+              << "staging_pool:\n"
+              << "  buffer_count: " << cfg.amio_staging_buffer_count << "\n"
+              << "  buffer_capacity_bytes: 268435456\n"
+              << "worker_pool:\n"
+              << "  threads: " << cfg.amio_worker_threads << "\n"
+              << "prefetch:\n"
+              << "  depth: 2\n"
+              << "  read_timeout_s: 120\n"
+              << "staging_timeout_ms: 30000\n";
+    return m_content.str();
+}
+
+std::string CeceDriverOrchestrator::StreamKey(const StreamConfig& cfg) {
+    // Stream identity key: variables in the same stream (same input file and
+    // mapping algorithm) share the regrid plan, AMIO handle set, and file
+    // record count caches. The "|" separator cannot appear in NetCDF file
+    // paths, so the concatenation is unambiguous (Req 1.1-1.3).
+    return cfg.input_file_path + "|" + cfg.mapalgo;
+}
+
+bool CeceDriverOrchestrator::bracket_equal(const RecordBracket& a, const RecordBracket& b) {
+    // Two resolved brackets are equal when they select the same record indices
+    // and blend weight (within tolerance). The `valid` field is intentionally
+    // NOT compared: bracket_equal answers "does b select the same slice as a"
+    // for two already-resolved brackets (Req 3.5, 6.3).
+    return a.i0 == b.i0 && a.i1 == b.i1 && std::fabs(a.weight - b.weight) <= kBracketWeightTol;
+}
+
+AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& stream_key, const StreamConfig& cfg, std::string& failure_detail) {
+    // Lazy-open-once: if the handle set already exists for this
+    // Stream_Identity_Key, reuse it without any re-open. Variables that share a
+    // stream share this single open handle set (Req 2.2, 3.1, 3.2, 7.1).
+    auto existing = amio_handles_.find(stream_key);
+    if (existing != amio_handles_.end()) {
+        return &existing->second;
+    }
+
+    int mpi_initialized = 0;
+    MPI_Initialized(&mpi_initialized);
+
+    // Candidate data models, mirroring the legacy AdvanceTime fallback ordering
+    // (Req 2.5, 2.6).
+    std::vector<std::string> data_models_to_try;
+    if (cfg.data_model_explicit) {
+        data_models_to_try.push_back(cfg.data_model);
+    } else {
+        data_models_to_try.push_back("enhanced");
+        data_models_to_try.push_back("classic");
+    }
+
+    for (const auto& candidate_model : data_models_to_try) {
+        // Build the manifest in memory once per candidate; no file is written
+        // to disk (Req 9.2).
+        const std::string manifest_content = BuildManifestContent(cfg, candidate_model);
+
+        amio_core_handle read_core = nullptr;
+        amio_dataset_handle read_dataset = nullptr;
+
+        // Force serial I/O fallback for reading offline datasets to prevent MPI
+        // multithreading deadlocks. Only the open is wrapped in the swap.
+        if (mpi_initialized) {
+            amio_set_parent_communicator(MPI_Comm_c2f(MPI_COMM_SELF));
+        }
+
+        amio_status_t amio_rc = amio_init_from_string(manifest_content.c_str(), "yaml", &read_core);
+        if (amio_rc != AMIO_OK) {
+            failure_detail = std::string("amio_init_from_string failed for stream '") + stream_key + "': rc=" + std::to_string(amio_rc) + " (" +
+                             amio_strerror(amio_rc) + ")";
+        } else {
+            amio_rc = amio_open_dataset_from_string(read_core, manifest_content.c_str(), "yaml", AMIO_MODE_READ, &read_dataset);
+            if (amio_rc != AMIO_OK) {
+                failure_detail = std::string("amio_open_dataset_from_string failed for '") + cfg.input_file_path + "': rc=" + std::to_string(amio_rc) +
+                                 " (" + amio_strerror(amio_rc) + ")";
+            }
+        }
+
+        // Restore parent communicator for downstream operations (match the
+        // legacy guards exactly).
+        if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
+            amio_set_parent_communicator(MPI_Comm_c2f(comm_c_));
+        }
+
+        if (amio_rc == AMIO_OK && read_core != nullptr && read_dataset != nullptr) {
+            // Emit the same auto-fallback INFO log the legacy code emitted when
+            // a non-explicit stream fell back to a non-"enhanced" model.
+            if (!cfg.data_model_explicit && candidate_model != "enhanced") {
+                CECE_LOG_INFO("[DRIVER] AMIO read manifest auto-fell back to data_model='" + candidate_model + "' for " + cfg.input_file_path);
+            }
+
+            failure_detail.clear();
+            AmioHandleSet set;
+            set.core = read_core;
+            set.dataset = read_dataset;
+            set.active_data_model = candidate_model;
+            set.manifest_content = manifest_content;
+            auto inserted = amio_handles_.emplace(stream_key, std::move(set));
+            return &inserted.first->second;
+        }
+
+        CECE_LOG_DEBUG("[DRIVER] AMIO open attempt failed (data_model='" + candidate_model + "') with rc = " + std::to_string(amio_rc) + " (" +
+                       amio_strerror(amio_rc) + ")");
+
+        // Close/finalize any partially-opened handle for this attempt before
+        // trying the next candidate. Nothing is cached on failure (Req 8.1).
+        if (read_dataset) {
+            amio_close(read_dataset);
+            read_dataset = nullptr;
+        }
+        if (read_core) {
+            amio_finalize(read_core);
+            read_core = nullptr;
+        }
+    }
+
+    // All candidates failed: leave failure_detail set, cache nothing.
+    CECE_LOG_DEBUG("[DRIVER] amio open failed for " + cfg.input_file_path + " after trying all candidate data models");
+    return nullptr;
+}
+
 CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len,
                                                const double* lat_coords, int lat_len, MPI_Comm comm_c)
     : config_file_(config_file),
@@ -225,26 +456,12 @@ CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, i
       target_lons_(lon_coords, lon_coords + lon_len),
       target_lats_(lat_coords, lat_coords + lat_len),
       comm_c_(comm_c) {
-    try {
-        YAML::Node config = YAML::LoadFile(config_file_);
-        if (config["driver"] && config["driver"]["gridspec_file"]) {
-            gridspec_file_ = config["driver"]["gridspec_file"].as<std::string>();
-        }
-        if (config["driver"] && config["driver"]["amio_worker_threads"]) {
-            const int worker_threads = config["driver"]["amio_worker_threads"].as<int>();
-            if (worker_threads < 1) {
-                throw std::invalid_argument("driver.amio_worker_threads must be >= 1; got " + std::to_string(worker_threads) + ".");
-            }
-        }
-        if (config["driver"] && config["driver"]["amio_staging_buffer_count"]) {
-            const int buffer_count = config["driver"]["amio_staging_buffer_count"].as<int>();
-            if (buffer_count < 1) {
-                throw std::invalid_argument("driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(buffer_count) + ".");
-            }
-        }
-    } catch (const YAML::Exception& e) {
-        gridspec_file_ = "";
-    }
+    // Parse the YAML once and resolve the StreamConfig for every stream
+    // variable, plus driver-level values and gridspec_file_ (Req 1.1). This
+    // preserves the previous constructor's driver-block validation (a < 1
+    // amio_worker_threads / amio_staging_buffer_count throws) and its
+    // YAML::Exception robustness (gridspec_file_ = "" on a bad/missing file).
+    ResolveStreamConfigs();
 
     cece_io_ = std::make_unique<io::CeceIO>();
     cece_io_->Initialize(config_file_, nx_, ny_, nz_);
@@ -266,7 +483,49 @@ CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, i
     }
 }
 
+void CeceDriverOrchestrator::TeardownHandles() {
+    // Release every retained AMIO handle set. Close the dataset first, then
+    // finalize the core, each wrapped in its own best-effort try/catch so one
+    // failing handle does not prevent the rest from tearing down (Req 7.2, 7.4).
+    // amio_handles_ is now keyed by Stream_Identity_Key, so this generic loop
+    // closes each shared handle set exactly once regardless of how many
+    // variables shared it (Req 3.6, 7.4).
+    for (auto& entry : amio_handles_) {
+        AmioHandleSet& set = entry.second;
+        if (set.dataset != nullptr) {
+            try {
+                amio_close(set.dataset);
+            } catch (const std::exception& e) {
+                CECE_LOG_DEBUG("[DRIVER] amio_close threw during teardown for '" + entry.first + "': " + e.what());
+            } catch (...) {
+                CECE_LOG_DEBUG("[DRIVER] amio_close threw an unknown exception during teardown for '" + entry.first + "'");
+            }
+            set.dataset = nullptr;
+        }
+        if (set.core != nullptr) {
+            try {
+                amio_finalize(set.core);
+            } catch (const std::exception& e) {
+                CECE_LOG_DEBUG("[DRIVER] amio_finalize threw during teardown for '" + entry.first + "': " + e.what());
+            } catch (...) {
+                CECE_LOG_DEBUG("[DRIVER] amio_finalize threw an unknown exception during teardown for '" + entry.first + "'");
+            }
+            set.core = nullptr;
+        }
+    }
+
+    // No manifest files to delete: manifests are in-memory strings, never
+    // written to disk (Req 7.3). Drop the loop-invariant caches (Req 7.5).
+    amio_handles_.clear();
+    stream_configs_.clear();
+    slice_caches_.clear();
+}
+
 CeceDriverOrchestrator::~CeceDriverOrchestrator() {
+    // Release retained AMIO handle sets first, before tearing down the pipeline
+    // (Req 7.2-7.5).
+    TeardownHandles();
+
     // Cleanly drain any in-flight pipeline tasks and release hijacked ranks
     // before destroying the graph. Without this, tearing down the DAGR
     // GraphOrchestrator while a task is still in flight races with the
@@ -459,9 +718,9 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
     dagr_->advance_step();
     Kokkos::fence();
 
-    // Load full config to parse streams
-    YAML::Node config = YAML::LoadFile(config_file_);
-
+    // Configuration is parsed exactly once at construction (Req 9.3); AdvanceTime
+    // consults the resolved StreamConfig via stream_configs_ and never re-reads
+    // the YAML file from disk.
     int mpi_initialized = 0;
     MPI_Initialized(&mpi_initialized);
     int mpi_rank = 0;
@@ -492,64 +751,30 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         std::vector<double> ingest_buffer;
         bool read_success = false;
 
-        // Parse input file path and variable name dynamically from YAML config cece_data block
-        std::string input_file_path = "";
-        std::string input_var_name = "";
-        std::string mapalgo = "consd";               // default fallback
-        std::string stream_data_model = "enhanced";  // default AMIO data model
-        std::string cadence;                         // temporal cadence: hourly|weekly|monthly ("" -> legacy cycling)
-        std::string tintalgo = "nearest";            // time-interp algorithm: linear|nearest
-        bool stream_data_model_explicit = false;
-        if (config["cece_data"] && config["cece_data"]["streams"]) {
-            for (const auto& stream : config["cece_data"]["streams"]) {
-                bool found_var = false;
-                for (const auto& var : stream["variables"]) {
-                    std::string model_name;
-                    std::string file_name;
-                    if (var.IsScalar()) {
-                        model_name = var.as<std::string>();
-                        file_name = model_name;
-                    } else if (var.IsMap() && var["model"]) {
-                        model_name = var["model"].as<std::string>();
-                        file_name = var["file"] ? var["file"].as<std::string>() : model_name;
-                    }
+        // Read the resolved StreamConfig for this variable from the map filled
+        // once at construction (Req 1.2, 9.3). A variable with no StreamConfig
+        // entry is treated exactly like a stream whose input_file_path is empty:
+        // the missing-configuration error is surfaced through the same
+        // collective gate the empty-path case used, so all ranks agree (Req 1.4).
+        auto cfg_it = stream_configs_.find(var_name);
+        const bool has_stream_config = cfg_it != stream_configs_.end();
+        const StreamConfig cfg = has_stream_config ? cfg_it->second : StreamConfig{};
 
-                    if (model_name == var_name) {
-                        if (stream["file"]) {
-                            input_file_path = stream["file"].as<std::string>();
-                        }
-                        input_var_name = file_name;
-                        if (stream["mapalgo"]) {
-                            mapalgo = stream["mapalgo"].as<std::string>();
-                        }
-                        if (stream["cadence"]) {
-                            cadence = stream["cadence"].as<std::string>();
-                        }
-                        if (stream["tintalgo"]) {
-                            tintalgo = stream["tintalgo"].as<std::string>();
-                        }
-                        if (stream["data_model"]) {
-                            std::string requested_model = stream["data_model"].as<std::string>();
-                            std::transform(requested_model.begin(), requested_model.end(), requested_model.begin(),
-                                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                            if (requested_model == "classic" || requested_model == "enhanced") {
-                                stream_data_model = requested_model;
-                                stream_data_model_explicit = true;
-                            } else if (requested_model == "auto") {
-                                stream_data_model = "enhanced";
-                                stream_data_model_explicit = false;
-                            } else {
-                                CECE_LOG_WARNING("[DRIVER] Invalid stream data_model='" + requested_model + "' for stream variable '" + var_name +
-                                                 "'; using default auto behavior (enhanced then classic fallback).");
-                            }
-                        }
-                        found_var = true;
-                        break;
-                    }
-                }
-                if (found_var) break;
-            }
-        }
+        std::string input_file_path = cfg.input_file_path;
+        std::string input_var_name = cfg.input_var_name;
+        const std::string& mapalgo = cfg.mapalgo;
+        const std::string& cadence = cfg.cadence;
+        const std::string& tintalgo = cfg.tintalgo;
+
+        // Stream_Identity_Key for the three shared caches (regrid_plans_,
+        // amio_handles_, file_nt_cache_). Variables in the same stream (same
+        // input file + mapalgo) resolve to the same key and therefore share one
+        // built regrid plan, one open AMIO handle set, and one record count
+        // (Req 2.1, 3.1, 4.1, 7.1-7.3). Computed identically on every rank
+        // because StreamConfig is resolved identically from the same YAML
+        // (Req 8.1). slice_caches_ and cece_ingestor_set_field remain keyed by
+        // var_name (Req 5.1-5.3).
+        const std::string stream_key = StreamKey(cfg);
 
         if (input_file_path.empty()) {
             CECE_LOG_ERROR("[DRIVER FATAL] Input file path not specified for stream variable '" + var_name + "' in configuration!");
@@ -575,124 +800,25 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         if (!collective_all_ready(comm_c_, local_file_ready, "input-file readiness for '" + var_name + "'", failure_detail)) return false;
 
         // Dynamically open and read using AMIO API
-        std::string read_manifest_path = "amio_read_manifest_facade_" + var_name + ".yaml";
-
-        amio_core_handle read_core = nullptr;
-        amio_dataset_handle read_dataset = nullptr;
-
-        std::vector<std::string> data_models_to_try;
-        if (stream_data_model_explicit) {
-            data_models_to_try.push_back(stream_data_model);
-        } else {
-            data_models_to_try.push_back("enhanced");
-            data_models_to_try.push_back("classic");
-        }
-
-        amio_status_t amio_rc = AMIO_ERR_BACKEND_FAILURE;
-        std::string active_data_model = data_models_to_try.front();
-
-        int amio_threads = 1;
-        if (config["driver"] && config["driver"]["amio_worker_threads"]) {
-            amio_threads = config["driver"]["amio_worker_threads"].as<int>();
-            if (amio_threads < 1) {
-                failure_detail = "driver.amio_worker_threads must be >= 1; got " + std::to_string(amio_threads) + ".";
-                CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            }
-        }
-
-        int amio_staging_buffer_count = 8;
-        if (config["driver"] && config["driver"]["amio_staging_buffer_count"]) {
-            amio_staging_buffer_count = config["driver"]["amio_staging_buffer_count"].as<int>();
-            if (amio_staging_buffer_count < 1) {
-                failure_detail = "driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(amio_staging_buffer_count) + ".";
-                CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            }
-        }
-        const bool local_amio_config_ready = amio_threads >= 1 && amio_staging_buffer_count >= 1;
-        if (!collective_all_ready(comm_c_, local_amio_config_ready, "AMIO driver configuration", failure_detail)) return false;
-
-        bool amio_open_ready = false;
-        for (const auto& candidate_model : data_models_to_try) {
-            active_data_model = candidate_model;
-
-            bool local_manifest_ready = true;
-            if (mpi_rank == 0) {
-                // Write input manifest YAML (Rank 0 only to prevent parallel write conflicts)
-                std::ofstream m_file(read_manifest_path);
-                if (!m_file) {
-                    CECE_LOG_ERROR("[DRIVER FATAL] Failed to create AMIO manifest YAML file '" + read_manifest_path + "'");
-                    failure_detail = "failed to create AMIO manifest YAML file '" + read_manifest_path + "'";
-                    local_manifest_ready = false;
-                } else {
-                    m_file << "backend: netcdf4\n"
-                           << "path: " << input_file_path << "\n"
-                           << "data_model: " << candidate_model << "\n"
-                           << "staging_pool:\n"
-                           << "  buffer_count: " << amio_staging_buffer_count << "\n"
-                           << "  buffer_capacity_bytes: 268435456\n"
-                           << "worker_pool:\n"
-                           << "  threads: " << amio_threads << "\n"
-                           << "prefetch:\n"
-                           << "  depth: 2\n"
-                           << "  read_timeout_s: 120\n"
-                           << "staging_timeout_ms: 30000\n";
-                    m_file.close();
-                }
-            }
-
-            // The collective also ensures rank 0 has finished the manifest
-            // before any peer tries to load it.
-            if (!collective_all_ready(comm_c_, local_manifest_ready, "AMIO manifest creation", failure_detail)) break;
-
-            // Force serial I/O fallback for reading offline datasets to prevent MPI multithreading deadlocks.
-            if (mpi_initialized) {
-                amio_set_parent_communicator(MPI_Comm_c2f(MPI_COMM_SELF));
-            }
-
-            amio_rc = amio_init(read_manifest_path.c_str(), &read_core);
-            if (amio_rc != AMIO_OK) {
-                failure_detail = std::string("amio_init failed for manifest '") + read_manifest_path + "': rc=" + std::to_string(amio_rc) + " (" +
-                                 amio_strerror(amio_rc) + ")";
-            } else {
-                amio_rc = amio_open_dataset(read_core, read_manifest_path.c_str(), AMIO_MODE_READ, &read_dataset);
-                if (amio_rc != AMIO_OK) {
-                    failure_detail = std::string("amio_open_dataset failed for '") + input_file_path + "': rc=" + std::to_string(amio_rc) + " (" +
-                                     amio_strerror(amio_rc) + ")";
-                }
-            }
-
-            // Restore parent communicator for downstream operations.
-            if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-                amio_set_parent_communicator(MPI_Comm_c2f(comm_c_));
-            }
-
-            const bool local_open_ready = amio_rc == AMIO_OK && read_core != nullptr && read_dataset != nullptr;
-            if (collective_all_ready(comm_c_, local_open_ready, "AMIO dataset open using data_model='" + candidate_model + "'", failure_detail)) {
-                amio_open_ready = true;
-                failure_detail.clear();
-                break;
-            }
-
-            CECE_LOG_DEBUG("[DRIVER] AMIO open attempt failed (data_model='" + candidate_model + "') with rc = " + std::to_string(amio_rc) + " (" +
-                           amio_strerror(amio_rc) + ")");
-
-            if (read_dataset) {
-                amio_close(read_dataset);
-                read_dataset = nullptr;
-            }
-            if (read_core) {
-                amio_finalize(read_core);
-                read_core = nullptr;
-            }
-        }
+        // First-touch open (once per variable) via GetOrOpenHandleSet, which
+        // builds the in-memory manifest, performs the MPI_COMM_SELF swap, and
+        // tries the candidate data models. On subsequent steps it returns the
+        // cached handle set with no re-open, no manifest write, and no barrier
+        // (Req 2.1, 2.2, 9.1, 9.2). The dataset-open readiness collective still
+        // runs every step so ranks agree that a usable handle set exists; the
+        // actual open work only happens on the first touch.
+        AmioHandleSet* handle_set = GetOrOpenHandleSet(stream_key, cfg, failure_detail);
+        const bool local_open_ready = handle_set != nullptr && handle_set->dataset != nullptr && handle_set->core != nullptr;
+        const bool amio_open_ready = collective_all_ready(comm_c_, local_open_ready, "AMIO dataset open for '" + var_name + "'", failure_detail);
 
         if (!amio_open_ready) {
-            CECE_LOG_DEBUG("[DRIVER] amio_open_dataset failed for " + input_file_path + " with rc = " + std::to_string(amio_rc) + " (" +
-                           amio_strerror(amio_rc) + ") after trying data_model='" + active_data_model + "'");
+            CECE_LOG_DEBUG("[DRIVER] amio open failed for " + input_file_path + ": " + failure_detail);
         } else {
-            if (!stream_data_model_explicit && active_data_model != "enhanced") {
-                CECE_LOG_INFO("[DRIVER] AMIO read manifest auto-fell back to data_model='" + active_data_model + "' for " + input_file_path);
-            }
+            failure_detail.clear();
+            // Use the retained dataset handle for record discovery, plan
+            // building, and reads. It persists in amio_handles_ across timesteps
+            // and is torn down in the destructor (task 10.1).
+            amio_dataset_handle read_dataset = handle_set->dataset;
 
             // Determine this rank's contiguous destination latitude band [j0, j1)
             // via a simple block decomposition of the ny_ destination rows.
@@ -708,7 +834,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             //    the actual record limit (since reads beyond the record limit return AMIO_ERR_INVALID_INPUT).
             //    We cache the result in file_nt_cache_ to avoid binary search overhead on subsequent steps.
             int file_nt = 1;
-            auto nt_it = file_nt_cache_.find(var_name);
+            auto nt_it = file_nt_cache_.find(stream_key);
             if (nt_it != file_nt_cache_.end()) {
                 file_nt = nt_it->second;
             } else {
@@ -730,7 +856,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     }
                     file_nt = found_nt;
                 }
-                file_nt_cache_[var_name] = file_nt;
+                file_nt_cache_[stream_key] = file_nt;
             }
             bool file_records_ready =
                 collective_all_ready(comm_c_, file_nt > 0, "AMIO record-count readiness for '" + var_name + "'", failure_detail);
@@ -741,7 +867,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             // 2. Build (or reuse cached) interpolation weights for this rank's band.
             //    Weights depend only on the grids, so they are generated once and
             //    reused for every timestep.
-            auto plan_it = regrid_plans_.find(var_name);
+            auto plan_it = regrid_plans_.find(stream_key);
             if (file_records_ready && (plan_it == regrid_plans_.end() || !plan_it->second.built)) {
                 cece::io::RegridPlan plan;
                 // An explicit passthrough is safe without reopening coordinate
@@ -763,7 +889,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     plan.built = true;
                     CECE_LOG_INFO("[DRIVER] passthrough verified stream file equals explicit gridspec file for '" + var_name +
                                   "'; using exact cell copy");
-                    plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
+                    plan_it = regrid_plans_.emplace(stream_key, std::move(plan)).first;
                 } else {
                     bool local_plan_built = false;
                     try {
@@ -780,7 +906,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                             failure_detail = "regrid plan construction failed (could not read source grid coordinates)";
                         }
                     } else {
-                        plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
+                        plan_it = regrid_plans_.emplace(stream_key, std::move(plan)).first;
                     }
                 }
             }
@@ -809,10 +935,28 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     bracket.weight = 0.0;
                 }
                 const bool needs_upper_record = bracket.i1 != bracket.i0 && bracket.weight > 0.0;
+                // Run the record-index / interp-mode collectives EVERY step so
+                // all ranks resolve an identical bracket and therefore make the
+                // same hit/miss decision (Req 6.3, 6.4).
                 const bool bracket_ready = collective_int_matches(comm_c_, bracket.i0, "lower AMIO record index", failure_detail) &&
                                            collective_int_matches(comm_c_, bracket.i1, "upper AMIO record index", failure_detail) &&
                                            collective_int_matches(comm_c_, needs_upper_record ? 1 : 0, "AMIO interpolation mode", failure_detail);
 
+                // Cache decision (Req 3, 5, 9.4): if the previously computed
+                // result was for the same bracket, reuse its ingest buffer and
+                // skip the disk read AND the regrid apply entirely. Because the
+                // resolved bracket is identical across ranks, every rank makes
+                // the same hit/miss decision, so no rank reads while another
+                // skips (Req 6.3).
+                auto& slice_cache = slice_caches_[var_name];
+                const bool cache_hit = bracket_ready && slice_cache.valid && bracket_equal(bracket, slice_cache.last_bracket);
+
+                if (cache_hit) {
+                    CECE_LOG_DEBUG("[DRIVER] Reusing cached time slice " + std::to_string(bracket.i0) + " for field '" + var_name +
+                                   "' (bracket unchanged; no read, no regrid)");
+                    ingest_buffer = slice_cache.ingest_buffer;
+                    read_success = true;
+                } else {
                 // Diagnostic: report which time slice(s) are being read from the file.
                 if (bracket.i0 == bracket.i1 || bracket.weight == 0.0) {
                     CECE_LOG_INFO("[DRIVER] Reading time slice " + std::to_string(bracket.i0) + "/" + std::to_string(file_nt - 1) + " from '" +
@@ -832,7 +976,6 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     amio_view_handle slab_view = nullptr;
                     amio_status_t rc = amio_read(read_dataset, input_var_name.c_str(), t_idx, nullptr, &slab_view);
                     if (rc != AMIO_OK) {
-                        amio_rc = rc;
                         CECE_LOG_DEBUG("[DRIVER] amio_read('" + input_var_name + "', t=" + std::to_string(t_idx) +
                                        ") failed with rc = " + std::to_string(rc));
                         failure_detail =
@@ -843,7 +986,6 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     size_t view_size = 0;
                     rc = amio_view_data(slab_view, &view_data, &view_size);
                     if (rc != AMIO_OK) {
-                        amio_rc = rc;
                         failure_detail = std::string("amio_view_data failed: rc=") + std::to_string(rc) + " (" + amio_strerror(rc) + ")";
                         amio_release_view(slab_view);
                         return false;
@@ -932,38 +1074,29 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 if (have_data) {
                     read_success = AssembleReplicatedField(var_name, plan, src, file_nx, file_ny, field_nlev, stream_view, cece_core_data_ptr,
                                                            ingest_buffer, failure_detail);
+                    if (read_success) {
+                        // Refresh the slice cache with the freshly computed
+                        // ingest buffer and the bracket that produced it, so a
+                        // later step resolving the same bracket can reuse it
+                        // (Req 3.3, 9.4).
+                        slice_cache.last_bracket = bracket;
+                        slice_cache.ingest_buffer = ingest_buffer;
+                        slice_cache.ingest_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
+                        slice_cache.valid = true;
+                    }
                 }
+                }  // end cache-miss branch
             }
             read_success = collective_all_ready(comm_c_, read_success, "replicated field assembly for '" + var_name + "'", failure_detail);
-            if (read_dataset) {
-                amio_close(read_dataset);
-                read_dataset = nullptr;
-            }
-        }
-        if (read_core) {
-            amio_finalize(read_core);
-            read_core = nullptr;
-        }
-
-        // Wait for all ranks to finalize their AMIO sessions before deleting the manifest file
-        if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-            int barrier_rc = MPI_Barrier(comm_c_);
-            if (barrier_rc != MPI_SUCCESS) {
-                CECE_LOG_WARNING("[DRIVER] MPI_Barrier failed with error code " + std::to_string(barrier_rc));
-            }
-        }
-        if (mpi_rank == 0) {
-            std::error_code rm_ec;
-            fs::remove(read_manifest_path, rm_ec);
-            if (rm_ec) {
-                CECE_LOG_WARNING("[DRIVER] Failed to remove manifest file '" + read_manifest_path + "': " + rm_ec.message());
-            }
+            // The AMIO handle set persists in amio_handles_ across timesteps
+            // (Req 2.2, 9.1); it is closed/finalized only in the destructor
+            // (task 10.1). No per-step amio_close/amio_finalize, no manifest
+            // write/delete, and no per-step MPI_Barrier occur here (Req 9.1, 9.2).
         }
 
         // Throw a fatal error on AMIO read failures
         if (!read_success) {
-            std::string detail =
-                failure_detail.empty() ? ("open/init failed: rc=" + std::to_string(amio_rc) + " (" + amio_strerror(amio_rc) + ")") : failure_detail;
+            std::string detail = failure_detail.empty() ? "AMIO open/read failed (no detail)" : failure_detail;
             CECE_LOG_ERROR("[FATAL ERROR] AMIO read failed for field '" + var_name + "' in file '" + input_file_path + "'. Reason: " + detail +
                            ". Idealized fallback is disabled!");
             return false;

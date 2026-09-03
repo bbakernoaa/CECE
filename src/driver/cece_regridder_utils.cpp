@@ -685,12 +685,6 @@ bool apply_regrid_plan(const RegridPlan& plan, size_t time_offset, bool is_float
     axis::field_view<double, 1> dst_view(dst_field.data(), static_cast<size_t>(nx) * nband);
     axis::solver::apply(plan.matrix, src_view, dst_view);
 
-    double src_sum = 0.0;
-    for (size_t k = 0; k < src_field.extent(0); ++k) src_sum += src_field(k);
-    double dst_sum = 0.0;
-    for (size_t k = 0; k < dst_field.extent(0); ++k) dst_sum += dst_field(k);
-    std::cout << "[DEBUG REGRID] src_sum: " << src_sum << ", dst_sum: " << dst_sum << std::endl;
-
     for (size_t k = 0; k < static_cast<size_t>(nx) * nband; ++k) {
         local_dst[k] = dst_field(k);
     }

@@ -463,6 +463,9 @@ target_link_libraries(test_cece_ingestor PRIVATE cece GTest::gtest_main)
 add_executable(test_cece_utils tests/test_cece_utils.cpp)
 target_link_libraries(test_cece_utils PRIVATE cece GTest::gtest_main)
 
+add_executable(test_numerical_equivalence tests/test_numerical_equivalence.cpp)
+target_link_libraries(test_numerical_equivalence PRIVATE cece GTest::gtest_main)
+
 add_executable(test_cece_compute tests/test_cece_compute.cpp)
 target_link_libraries(test_cece_compute PRIVATE cece GTest::gtest_main)
 
@@ -551,6 +554,79 @@ target_link_libraries(
 # CeceClock Run Loop Unit Tests
 add_executable(test_cece_clock_run_loop tests/test_cece_clock_run_loop.cpp)
 target_link_libraries(test_cece_clock_run_loop PRIVATE cece GTest::gtest_main)
+
+# Bracket-equality Property Tests (driver-io-regrid-perf, Property 5)
+add_executable(test_bracket_equal_properties tests/test_bracket_equal_properties.cpp)
+target_link_libraries(test_bracket_equal_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# StreamKey Property Tests (regrid-per-stream, Property 1)
+add_executable(test_stream_key_properties tests/test_stream_key_properties.cpp)
+target_link_libraries(test_stream_key_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# StreamConfig Resolution Property Tests (driver-io-regrid-perf, Property 4)
+add_executable(test_stream_config_resolution tests/test_stream_config_resolution.cpp)
+target_link_libraries(test_stream_config_resolution PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+target_compile_definitions(test_stream_config_resolution PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# No-manifest / No-reparse Regression Guards (driver-io-regrid-perf, Task 13.2)
+add_executable(test_no_manifest_no_reparse tests/test_no_manifest_no_reparse.cpp)
+target_link_libraries(test_no_manifest_no_reparse PRIVATE cece GTest::gtest_main)
+target_compile_definitions(test_no_manifest_no_reparse PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Slice-cache Equivalence Property Tests (driver-io-regrid-perf, Property 6)
+add_executable(test_slice_cache_equivalence tests/test_slice_cache_equivalence.cpp)
+target_link_libraries(test_slice_cache_equivalence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Slice-cache Independence Property Tests (regrid-per-stream, Property 3)
+add_executable(test_slice_cache_independence tests/test_slice_cache_independence.cpp)
+target_link_libraries(test_slice_cache_independence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Open-once / no-per-step-close Tests (driver-io-regrid-perf, Task 13.1, Req 9.1)
+add_executable(test_open_once_no_per_step_close tests/test_open_once_no_per_step_close.cpp)
+target_link_libraries(test_open_once_no_per_step_close PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+target_compile_definitions(test_open_once_no_per_step_close PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Cache-hit Skips-work Property Tests (driver-io-regrid-perf, Task 13.3, Req 9.4)
+add_executable(test_cache_hit_skips_work tests/test_cache_hit_skips_work.cpp)
+target_link_libraries(test_cache_hit_skips_work PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Regrid Conservation Property Tests (driver-io-regrid-perf, Property 9)
+add_executable(test_regrid_conservation_properties tests/test_regrid_conservation_properties.cpp)
+target_link_libraries(test_regrid_conservation_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Shared-plan Equivalence Property Tests (regrid-per-stream, Property 2)
+add_executable(test_shared_plan_equivalence tests/test_shared_plan_equivalence.cpp)
+target_link_libraries(test_shared_plan_equivalence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# MPI cross-rank reuse-decision integration test (driver-io-regrid-perf,
+# Property 8, Task 12.3). Provides its own main() with MPI init, so it does NOT
+# link GTest::gtest_main. Runnable as a single process AND under mpirun -np 2/4.
+add_executable(test_mpi_reuse_decision tests/test_mpi_reuse_decision.cpp)
+target_link_libraries(test_mpi_reuse_decision PRIVATE cece GTest::gtest MPI::MPI_CXX)
+# Single-process registration (ctest default): runs the binary directly so the
+# rank-invariance property is validated structurally even without a launcher.
+add_test(NAME test_mpi_reuse_decision_np1 COMMAND $<TARGET_FILE:test_mpi_reuse_decision>)
+set_tests_properties(
+  test_mpi_reuse_decision_np1
+  PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
+)
+# Multi-rank registration under mpirun. MPIEXEC_* come from find_package(MPI)
+# (called earlier in this file). --allow-run-as-root is required for the root
+# user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
+# already present.
+if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
+  list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
+endif()
+add_test(
+  NAME test_mpi_reuse_decision_np2
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:test_mpi_reuse_decision> ${MPIEXEC_POSTFLAGS}
+)
+set_tests_properties(
+  test_mpi_reuse_decision_np2
+  PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
+)
 
 # MEGAN3 Canopy Model Property Tests
 add_executable(test_megan3 tests/test_megan3.cpp)
@@ -758,6 +834,7 @@ gtest_discover_tests(test_driver_integration_end_to_end)
 gtest_discover_tests(test_stacking_engine)
 gtest_discover_tests(test_vertical_distribution_single)
 gtest_discover_tests(test_cece_utils)
+gtest_discover_tests(test_numerical_equivalence)
 gtest_discover_tests(test_cece_compute)
 gtest_discover_tests(test_standalone_writer_attributes)
 gtest_discover_tests(test_physics)
@@ -777,6 +854,16 @@ gtest_discover_tests(test_speciation)
 gtest_discover_tests(test_megan3)
 gtest_discover_tests(test_cece_clock_properties)
 gtest_discover_tests(test_cece_clock_run_loop)
+gtest_discover_tests(test_bracket_equal_properties)
+gtest_discover_tests(test_stream_key_properties)
+gtest_discover_tests(test_stream_config_resolution)
+gtest_discover_tests(test_no_manifest_no_reparse)
+gtest_discover_tests(test_slice_cache_equivalence)
+gtest_discover_tests(test_slice_cache_independence)
+gtest_discover_tests(test_open_once_no_per_step_close)
+gtest_discover_tests(test_cache_hit_skips_work)
+gtest_discover_tests(test_regrid_conservation_properties)
+gtest_discover_tests(test_shared_plan_equivalence)
 gtest_discover_tests(test_bdsnp)
 gtest_discover_tests(test_bdsnp_runtime)
 gtest_discover_tests(test_helm_cpp PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm")
