@@ -563,6 +563,14 @@ target_link_libraries(test_bracket_equal_properties PRIVATE cece GTest::gtest_ma
 add_executable(test_stream_key_properties tests/test_stream_key_properties.cpp)
 target_link_libraries(test_stream_key_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
 
+# HandleKey Property Tests (regrid-per-stream, Amendment 1, Property 4)
+add_executable(test_handle_key_properties tests/test_handle_key_properties.cpp)
+target_link_libraries(test_handle_key_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# StreamKey-extends-HandleKey Property Tests (regrid-per-stream, Amendment 1, Property 5)
+add_executable(test_stream_key_extends_handle_key tests/test_stream_key_extends_handle_key.cpp)
+target_link_libraries(test_stream_key_extends_handle_key PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
 # StreamConfig Resolution Property Tests (driver-io-regrid-perf, Property 4)
 add_executable(test_stream_config_resolution tests/test_stream_config_resolution.cpp)
 target_link_libraries(test_stream_config_resolution PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
@@ -856,6 +864,8 @@ gtest_discover_tests(test_cece_clock_properties)
 gtest_discover_tests(test_cece_clock_run_loop)
 gtest_discover_tests(test_bracket_equal_properties)
 gtest_discover_tests(test_stream_key_properties)
+gtest_discover_tests(test_handle_key_properties)
+gtest_discover_tests(test_stream_key_extends_handle_key)
 gtest_discover_tests(test_stream_config_resolution)
 gtest_discover_tests(test_no_manifest_no_reparse)
 gtest_discover_tests(test_slice_cache_equivalence)

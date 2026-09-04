@@ -118,10 +118,21 @@ class CeceDriverOrchestrator {
     // instead of written to a file (Req 2.3, 2.5, 2.6).
     std::string BuildManifestContent(const StreamConfig& cfg, const std::string& data_model) const;
 
-    // Compute the stream identity key for a given StreamConfig. The key is
-    // input_file_path + "|" + mapalgo. Variables sharing the same input file
-    // and mapping algorithm produce the same key and share the regrid plan,
-    // AMIO handle set, and file record count caches.
+    // Compute the file/manifest-scoped identity key for a given StreamConfig.
+    // The key concatenates exactly the StreamConfig fields that
+    // BuildManifestContent consumes (input_file_path, data_model,
+    // amio_worker_threads, amio_staging_buffer_count), so two configs share a
+    // HandleKey iff they would produce a byte-identical AMIO manifest. Note
+    // data_model here is the resolved pre-open value (identical across ranks).
+    // Variables reading the same file/manifest share one open AMIO handle set
+    // and one file record count even when their mapalgo differs.
+    static std::string HandleKey(const StreamConfig& cfg);
+
+    // Compute the mesh/weight-scoped stream identity key for a given
+    // StreamConfig. It is HandleKey extended by mapalgo
+    // (HandleKey(cfg) + "|" + cfg.mapalgo), and keys the regrid plan cache so
+    // the plan splits only when mapalgo differs. Variables sharing the same
+    // HandleKey and mapalgo produce the same key and share one regrid plan.
     static std::string StreamKey(const StreamConfig& cfg);
 
     // Tolerance for comparing two resolved bracket weights for equality.
@@ -132,10 +143,12 @@ class CeceDriverOrchestrator {
     // `valid` field is intentionally NOT compared (Req 3.5, 6.3).
     static bool bracket_equal(const RecordBracket& a, const RecordBracket& b);
 
-    // Return the retained AMIO handle set for the given Stream_Identity_Key
-    // (input_file_path + "|" + mapalgo), opening it lazily on first touch and
-    // reusing it on every subsequent call. Variables that share a stream share
-    // a single open core+dataset handle (Req 2.1, 2.2, 3.1, 3.2, 7.1).
+    // Return the retained AMIO handle set for the given Handle_Identity_Key
+    // (input_file_path + data_model + worker_threads + staging_buffer_count),
+    // opening it lazily on first touch and reusing it on every subsequent call.
+    // Variables that read the same file/manifest share a single open
+    // core+dataset handle even when their mapalgo differs (Req 2.1, 2.2, 3.1,
+    // 3.2, 7.1, 11.2, 11.7).
     //
     // On first touch this builds the in-memory manifest via BuildManifestContent
     // and opens via the STRING-based AMIO entry points (amio_init_from_string /
@@ -151,7 +164,7 @@ class CeceDriverOrchestrator {
     // fail it caches nothing, sets failure_detail (with amio_strerror), and
     // returns nullptr (Req 8.1). This helper only opens; it does not read or
     // regrid.
-    AmioHandleSet* GetOrOpenHandleSet(const std::string& stream_key, const StreamConfig& cfg, std::string& failure_detail);
+    AmioHandleSet* GetOrOpenHandleSet(const std::string& handle_key, const StreamConfig& cfg, std::string& failure_detail);
 
     // Release every retained AMIO handle set at shutdown. Iterates amio_handles_
     // and for each set closes the dataset (amio_close) then finalizes the core
@@ -169,24 +182,27 @@ class CeceDriverOrchestrator {
     int step_index_{0};
     MPI_Comm comm_c_{MPI_COMM_NULL};
 
-    // Cached regridding plans keyed by Stream_Identity_Key
-    // (input_file_path + "|" + mapalgo). Variables in the same stream share
-    // one plan since the interpolation weights depend only on source grid,
-    // target grid, and mapping algorithm — not on the variable name.
+    // Cached regridding plans keyed by Stream_Identity_Key, now
+    // = HandleKey + "|" + mapalgo. Variables that share a HandleKey but differ
+    // in mapalgo get distinct plans; the plan splits only when mapalgo differs.
+    // The interpolation weights depend only on source grid, target grid, and
+    // mapping algorithm — not on the variable name.
     std::unordered_map<std::string, io::RegridPlan> regrid_plans_;
 
-    // File record counts keyed by Stream_Identity_Key. The binary-search
-    // discovery runs at most once per stream.
+    // File record counts keyed by Handle_Identity_Key (input_file_path +
+    // data_model + worker_threads + staging_buffer_count). The record-count
+    // search runs at most once per file/manifest.
     std::unordered_map<std::string, int> file_nt_cache_;
 
     // Loop-invariant work moved out of AdvanceTime:
     //  - stream_configs_ : YAML resolved once at construction, keyed by model
     //                      variable name (Req 1).
     //  - amio_handles_   : AMIO core/dataset opened lazily once, retained
-    //                      across timesteps, keyed by Stream_Identity_Key
-    //                      (input_file_path + "|" + mapalgo). Variables in the
-    //                      same stream share one open core+dataset handle
-    //                      (Req 2, 7).
+    //                      across timesteps, keyed by Handle_Identity_Key
+    //                      (input_file_path + data_model + worker_threads +
+    //                      staging_buffer_count). Variables reading the same
+    //                      file/manifest share one open core+dataset handle
+    //                      even when mapalgo differs (Req 2, 7, 11).
     //  - slice_caches_   : most-recent read+regrid result, reused when the
     //                      resolved time bracket is unchanged. Keyed by model
     //                      variable name (NOT Stream_Identity_Key) because
@@ -206,6 +222,22 @@ class CeceDriverOrchestrator {
     // invoke StreamKey without changing its signature/visibility. Has no
     // effect on production behavior. (Task 6.1)
     friend struct StreamKeyTestAccess;
+
+    // Test-only access to the private static HandleKey helper. Grants the
+    // Amendment 1 property tests (tests/test_handle_key_properties.cpp,
+    // tests/test_stream_key_extends_handle_key.cpp) permission to invoke
+    // HandleKey without changing its signature/visibility. Has no effect on
+    // production behavior. (Task 8.1)
+    friend struct HandleKeyTestAccess;
+
+    // Test-only access to the private static HandleKey and StreamKey helpers.
+    // Grants the Amendment 1 Property 5 test
+    // (tests/test_stream_key_extends_handle_key.cpp) permission to invoke both
+    // private statics without changing their signature/visibility. A distinct
+    // shim name (vs StreamKeyTestAccess / HandleKeyTestAccess) keeps that
+    // translation unit collision-free. Has no effect on production behavior.
+    // (Task 11.2)
+    friend struct StreamKeyExtendsAccess;
 
     // Test-only access to the private static bracket_equal helper. Grants the
     // property test (tests/test_bracket_equal_properties.cpp) permission to

@@ -4,20 +4,30 @@
  *
  * Feature: regrid-per-stream, Property 1: StreamKey concatenation correctness
  *
- * StreamKey(cfg) returns exactly cfg.input_file_path + "|" + cfg.mapalgo. It is
- * the composite Stream_Identity_Key used to re-key the regrid_plans_,
- * amio_handles_, and file_nt_cache_ caches so that variables belonging to the
- * same stream (same input file + mapping algorithm) share one plan, one open
- * handle set, and one record count.
+ * NOTE (Amendment 1, task 8.1): StreamKey was REDEFINED. It no longer returns
+ * cfg.input_file_path + "|" + cfg.mapalgo. It now returns
+ * HandleKey(cfg) + "|" + cfg.mapalgo, where
+ * HandleKey(cfg) = input_file_path + "|" + data_model + "|" + worker_threads +
+ * "|" + staging_buffer_count. So the full StreamKey concatenation is:
+ *   input_file_path + "|" + data_model + "|" +
+ *   to_string(amio_worker_threads) + "|" +
+ *   to_string(amio_staging_buffer_count) + "|" + mapalgo.
+ * StreamKey remains the Stream_Identity_Key that keys the regrid_plans_ cache;
+ * under Amendment 1 amio_handles_ / file_nt_cache_ are keyed by the coarser
+ * HandleKey instead. These tests are updated to the extended-key contract.
  *
- * Properties tested:
- *   - Concatenation: StreamKey(cfg) == cfg.input_file_path + "|" + cfg.mapalgo.
- *   - Determinism / equality: two configs with the same input_file_path and
- *     mapalgo produce the same key regardless of any other field.
- *   - Injectivity on (path, algo): two configs differing in input_file_path
- *     or mapalgo produce different keys.
+ * Properties tested (under the extended key):
+ *   - Concatenation: StreamKey(cfg) == input_file_path + "|" + data_model +
+ *     "|" + worker_threads + "|" + staging_buffer_count + "|" + mapalgo.
+ *   - Determinism / equality: two configs matching on the full five-field key
+ *     tuple {input_file_path, data_model, amio_worker_threads,
+ *     amio_staging_buffer_count, mapalgo} produce the same key regardless of
+ *     any other field.
+ *   - Injectivity on the key tuple: two configs differing in any of those five
+ *     fields produce different keys.
  *
- * **Validates: Requirements 1.1, 1.2, 1.3, 8.1, 9.4**
+ * **Validates: Requirements 1.1, 1.2, 1.3, 8.1, 9.4** (under the Amendment 1
+ * extended key redefinition)
  */
 
 #include <gtest/gtest.h>
@@ -74,33 +84,43 @@ rc::Gen<StreamConfig> genStreamConfig() {
 }  // namespace
 
 // ============================================================================
-// Property 1a: Concatenation correctness
+// Property 1a: Concatenation correctness (Amendment 1 extended key)
 // Feature: regrid-per-stream, Property 1: StreamKey concatenation correctness
 // **Validates: Requirements 1.1, 9.4**
 //
-// For any StreamConfig, StreamKey(cfg) equals exactly
-// cfg.input_file_path + "|" + cfg.mapalgo.
+// For any StreamConfig, StreamKey(cfg) equals exactly the five-field
+// concatenation HandleKey(cfg) + "|" + cfg.mapalgo, i.e.
+//   input_file_path + "|" + data_model + "|" + to_string(worker_threads) +
+//   "|" + to_string(staging_buffer_count) + "|" + mapalgo.
+// The full concatenation is inlined here to keep this file self-contained.
 // ============================================================================
 RC_GTEST_PROP(StreamKeyProperty, Property1_Concatenation, ()) {
     const StreamConfig cfg = *genStreamConfig();
-    const std::string expected = cfg.input_file_path + "|" + cfg.mapalgo;
+    const std::string expected = cfg.input_file_path + "|" + cfg.data_model + "|" +
+                                 std::to_string(cfg.amio_worker_threads) + "|" +
+                                 std::to_string(cfg.amio_staging_buffer_count) + "|" + cfg.mapalgo;
     RC_ASSERT(StreamKeyTestAccess::Key(cfg) == expected);
 }
 
 // ============================================================================
-// Property 1b: Determinism / equality when path + algo match
+// Property 1b: Determinism / equality when the full key tuple matches
 // Feature: regrid-per-stream, Property 1: StreamKey concatenation correctness
 // **Validates: Requirements 1.2, 8.1**
 //
-// Two configs sharing input_file_path and mapalgo produce the same key,
-// regardless of any other field.
+// Under the Amendment 1 extended key, StreamKey depends on the five-field
+// tuple {input_file_path, data_model, amio_worker_threads,
+// amio_staging_buffer_count, mapalgo}. Two configs matching on ALL five
+// produce the same key, regardless of any other field.
 // ============================================================================
 RC_GTEST_PROP(StreamKeyProperty, Property1_EqualWhenPathAndAlgoMatch, ()) {
     const StreamConfig a = *genStreamConfig();
 
-    // b copies a's key-relevant fields but varies everything else arbitrarily.
+    // b copies a's full key tuple but varies everything else arbitrarily.
     StreamConfig b = *genStreamConfig();
     b.input_file_path = a.input_file_path;
+    b.data_model = a.data_model;
+    b.amio_worker_threads = a.amio_worker_threads;
+    b.amio_staging_buffer_count = a.amio_staging_buffer_count;
     b.mapalgo = a.mapalgo;
 
     RC_ASSERT(StreamKeyTestAccess::Key(a) == StreamKeyTestAccess::Key(b));
@@ -120,29 +140,35 @@ RC_GTEST_PROP(StreamKeyProperty, Property1_DeterministicOnIdenticalConfig, ()) {
 }
 
 // ============================================================================
-// Property 1d: Inequality when path or algo differs
+// Property 1d: Inequality when the five-field key tuple differs
 // Feature: regrid-per-stream, Property 1: StreamKey concatenation correctness
 // **Validates: Requirements 1.3, 9.4**
 //
-// Two configs differing in input_file_path or mapalgo produce different keys.
-// Because "|" cannot appear in either field here (the generator draws from a
-// broad space, so we guard with RC_PRE that neither key field contains "|"),
-// the concatenation is unambiguous and the mapping (path, algo) -> key is
-// injective.
+// Under the Amendment 1 extended key, two configs differing in ANY of the five
+// key-tuple fields {input_file_path, data_model, amio_worker_threads,
+// amio_staging_buffer_count, mapalgo} produce different keys. Because "|"
+// cannot appear in the string key fields here (we guard with RC_PRE that none
+// of input_file_path, data_model, or mapalgo contains "|"; the integer fields
+// stringify without "|"), the concatenation is unambiguous and the mapping
+// (key tuple) -> key is injective.
 // ============================================================================
 RC_GTEST_PROP(StreamKeyProperty, Property1_UnequalWhenPathOrAlgoDiffers, ()) {
     StreamConfig a = *genStreamConfig();
     StreamConfig b = *genStreamConfig();
 
     // The separator ban only needs to hold to keep concatenation unambiguous.
-    // Discard cases where a key field contains the reserved separator.
+    // Discard cases where a string key field contains the reserved separator.
     RC_PRE(a.input_file_path.find('|') == std::string::npos);
+    RC_PRE(a.data_model.find('|') == std::string::npos);
     RC_PRE(a.mapalgo.find('|') == std::string::npos);
     RC_PRE(b.input_file_path.find('|') == std::string::npos);
+    RC_PRE(b.data_model.find('|') == std::string::npos);
     RC_PRE(b.mapalgo.find('|') == std::string::npos);
 
-    // Only meaningful when the (path, algo) pairs actually differ.
-    RC_PRE(a.input_file_path != b.input_file_path || a.mapalgo != b.mapalgo);
+    // Only meaningful when the five-field key tuple actually differs.
+    RC_PRE(a.input_file_path != b.input_file_path || a.data_model != b.data_model ||
+           a.amio_worker_threads != b.amio_worker_threads ||
+           a.amio_staging_buffer_count != b.amio_staging_buffer_count || a.mapalgo != b.mapalgo);
 
     RC_ASSERT(StreamKeyTestAccess::Key(a) != StreamKeyTestAccess::Key(b));
 }

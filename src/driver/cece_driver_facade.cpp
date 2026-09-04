@@ -341,11 +341,26 @@ std::string CeceDriverOrchestrator::BuildManifestContent(const StreamConfig& cfg
 }
 
 std::string CeceDriverOrchestrator::StreamKey(const StreamConfig& cfg) {
-    // Stream identity key: variables in the same stream (same input file and
-    // mapping algorithm) share the regrid plan, AMIO handle set, and file
-    // record count caches. The "|" separator cannot appear in NetCDF file
-    // paths, so the concatenation is unambiguous (Req 1.1-1.3).
-    return cfg.input_file_path + "|" + cfg.mapalgo;
+    // Stream identity key = HandleKey extended by mapalgo. It keys the regrid
+    // plan cache (regrid_plans_): variables sharing a HandleKey but requesting
+    // a different mapalgo get distinct StreamKeys and therefore distinct plans,
+    // while everything else is shared at the coarser HandleKey level (Req 11.5).
+    return HandleKey(cfg) + "|" + cfg.mapalgo;
+}
+
+std::string CeceDriverOrchestrator::HandleKey(const StreamConfig& cfg) {
+    // File/manifest-scoped identity key: it concatenates exactly the
+    // StreamConfig fields that BuildManifestContent consumes
+    // (input_file_path, data_model, amio_worker_threads,
+    // amio_staging_buffer_count), so two configs share a HandleKey iff they
+    // would produce a byte-identical AMIO manifest. data_model here is the
+    // resolved pre-open value (identical across ranks). The "|" separator
+    // cannot appear in NetCDF file paths, so the concatenation is unambiguous
+    // (Req 11.1). Variables reading the same file/manifest share one open AMIO
+    // handle set and one file record count even when mapalgo differs.
+    return cfg.input_file_path + "|" + cfg.data_model + "|" +
+           std::to_string(cfg.amio_worker_threads) + "|" +
+           std::to_string(cfg.amio_staging_buffer_count);
 }
 
 bool CeceDriverOrchestrator::bracket_equal(const RecordBracket& a, const RecordBracket& b) {
@@ -356,11 +371,12 @@ bool CeceDriverOrchestrator::bracket_equal(const RecordBracket& a, const RecordB
     return a.i0 == b.i0 && a.i1 == b.i1 && std::fabs(a.weight - b.weight) <= kBracketWeightTol;
 }
 
-AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& stream_key, const StreamConfig& cfg, std::string& failure_detail) {
+AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& handle_key, const StreamConfig& cfg, std::string& failure_detail) {
     // Lazy-open-once: if the handle set already exists for this
-    // Stream_Identity_Key, reuse it without any re-open. Variables that share a
-    // stream share this single open handle set (Req 2.2, 3.1, 3.2, 7.1).
-    auto existing = amio_handles_.find(stream_key);
+    // Handle_Identity_Key, reuse it without any re-open. Variables that read the
+    // same file/manifest share this single open handle set even when their
+    // mapalgo differs (Req 2.2, 3.1, 3.2, 7.1, 11.2, 11.7).
+    auto existing = amio_handles_.find(handle_key);
     if (existing != amio_handles_.end()) {
         return &existing->second;
     }
@@ -394,7 +410,7 @@ AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& str
 
         amio_status_t amio_rc = amio_init_from_string(manifest_content.c_str(), "yaml", &read_core);
         if (amio_rc != AMIO_OK) {
-            failure_detail = std::string("amio_init_from_string failed for stream '") + stream_key + "': rc=" + std::to_string(amio_rc) + " (" +
+            failure_detail = std::string("amio_init_from_string failed for handle '") + handle_key + "': rc=" + std::to_string(amio_rc) + " (" +
                              amio_strerror(amio_rc) + ")";
         } else {
             amio_rc = amio_open_dataset_from_string(read_core, manifest_content.c_str(), "yaml", AMIO_MODE_READ, &read_dataset);
@@ -423,7 +439,7 @@ AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& str
             set.dataset = read_dataset;
             set.active_data_model = candidate_model;
             set.manifest_content = manifest_content;
-            auto inserted = amio_handles_.emplace(stream_key, std::move(set));
+            auto inserted = amio_handles_.emplace(handle_key, std::move(set));
             return &inserted.first->second;
         }
 
@@ -487,7 +503,7 @@ void CeceDriverOrchestrator::TeardownHandles() {
     // Release every retained AMIO handle set. Close the dataset first, then
     // finalize the core, each wrapped in its own best-effort try/catch so one
     // failing handle does not prevent the rest from tearing down (Req 7.2, 7.4).
-    // amio_handles_ is now keyed by Stream_Identity_Key, so this generic loop
+    // amio_handles_ is now keyed by Handle_Identity_Key, so this generic loop
     // closes each shared handle set exactly once regardless of how many
     // variables shared it (Req 3.6, 7.4).
     for (auto& entry : amio_handles_) {
@@ -766,14 +782,19 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         const std::string& cadence = cfg.cadence;
         const std::string& tintalgo = cfg.tintalgo;
 
-        // Stream_Identity_Key for the three shared caches (regrid_plans_,
-        // amio_handles_, file_nt_cache_). Variables in the same stream (same
-        // input file + mapalgo) resolve to the same key and therefore share one
-        // built regrid plan, one open AMIO handle set, and one record count
-        // (Req 2.1, 3.1, 4.1, 7.1-7.3). Computed identically on every rank
-        // because StreamConfig is resolved identically from the same YAML
-        // (Req 8.1). slice_caches_ and cece_ingestor_set_field remain keyed by
-        // var_name (Req 5.1-5.3).
+        // TWO-LEVEL keying for the shared caches:
+        //   - handle_key (file/manifest-scoped) keys amio_handles_ and
+        //     file_nt_cache_. Variables reading the same file/manifest share
+        //     one open AMIO handle set and one record-count search even when
+        //     their mapalgo differs (Req 11.2, 11.3).
+        //   - stream_key (= handle_key + "|" + mapalgo) keys regrid_plans_.
+        //     The plan cache splits only when mapalgo differs; everything else
+        //     stays shared at the coarser handle_key level (Req 11.5, 11.6).
+        //   - slice_caches_ and cece_ingestor_set_field remain keyed by
+        //     var_name (Req 5, 12.1).
+        // Both keys are identical on every rank because StreamConfig is
+        // resolved identically from the same YAML (Req 8.1, 11.8).
+        const std::string handle_key = HandleKey(cfg);
         const std::string stream_key = StreamKey(cfg);
 
         if (input_file_path.empty()) {
@@ -807,7 +828,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         // (Req 2.1, 2.2, 9.1, 9.2). The dataset-open readiness collective still
         // runs every step so ranks agree that a usable handle set exists; the
         // actual open work only happens on the first touch.
-        AmioHandleSet* handle_set = GetOrOpenHandleSet(stream_key, cfg, failure_detail);
+        AmioHandleSet* handle_set = GetOrOpenHandleSet(handle_key, cfg, failure_detail);
         const bool local_open_ready = handle_set != nullptr && handle_set->dataset != nullptr && handle_set->core != nullptr;
         const bool amio_open_ready = collective_all_ready(comm_c_, local_open_ready, "AMIO dataset open for '" + var_name + "'", failure_detail);
 
@@ -834,7 +855,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             //    the actual record limit (since reads beyond the record limit return AMIO_ERR_INVALID_INPUT).
             //    We cache the result in file_nt_cache_ to avoid binary search overhead on subsequent steps.
             int file_nt = 1;
-            auto nt_it = file_nt_cache_.find(stream_key);
+            auto nt_it = file_nt_cache_.find(handle_key);
             if (nt_it != file_nt_cache_.end()) {
                 file_nt = nt_it->second;
             } else {
@@ -856,7 +877,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     }
                     file_nt = found_nt;
                 }
-                file_nt_cache_[stream_key] = file_nt;
+                file_nt_cache_[handle_key] = file_nt;
             }
             bool file_records_ready =
                 collective_all_ready(comm_c_, file_nt > 0, "AMIO record-count readiness for '" + var_name + "'", failure_detail);
