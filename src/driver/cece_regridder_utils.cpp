@@ -669,25 +669,32 @@ bool apply_regrid_plan(const RegridPlan& plan, size_t time_offset, bool is_float
     }
 
     // D. Prepare the (global) source field view [file_nx * file_ny].
-    Kokkos::View<double*, Kokkos::HostSpace> src_field("src_field", static_cast<size_t>(file_nx) * file_ny);
-    const float* float_data = static_cast<const float*>(view_data);
-    const double* double_data = static_cast<const double*>(view_data);
-    for (int j = 0; j < file_ny; ++j) {
-        for (int i = 0; i < file_nx; ++i) {
-            size_t src_idx = time_offset + static_cast<size_t>(j) * file_nx + i;
-            src_field(static_cast<size_t>(j) * file_nx + i) = is_float ? static_cast<double>(float_data[src_idx]) : double_data[src_idx];
+    // For double input the file buffer is already a contiguous double array;
+    // wrap it directly (offset by time_offset). For float input we must
+    // materialize a widened double buffer.
+    const size_t src_len = static_cast<size_t>(file_nx) * file_ny;
+    Kokkos::View<double*, Kokkos::HostSpace> src_field;  // only allocated for the float-widening case
+    axis::field_view<const double, 1> src_view;
+    if (is_float) {
+        const float* float_data = static_cast<const float*>(view_data);
+        src_field = Kokkos::View<double*, Kokkos::HostSpace>("src_field", src_len);
+        for (int j = 0; j < file_ny; ++j) {
+            for (int i = 0; i < file_nx; ++i) {
+                size_t src_idx = time_offset + static_cast<size_t>(j) * file_nx + i;
+                src_field(static_cast<size_t>(j) * file_nx + i) = static_cast<double>(float_data[src_idx]);
+            }
         }
+        src_view = axis::field_view<const double, 1>(src_field.data(), src_len);
+    } else {
+        const double* double_data = static_cast<const double*>(view_data);
+        src_view = axis::field_view<const double, 1>(double_data + time_offset, src_len);
     }
 
-    // E. Apply cached weights to produce the rank-local destination band [nx * nband].
-    Kokkos::View<double*, Kokkos::HostSpace> dst_field("dst_field", static_cast<size_t>(nx) * nband);
-    axis::field_view<const double, 1> src_view(src_field.data(), static_cast<size_t>(file_nx) * file_ny);
-    axis::field_view<double, 1> dst_view(dst_field.data(), static_cast<size_t>(nx) * nband);
+    // E. Apply cached weights directly into local_dst [nx * nband]; apply
+    // overwrites the destination, so no separate staging buffer is needed.
+    axis::field_view<double, 1> dst_view(local_dst.data(), static_cast<size_t>(nx) * nband);
     axis::solver::apply(plan.matrix, src_view, dst_view);
 
-    for (size_t k = 0; k < static_cast<size_t>(nx) * nband; ++k) {
-        local_dst[k] = dst_field(k);
-    }
     return true;
 }
 

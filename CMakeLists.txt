@@ -517,6 +517,10 @@ target_link_libraries(benchmark_ingest_copy_consolidation PRIVATE cece)
 add_executable(benchmark_ex5_end_to_end tests/benchmark_ex5_end_to_end.cpp)
 target_link_libraries(benchmark_ex5_end_to_end PRIVATE cece)
 
+# Standalone regrid APPLY hot-loop micro-benchmark (driver-io-regrid-perf)
+add_executable(benchmark_regrid_apply tests/benchmark_regrid_apply.cpp)
+target_link_libraries(benchmark_regrid_apply PRIVATE cece)
+
 add_executable(test_hemco_parity tests/test_hemco_parity.cpp)
 target_link_libraries(test_hemco_parity PRIVATE cece GTest::gtest_main)
 
