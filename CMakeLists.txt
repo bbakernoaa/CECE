@@ -487,6 +487,12 @@ target_link_libraries(test_vertical_distribution_single PRIVATE cece GTest::gtes
 add_executable(test_field_resolution_priority tests/test_field_resolution_priority.cpp)
 target_link_libraries(test_field_resolution_priority PRIVATE cece GTest::gtest_main)
 
+add_executable(test_ingest_setfield_bypass tests/test_ingest_setfield_bypass.cpp)
+target_link_libraries(test_ingest_setfield_bypass PRIVATE cece GTest::gtest_main)
+
+add_executable(test_ingest_copyback_neutralized tests/test_ingest_copyback_neutralized.cpp)
+target_link_libraries(test_ingest_copyback_neutralized PRIVATE cece GTest::gtest_main)
+
 if(CECE_HAS_FORTRAN AND ESMF_FOUND)
   add_library(test_helpers STATIC tests/test_helpers.F90)
   target_include_directories(test_helpers PUBLIC ${ESMF_INCLUDE_DIRS})
@@ -502,6 +508,14 @@ add_test(NAME test_hemco_comparison COMMAND hemco_comparison_driver)
 
 add_executable(benchmark_cece_hemco tests/benchmark_cece_hemco.cpp)
 target_link_libraries(benchmark_cece_hemco PRIVATE cece)
+
+# Before/after ingest/assembly micro-benchmark (ingest-copy-consolidation, Task 1.1)
+add_executable(benchmark_ingest_copy_consolidation tests/benchmark_ingest_copy_consolidation.cpp)
+target_link_libraries(benchmark_ingest_copy_consolidation PRIVATE cece)
+
+# Standalone ex5-shaped end-to-end per-step ingest/assembly benchmark (F360)
+add_executable(benchmark_ex5_end_to_end tests/benchmark_ex5_end_to_end.cpp)
+target_link_libraries(benchmark_ex5_end_to_end PRIVATE cece)
 
 add_executable(test_hemco_parity tests/test_hemco_parity.cpp)
 target_link_libraries(test_hemco_parity PRIVATE cece GTest::gtest_main)
@@ -605,6 +619,25 @@ target_link_libraries(test_regrid_conservation_properties PRIVATE cece GTest::gt
 # Shared-plan Equivalence Property Tests (regrid-per-stream, Property 2)
 add_executable(test_shared_plan_equivalence tests/test_shared_plan_equivalence.cpp)
 target_link_libraries(test_shared_plan_equivalence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# No-stale-data Property Tests (ingest-copy-consolidation, Property 4)
+add_executable(test_ingest_no_stale_data tests/test_ingest_no_stale_data.cpp)
+target_link_libraries(test_ingest_no_stale_data PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Ingest Consolidation Equivalence Property Tests (ingest-copy-consolidation,
+# Property 1). Uses Kokkos DualView3D + deep_copy, so it provides its own main()
+# that initializes Kokkos/MPI (see the file's KokkosMpiEnvironment), matching
+# the test_regrid_conservation_properties pattern.
+add_executable(test_ingest_consolidation_equivalence tests/test_ingest_consolidation_equivalence.cpp)
+target_link_libraries(test_ingest_consolidation_equivalence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# MPI Collective Gate Order Property Tests (ingest-copy-consolidation, Property 3)
+add_executable(test_ingest_collective_gate_order tests/test_ingest_collective_gate_order.cpp)
+target_link_libraries(test_ingest_collective_gate_order PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Ingest single-write Property Tests (ingest-copy-consolidation, Property 2)
+add_executable(test_ingest_single_write tests/test_ingest_single_write.cpp)
+target_link_libraries(test_ingest_single_write PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
 
 # MPI cross-rank reuse-decision integration test (driver-io-regrid-perf,
 # Property 8, Task 12.3). Provides its own main() with MPI init, so it does NOT
@@ -849,6 +882,8 @@ gtest_discover_tests(test_physics)
 gtest_discover_tests(test_cece_ingestor)
 gtest_discover_tests(test_hemco_mimic)
 gtest_discover_tests(test_field_resolution_priority)
+gtest_discover_tests(test_ingest_setfield_bypass)
+gtest_discover_tests(test_ingest_copyback_neutralized)
 gtest_discover_tests(test_hemco_parity)
 gtest_discover_tests(test_kokkos_configuration)
 gtest_discover_tests(test_properties)
@@ -874,6 +909,10 @@ gtest_discover_tests(test_open_once_no_per_step_close)
 gtest_discover_tests(test_cache_hit_skips_work)
 gtest_discover_tests(test_regrid_conservation_properties)
 gtest_discover_tests(test_shared_plan_equivalence)
+gtest_discover_tests(test_ingest_no_stale_data)
+gtest_discover_tests(test_ingest_consolidation_equivalence)
+gtest_discover_tests(test_ingest_collective_gate_order)
+gtest_discover_tests(test_ingest_single_write)
 gtest_discover_tests(test_bdsnp)
 gtest_discover_tests(test_bdsnp_runtime)
 gtest_discover_tests(test_helm_cpp PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm")

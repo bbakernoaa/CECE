@@ -678,15 +678,19 @@ bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name
         }
     }
 
-    auto stream_host = Kokkos::create_mirror_view(stream_view);
+    // Transpose the gathered [level][j][i] full_destination into the LayoutLeft
+    // (i, j, level) DualView layout exactly ONCE, into a single host mirror
+    // buffer. This one buffer feeds the sole live consumer below (the core
+    // import field) via deep_copy. The index math is unchanged:
+    //   host(i, j, level) = full_destination[level*nx*ny + j*nx + i].
+    Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::HostSpace> transposed_host("assembled_field_host", nx_, ny_, field_nlev);
     for (int level = 0; level < field_nlev; ++level) {
         for (int j = 0; j < ny_; ++j) {
             for (int i = 0; i < nx_; ++i) {
-                stream_host(i, j, level) = full_destination[static_cast<size_t>(level) * target_spatial + static_cast<size_t>(j) * nx_ + i];
+                transposed_host(i, j, level) = full_destination[static_cast<size_t>(level) * target_spatial + static_cast<size_t>(j) * nx_ + i];
             }
         }
     }
-    Kokkos::deep_copy(stream_view, stream_host);
 
     // Also populate the Core import state with the same full field.
     auto* data = static_cast<cece::CeceInternalData*>(cece_core_data_ptr);
@@ -708,17 +712,19 @@ bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name
     }
     if (!collective_all_ready(comm_c_, local_core_shape_ready, "core import field shape validation", failure_detail)) return false;
 
-    auto core_host = Kokkos::create_mirror_view(core_view);
-    for (int level = 0; level < field_nlev; ++level) {
-        for (int j = 0; j < ny_; ++j) {
-            for (int i = 0; i < nx_; ++i) {
-                core_host(i, j, level) = full_destination[static_cast<size_t>(level) * target_spatial + static_cast<size_t>(j) * nx_ + i];
-            }
-        }
-    }
-    Kokkos::deep_copy(core_view, core_host);
+    // Authoritative write of the core import field from the single host buffer.
+    // This is now the SOLE authoritative write of the assembled field. The
+    // former stream_view populate (Tier 2, task 9.1) has been removed: the
+    // Finding-B read-site enumeration proved no consumer reads the data stored
+    // in CeceIO::field_views_ / stream_view within a step (it is used only for
+    // .extent(...) shape/metadata queries and the readiness gate above, both of
+    // which are preserved). Dropping the stream_view deep_copy removes one
+    // per-field-per-step copy without changing any value seen by a live
+    // consumer, any layout, or any collective gate.
+    Kokkos::deep_copy(core_view, transposed_host);
     core_field.modify_device();
     core_field.sync_host();
+
     ingest_buffer = std::move(full_destination);
     return true;
 }
@@ -1135,21 +1141,24 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             return false;
         }
 
-        // Ingest the host staging buffer into CECE's cache. Do not pass a
-        // DefaultExecutionSpace pointer to the host-copying C bridge.
-        int bridge_rc = 0;
-        cece_ingestor_set_field(cece_core_data_ptr, var_name.c_str(), static_cast<int>(var_name.length()), ingest_buffer.data(),
-                                field_nlev,  // n_lev
-                                nx_ * ny_,   // n_elem
-                                &bridge_rc);
-        const bool local_bridge_ready = bridge_rc == 0;
-        if (!local_bridge_ready) {
-            failure_detail = "CECE ingestor rejected field '" + var_name + "' with rc=" + std::to_string(bridge_rc);
-        }
-        if (!collective_all_ready(comm_c_, local_bridge_ready, "CECE ingestor readiness for '" + var_name + "'", failure_detail)) {
-            CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            return false;
-        }
+        // Ingest-copy consolidation (Req 3.1, 3.2, 3.4, 5.3): the driver facade
+        // already wrote import_state.fields[var_name] directly and authoritatively
+        // in AssembleReplicatedField, so the legacy ingestor round-trip here is
+        // redundant. The `cece_ingestor_set_field` call (which populated the
+        // separate field_cache_ for AMIO variables) and its guarding
+        // `CECE ingestor readiness` collective gate were removed together as a
+        // UNIT — the gate only guarded the now-deleted call, and it is removed
+        // identically on every rank so no rank waits on a collective a peer
+        // skipped. The surrounding `ingest-buffer readiness` gate above is
+        // retained: it validates the assembled buffer and must still be reached
+        // by every rank in the same order. `ingest_buffer` is still produced
+        // above because the slice cache stores its own copy in AdvanceTime;
+        // only the `cece_ingestor_set_field` consumer is removed here.
+        //
+        // Removing the SetField population of field_cache_ for AMIO variables
+        // also naturally neutralizes IngestEmissionsInline's copy-back for those
+        // fields: its HasCachedField(...) check now returns false, so it skips
+        // them. No edit to IngestEmissionsInline itself is required.
         CECE_LOG_INFO("[DRIVER] Ingested field '" + var_name + "' with shape " + std::to_string(nx_) + "x" + std::to_string(ny_) + "x" +
                       std::to_string(field_nlev));
     }
