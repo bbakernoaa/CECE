@@ -521,6 +521,10 @@ target_link_libraries(benchmark_ex5_end_to_end PRIVATE cece)
 add_executable(benchmark_regrid_apply tests/benchmark_regrid_apply.cpp)
 target_link_libraries(benchmark_regrid_apply PRIVATE cece)
 
+# Standalone develop-vs-optimize per-step pipeline benchmark (regrid+assemble+ingest)
+add_executable(benchmark_pipeline_develop_vs_optimize tests/benchmark_pipeline_develop_vs_optimize.cpp)
+target_link_libraries(benchmark_pipeline_develop_vs_optimize PRIVATE cece)
+
 add_executable(test_hemco_parity tests/test_hemco_parity.cpp)
 target_link_libraries(test_hemco_parity PRIVATE cece GTest::gtest_main)
 
@@ -616,6 +620,61 @@ target_compile_definitions(test_open_once_no_per_step_close PRIVATE CECE_SOURCE_
 add_executable(test_cache_hit_skips_work tests/test_cache_hit_skips_work.cpp)
 target_link_libraries(test_cache_hit_skips_work PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
 
+# Endpoint-blend Equivalence Property Tests (temporal-endpoint-regrid-cache,
+# Property 1). Uses apply_regrid_plan + AXIS weight generation (Kokkos), so it
+# provides its own main() that initializes Kokkos/MPI (see the file's
+# KokkosMpiEnvironment), matching the test_numerical_equivalence pattern.
+add_executable(test_endpoint_blend_equivalence tests/test_endpoint_blend_equivalence.cpp)
+target_link_libraries(test_endpoint_blend_equivalence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Endpoint Work-reduction Property Tests (temporal-endpoint-regrid-cache,
+# Property 2). Reproduces the Tier ladder with a WorkSpy counting read_slab /
+# regrid-front invocations via the real bracket_equal; no Kokkos/MPI needed, so
+# it uses the shared GTest::gtest_main like the test_cache_hit_skips_work sibling.
+add_executable(test_endpoint_work_reduction tests/test_endpoint_work_reduction.cpp)
+target_link_libraries(test_endpoint_work_reduction PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Endpoint per-variable Shared-plan Correctness Property Tests
+# (temporal-endpoint-regrid-cache, Property 5). Uses apply_regrid_plan + AXIS
+# weight generation (Kokkos), so it provides its own main() that initializes
+# Kokkos/MPI (see the file's KokkosMpiEnvironment), matching the
+# test_numerical_equivalence / test_endpoint_blend_equivalence pattern.
+add_executable(test_endpoint_shared_plan tests/test_endpoint_shared_plan.cpp)
+target_link_libraries(test_endpoint_shared_plan PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Endpoint Tier-precedence Property Tests (temporal-endpoint-regrid-cache,
+# Property 3, Task 9.1, Req 2.4/6.1/6.5/9.3). Pure decision-ladder property test
+# over the real RecordBracket/SliceCacheEntry/EndpointCacheEntry types and the
+# real bracket_equal; no Kokkos/regrid math, so it uses GTest::gtest_main like
+# the test_cache_hit_skips_work / test_endpoint_work_reduction siblings.
+add_executable(test_endpoint_tier_precedence tests/test_endpoint_tier_precedence.cpp)
+target_link_libraries(test_endpoint_tier_precedence PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+
+# Endpoint Sizing and Tier-3 Population Unit/Example Tests
+# (temporal-endpoint-regrid-cache, Task 12.1, Req 1.1/1.3/2.5/8.1). Example-based
+# GTest companions to the endpoint property tests: assert each Endpoint_Field is
+# sized field_nlev*nx*ny, that a Tier-3 compute populates the endpoint entry, and
+# that the single-record path builds no endpoint entry. Reproduces the Tier ladder
+# over the real RecordBracket/SliceCacheEntry/EndpointCacheEntry types and the real
+# bracket_equal. Linking cece pulls in Kokkos/AXIS static globals, so it provides
+# its own main() with a KokkosMpiEnvironment (matching test_endpoint_blend_equivalence
+# / test_numerical_equivalence) for clean process teardown.
+add_executable(test_endpoint_sizing tests/test_endpoint_sizing.cpp)
+target_link_libraries(test_endpoint_sizing PRIVATE cece GTest::gtest_main MPI::MPI_CXX Kokkos::kokkos)
+
+# Endpoint Invalidation and Failure unit/example tests
+# (temporal-endpoint-regrid-cache, Task 12.2). Example-based companions asserting
+# that rollover forces a rebuild, a plan (re)build invalidates dependent entries,
+# a shape change forces a miss, TeardownHandles clears endpoint_caches_, and an
+# injected endpoint-compute failure marks the entry invalid and sets
+# failure_detail. Reproduces the Tier ladder over the real
+# RecordBracket/SliceCacheEntry/EndpointCacheEntry types and the real
+# bracket_equal. Linking cece pulls in Kokkos/AXIS static globals, so it provides
+# its own main() with a KokkosMpiEnvironment (matching test_endpoint_sizing
+# / test_endpoint_blend_equivalence) for clean process teardown.
+add_executable(test_endpoint_invalidation tests/test_endpoint_invalidation.cpp)
+target_link_libraries(test_endpoint_invalidation PRIVATE cece GTest::gtest_main MPI::MPI_CXX Kokkos::kokkos)
+
 # Regrid Conservation Property Tests (driver-io-regrid-perf, Property 9)
 add_executable(test_regrid_conservation_properties tests/test_regrid_conservation_properties.cpp)
 target_link_libraries(test_regrid_conservation_properties PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
@@ -670,6 +729,38 @@ add_test(
 )
 set_tests_properties(
   test_mpi_reuse_decision_np2
+  PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
+)
+
+# Endpoint reuse-decision rank-invariance property test
+# (temporal-endpoint-regrid-cache, Property 4, Task 10.1). Mirrors
+# test_mpi_reuse_decision: provides its own main() with MPI init (so it does NOT
+# link GTest::gtest_main) and is runnable as a single process AND under
+# mpirun -np 2. Uses RapidCheck for the weight-independence / rank-invariance
+# property, so it also links rapidcheck + rapidcheck_gtest.
+add_executable(test_endpoint_reuse_decision tests/test_endpoint_reuse_decision.cpp)
+target_link_libraries(test_endpoint_reuse_decision PRIVATE cece GTest::gtest MPI::MPI_CXX rapidcheck rapidcheck_gtest)
+# Single-process registration (ctest default): runs the binary directly so the
+# rank-invariance property is validated structurally even without a launcher.
+add_test(NAME test_endpoint_reuse_decision_np1 COMMAND $<TARGET_FILE:test_endpoint_reuse_decision>)
+set_tests_properties(
+  test_endpoint_reuse_decision_np1
+  PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
+)
+# Multi-rank registration under mpirun. --allow-run-as-root is required for the
+# root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
+# already present (the guard above may have added it for the reuse-decision test).
+if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
+  list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
+endif()
+add_test(
+  NAME test_endpoint_reuse_decision_np2
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:test_endpoint_reuse_decision> ${MPIEXEC_POSTFLAGS}
+)
+set_tests_properties(
+  test_endpoint_reuse_decision_np2
   PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
 )
 
@@ -911,6 +1002,12 @@ gtest_discover_tests(test_slice_cache_equivalence)
 gtest_discover_tests(test_slice_cache_independence)
 gtest_discover_tests(test_open_once_no_per_step_close)
 gtest_discover_tests(test_cache_hit_skips_work)
+gtest_discover_tests(test_endpoint_blend_equivalence)
+gtest_discover_tests(test_endpoint_work_reduction)
+gtest_discover_tests(test_endpoint_shared_plan)
+gtest_discover_tests(test_endpoint_tier_precedence)
+gtest_discover_tests(test_endpoint_sizing)
+gtest_discover_tests(test_endpoint_invalidation)
 gtest_discover_tests(test_regrid_conservation_properties)
 gtest_discover_tests(test_shared_plan_equivalence)
 gtest_discover_tests(test_ingest_no_stale_data)

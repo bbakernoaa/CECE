@@ -348,6 +348,23 @@ std::string CeceDriverOrchestrator::StreamKey(const StreamConfig& cfg) {
     return HandleKey(cfg) + "|" + cfg.mapalgo;
 }
 
+void CeceDriverOrchestrator::InvalidateEndpointCachesForStream(const std::string& stream_key) {
+    // Plan (re)build invalidation (Req 6.2): endpoint entries are keyed by
+    // var_name while regrid_plans_ is keyed by stream_key, so when the plan for
+    // stream_key is (re)built we must invalidate the endpoint entry of every
+    // variable whose computed StreamKey matches. Only touch entries that
+    // already exist so we do not fabricate empty (default-invalid) entries.
+    for (const auto& [var_name, cfg] : stream_configs_) {
+        if (StreamKey(cfg) != stream_key) {
+            continue;
+        }
+        auto it = endpoint_caches_.find(var_name);
+        if (it != endpoint_caches_.end()) {
+            it->second.valid = false;
+        }
+    }
+}
+
 std::string CeceDriverOrchestrator::HandleKey(const StreamConfig& cfg) {
     // File/manifest-scoped identity key: it concatenates exactly the
     // StreamConfig fields that BuildManifestContent consumes
@@ -535,6 +552,7 @@ void CeceDriverOrchestrator::TeardownHandles() {
     amio_handles_.clear();
     stream_configs_.clear();
     slice_caches_.clear();
+    endpoint_caches_.clear();
 }
 
 CeceDriverOrchestrator::~CeceDriverOrchestrator() {
@@ -554,9 +572,11 @@ CeceDriverOrchestrator::~CeceDriverOrchestrator() {
     cece_io_.reset();
 }
 
-bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source,
-                                                     int file_nx, int file_ny, int field_nlev, DeviceView3D stream_view, void* cece_core_data_ptr,
-                                                     std::vector<double>& ingest_buffer, std::string& failure_detail) {
+bool CeceDriverOrchestrator::RegridToDestinationBuffer(const std::string& var_name, const io::RegridPlan& plan,
+                                                       const std::vector<double>& source_record, int file_nx, int file_ny, int field_nlev,
+                                                       std::vector<double>& out_buffer, std::string& failure_detail) {
+    (void)var_name;
+    const std::vector<double>& source = source_record;
     int mpi_initialized = 0;
     MPI_Initialized(&mpi_initialized);
     int mpi_size = 1;
@@ -575,13 +595,15 @@ bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name
     // This must be the helper's first distributed gate. Every caller reaches
     // it before any rank-local return, so a bad source buffer or inconsistent
     // AMIO metadata cannot leave peer ranks waiting in the layer collectives.
+    // This front half does NOT touch import_state or stream_view, so the
+    // readiness check omits the cece_core_data_ptr / stream_view extent
+    // conditions the full AssembleReplicatedField applies; those are enforced
+    // by the write-back half (WriteDestinationBufferToImport).
     const bool positive_dimensions = file_nx > 0 && file_ny > 0 && field_nlev > 0 && nx_ > 0 && ny_ > 0;
     const size_t source_spatial = positive_dimensions ? static_cast<size_t>(file_nx) * file_ny : 0;
     const size_t expected_source_size = positive_dimensions ? static_cast<size_t>(field_nlev) * source_spatial : 0;
-    const bool local_source_ready = positive_dimensions && cece_core_data_ptr != nullptr && plan.built && plan.file_nx == file_nx &&
-                                    plan.file_ny == file_ny && plan.j0 == expected_j0 && plan.j1 == expected_j1 &&
-                                    source.size() == expected_source_size && stream_view.extent(0) == static_cast<size_t>(nx_) &&
-                                    stream_view.extent(1) == static_cast<size_t>(ny_) && stream_view.extent(2) == static_cast<size_t>(field_nlev);
+    const bool local_source_ready = positive_dimensions && plan.built && plan.file_nx == file_nx && plan.file_ny == file_ny &&
+                                    plan.j0 == expected_j0 && plan.j1 == expected_j1 && source.size() == expected_source_size;
     if (!local_source_ready && failure_detail.empty()) {
         failure_detail = "source buffer or regrid metadata changed after AMIO validation";
     }
@@ -678,6 +700,15 @@ bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name
         }
     }
 
+    out_buffer = std::move(full_destination);
+    return true;
+}
+
+bool CeceDriverOrchestrator::WriteDestinationBufferToImport(const std::string& var_name, const std::vector<double>& dest_buffer, int field_nlev,
+                                                            void* cece_core_data_ptr, std::string& failure_detail) {
+    const std::vector<double>& full_destination = dest_buffer;
+    const size_t target_spatial = static_cast<size_t>(nx_) * ny_;
+
     // Transpose the gathered [level][j][i] full_destination into the LayoutLeft
     // (i, j, level) DualView layout exactly ONCE, into a single host mirror
     // buffer. This one buffer feeds the sole live consumer below (the core
@@ -725,7 +756,45 @@ bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name
     core_field.modify_device();
     core_field.sync_host();
 
+    return true;
+}
+
+bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source,
+                                                     int file_nx, int file_ny, int field_nlev, DeviceView3D stream_view, void* cece_core_data_ptr,
+                                                     std::vector<double>& ingest_buffer, std::string& failure_detail) {
+    // Pure behavior-preserving composition (Decision 2a): the front half
+    // (readiness gates + per-level apply_regrid_plan + MPI_Allgatherv producing
+    // the replicated [level][j][i] destination buffer) followed by the back half
+    // (transpose to LayoutLeft (i,j,level), core-import-shape collective gate,
+    // deep_copy + modify_device + sync_host). The composed collective sequence
+    // is byte-for-byte identical to the former inline implementation: the front
+    // half's source/metadata readiness, nx/ny/nlev/identity int matches, and
+    // per-level readiness/gather collectives run first, then the back half's
+    // core-import-field-shape gate, in exactly the same order.
+    //
+    // stream_view is now unused: the former stream_view readiness condition and
+    // populate were dropped when the sole authoritative write became the core
+    // import field (see WriteDestinationBufferToImport). The signature is kept
+    // unchanged for every existing caller and the slice-cache path.
+    (void)stream_view;
+
+    // Front half: produce the destination-grid replicated buffer.
+    std::vector<double> full_destination;
+    if (!RegridToDestinationBuffer(var_name, plan, source, file_nx, file_ny, field_nlev, full_destination, failure_detail)) {
+        return false;
+    }
+
+    // Return the destination-grid ingest_buffer exactly as today. Assign the
+    // buffer to ingest_buffer before the write-back so the destination-grid
+    // buffer is surfaced to the caller/slice-cache verbatim, then reuse it for
+    // the core import write.
     ingest_buffer = std::move(full_destination);
+
+    // Back half: authoritative write of the core import field.
+    if (!WriteDestinationBufferToImport(var_name, ingest_buffer, field_nlev, cece_core_data_ptr, failure_detail)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -917,6 +986,11 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     CECE_LOG_INFO("[DRIVER] passthrough verified stream file equals explicit gridspec file for '" + var_name +
                                   "'; using exact cell copy");
                     plan_it = regrid_plans_.emplace(stream_key, std::move(plan)).first;
+                    // Plan (re)build invalidates the endpoint cache of every
+                    // variable bound to this stream_key: cached endpoints depend
+                    // on the plan, so a new/rebuilt plan must force a rebuild
+                    // before reuse (Req 6.2).
+                    InvalidateEndpointCachesForStream(stream_key);
                 } else {
                     bool local_plan_built = false;
                     try {
@@ -934,6 +1008,11 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                         }
                     } else {
                         plan_it = regrid_plans_.emplace(stream_key, std::move(plan)).first;
+                        // Plan (re)build invalidates the endpoint cache of every
+                        // variable bound to this stream_key: cached endpoints
+                        // depend on the plan, so a new/rebuilt plan must force a
+                        // rebuild before reuse (Req 6.2).
+                        InvalidateEndpointCachesForStream(stream_key);
                     }
                 }
             }
@@ -976,14 +1055,64 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 // the same hit/miss decision, so no rank reads while another
                 // skips (Req 6.3).
                 auto& slice_cache = slice_caches_[var_name];
-                const bool cache_hit = bracket_ready && slice_cache.valid && bracket_equal(bracket, slice_cache.last_bracket);
+                auto& endpoint_cache = endpoint_caches_[var_name];
 
-                if (cache_hit) {
+                // Tier 1: exact slice-cache hit (indices AND weight) — reuse the
+                // cached ingest buffer with no read, no regrid, no blend (Req
+                // 2.4, 9.3). This is the pre-existing short-circuit, unchanged.
+                const bool tier1_slice_hit = bracket_ready && slice_cache.valid && bracket_equal(bracket, slice_cache.last_bracket);
+
+                // Tier 2: endpoint-cache hit (same indices, different weight) —
+                // reuse the two cached destination-grid endpoints regrid(i0)/
+                // regrid(i1) and recompute only the cheap blend, skipping both
+                // reads and both regrids (Req 2.1, 2.2). The gate is a pure
+                // function of collective-agreed (i0,i1) + rank-invariant
+                // nx_/ny_/field_nlev, so every rank makes the same decision
+                // (Req 4.2, 4.3, 4.5).
+                const bool tier2_endpoint_hit = bracket_ready && needs_upper_record && endpoint_cache.valid &&
+                                                endpoint_cache.cached_i0 == bracket.i0 && endpoint_cache.cached_i1 == bracket.i1 &&
+                                                endpoint_cache.built_nx == nx_ && endpoint_cache.built_ny == ny_ &&
+                                                endpoint_cache.built_field_nlev == field_nlev;
+
+                if (tier1_slice_hit) {
+                    // ---- Tier 1 ----
                     CECE_LOG_DEBUG("[DRIVER] Reusing cached time slice " + std::to_string(bracket.i0) + " for field '" + var_name +
                                    "' (bracket unchanged; no read, no regrid)");
                     ingest_buffer = slice_cache.ingest_buffer;
                     read_success = true;
+                } else if (tier2_endpoint_hit) {
+                    // ---- Tier 2: endpoint-cache hit (same indices, different
+                    // weight) ----
+                    // NO read_slab and NO apply_regrid_plan on this step. Blend
+                    // the two cached destination-grid endpoints with the current
+                    // bracket weight and write the result back through the same
+                    // core-import shape gate every other tier uses (Req 2.1,
+                    // 2.2, 4.5, 5.1, 5.4, 6.5). No rank-local early return: all
+                    // ranks reach WriteDestinationBufferToImport, whose single
+                    // collective shape gate keeps them in lock-step.
+                    CECE_LOG_DEBUG("[DRIVER] Reusing cached regrid endpoints " + std::to_string(bracket.i0) + " & " + std::to_string(bracket.i1) +
+                                   " for field '" + var_name + "' (w=" + std::to_string(bracket.weight) + "; no read, no regrid)");
+                    const double w = bracket.weight;
+                    const size_t blend_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
+                    std::vector<double> blended(blend_size);
+                    for (size_t k = 0; k < blend_size; ++k) {
+                        blended[k] = (1.0 - w) * endpoint_cache.endpoint_i0[k] + w * endpoint_cache.endpoint_i1[k];
+                    }
+                    // Surface the destination-grid buffer to the caller/slice
+                    // cache first (mirror AssembleReplicatedField), then write
+                    // back from the same buffer so it stays valid.
+                    ingest_buffer = std::move(blended);
+                    read_success = WriteDestinationBufferToImport(var_name, ingest_buffer, field_nlev, cece_core_data_ptr, failure_detail);
+                    if (read_success) {
+                        // Refresh the slice cache so an immediate exact repeat
+                        // (same indices AND weight) re-hits Tier 1 (Req 6.5).
+                        slice_cache.last_bracket = bracket;
+                        slice_cache.ingest_buffer = ingest_buffer;
+                        slice_cache.ingest_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
+                        slice_cache.valid = true;
+                    }
                 } else {
+                    // ---- Tier 3: interpolation miss / rollover / single record ----
                 // Diagnostic: report which time slice(s) are being read from the file.
                 if (bracket.i0 == bracket.i1 || bracket.weight == 0.0) {
                     CECE_LOG_INFO("[DRIVER] Reading time slice " + std::to_string(bracket.i0) + "/" + std::to_string(file_nt - 1) + " from '" +
@@ -1076,29 +1205,103 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     return true;
                 };
 
-                // Read the lower record and, when interpolating, the upper record;
-                // blend on the source grid with the bracket weight.
+                // Read the lower record (record i0) on the source grid. This
+                // guard is identical to the pre-cache path; every rank agrees on
+                // readiness before either sub-case proceeds.
                 std::vector<double> src;
                 int file_nx = 0;
                 int file_ny = 0;
                 const bool local_lower_ready = bracket_ready && read_slab(bracket.i0, src, file_nx, file_ny);
                 bool have_data = collective_all_ready(comm_c_, local_lower_ready, "lower AMIO slab readiness for '" + var_name + "'", failure_detail);
-                if (have_data && needs_upper_record) {
-                    std::vector<double> src1;
-                    int upper_nx = 0;
-                    int upper_ny = 0;
-                    const bool local_upper_ready =
-                        read_slab(bracket.i1, src1, upper_nx, upper_ny) && src1.size() == src.size() && upper_nx == file_nx && upper_ny == file_ny;
-                    have_data = collective_all_ready(comm_c_, local_upper_ready, "upper AMIO slab readiness for '" + var_name + "'", failure_detail);
+
+                if (needs_upper_record) {
+                    // ---- Tier 3 interpolation sub-case: rebuild endpoints ----
+                    // Read the upper record (record i1) into srcB with the same
+                    // readiness guard the pre-cache path used, then regrid EACH
+                    // endpoint separately on the destination grid instead of
+                    // blending on the source grid and regridding once. Because
+                    // regrid is linear, (1-w)*R(A)+w*R(B) == R((1-w)A+w*B), and
+                    // caching R(A)/R(B) lets same-index/different-weight steps
+                    // skip both reads and both regrids (Req 1.4, 2.3, 3.1, 3.2,
+                    // 5.3, 5.4).
+                    std::vector<double> srcB;
                     if (have_data) {
-                        const double w = bracket.weight;
-                        for (size_t k = 0; k < src.size(); ++k) {
-                            src[k] = (1.0 - w) * src[k] + w * src1[k];
+                        int upper_nx = 0;
+                        int upper_ny = 0;
+                        const bool local_upper_ready = read_slab(bracket.i1, srcB, upper_nx, upper_ny) && srcB.size() == src.size() &&
+                                                       upper_nx == file_nx && upper_ny == file_ny;
+                        have_data =
+                            collective_all_ready(comm_c_, local_upper_ready, "upper AMIO slab readiness for '" + var_name + "'", failure_detail);
+                    }
+
+                    if (have_data) {
+                        // Regrid each endpoint on the destination grid.
+                        // RegridToDestinationBuffer owns its own source/metadata
+                        // readiness gate, int-match collectives, and per-level
+                        // MPI_Allgatherv, so both calls run in lock-step across
+                        // ranks. All ranks reach BOTH calls (they are inside the
+                        // collective-agreed have_data branch, not behind any
+                        // rank-local condition), keeping the collective sequence
+                        // identical on every rank (Req 4.2, 4.3, 4.5).
+                        std::vector<double> epA;
+                        std::vector<double> epB;
+                        const bool regridA_ok = RegridToDestinationBuffer(var_name, plan, src, file_nx, file_ny, field_nlev, epA, failure_detail);
+                        const bool regridB_ok = RegridToDestinationBuffer(var_name, plan, srcB, file_nx, file_ny, field_nlev, epB, failure_detail);
+
+                        if (regridA_ok && regridB_ok) {
+                            // Store the endpoint cache keyed on (i0, i1) only; the
+                            // weight is intentionally excluded so later same-index
+                            // steps re-hit Tier 2 (Req 1.1, 1.2, 1.3). Blend from
+                            // epA/epB BEFORE moving them into the cache so both the
+                            // cache and the blend see the same values.
+                            const double w = bracket.weight;
+                            const size_t blend_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
+                            std::vector<double> blended(blend_size);
+                            for (size_t k = 0; k < blend_size; ++k) {
+                                blended[k] = (1.0 - w) * epA[k] + w * epB[k];
+                            }
+
+                            endpoint_cache.cached_i0 = bracket.i0;
+                            endpoint_cache.cached_i1 = bracket.i1;
+                            endpoint_cache.endpoint_i0 = std::move(epA);
+                            endpoint_cache.endpoint_i1 = std::move(epB);
+                            endpoint_cache.built_field_nlev = field_nlev;
+                            endpoint_cache.built_nx = nx_;
+                            endpoint_cache.built_ny = ny_;
+                            endpoint_cache.valid = true;
+
+                            // Surface the destination-grid blend to the caller,
+                            // then write it back through the same core-import
+                            // shape gate the other tiers use.
+                            ingest_buffer = std::move(blended);
+                            read_success = WriteDestinationBufferToImport(var_name, ingest_buffer, field_nlev, cece_core_data_ptr, failure_detail);
+                            if (read_success) {
+                                // Refresh the slice cache so an immediate exact
+                                // repeat (same indices AND weight) re-hits Tier 1
+                                // (Req 3.3, 9.4).
+                                slice_cache.last_bracket = bracket;
+                                slice_cache.ingest_buffer = ingest_buffer;
+                                slice_cache.ingest_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
+                                slice_cache.valid = true;
+                            }
+                        } else {
+                            // A regrid failed on this refresh: invalidate the
+                            // endpoint entry so no stale endpoint is reused and
+                            // leave read_success false. The failure surfaces via
+                            // failure_detail and the trailing collective_all_ready
+                            // on read_success (Req 6.4).
+                            endpoint_cache.valid = false;
                         }
                     }
-                }
-
-                if (have_data) {
+                } else if (have_data) {
+                    // ---- Tier 3 single-record sub-case (unchanged) ----
+                    // Reached when !needs_upper_record and the collective-agreed
+                    // "lower AMIO slab readiness" guard read record bracket.i0
+                    // into src. No temporal interpolation, so there is no upper
+                    // endpoint and nothing to cache for interpolation reuse: the
+                    // endpoint cache is intentionally NOT populated here. Regrid
+                    // the single record through the existing full assembly path
+                    // exactly as the pre-cache code did (Req 2.5, 5.2).
                     read_success = AssembleReplicatedField(var_name, plan, src, file_nx, file_ny, field_nlev, stream_view, cece_core_data_ptr,
                                                            ingest_buffer, failure_detail);
                     if (read_success) {
@@ -1112,7 +1315,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                         slice_cache.valid = true;
                     }
                 }
-                }  // end cache-miss branch
+                }  // end Tier 3 (cache-miss / rollover / single-record) branch
             }
             read_success = collective_all_ready(comm_c_, read_success, "replicated field assembly for '" + var_name + "'", failure_detail);
             // The AMIO handle set persists in amio_handles_ across timesteps

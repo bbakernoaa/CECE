@@ -74,6 +74,27 @@ struct SliceCacheEntry {
     size_t ingest_size = 0;             ///< == field_nlev * nx_ * ny_
 };
 
+/**
+ * @brief Two destination-grid regridded endpoint fields for one variable,
+ *        keyed on the bracket indices (i0, i1) only (NOT the weight).
+ *
+ * endpoint_i0 == regrid(record i0), endpoint_i1 == regrid(record i1), each a
+ * replicated [level][j][i] buffer sized field_nlev * nx_ * ny_ — the SAME
+ * layout AssembleReplicatedField's ingest_buffer uses. On a same-indices step
+ * the driver blends these as (1-w)*endpoint_i0 + w*endpoint_i1 without any read
+ * or regrid (Req 1.1-1.3, 8.1).
+ */
+struct EndpointCacheEntry {
+    int cached_i0 = -1;                  ///< bracket index that produced endpoint_i0
+    int cached_i1 = -1;                  ///< bracket index that produced endpoint_i1
+    bool valid = false;                  ///< false until both endpoints built for (cached_i0,cached_i1)
+    std::vector<double> endpoint_i0;     ///< regrid(record i0), field_nlev*nx*ny
+    std::vector<double> endpoint_i1;     ///< regrid(record i1), field_nlev*nx*ny
+    int built_field_nlev = 0;            ///< shape at build time (shape-change invalidation)
+    int built_nx = 0;
+    int built_ny = 0;
+};
+
 class CeceDriverOrchestrator {
    public:
     CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
@@ -94,6 +115,29 @@ class CeceDriverOrchestrator {
     bool AssembleReplicatedField(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source, int file_nx, int file_ny,
                                  int field_nlev, DeviceView3D stream_view, void* cece_core_data_ptr, std::vector<double>& ingest_buffer,
                                  std::string& failure_detail);
+
+    // Front half of AssembleReplicatedField: regrid ONE source record into a
+    // replicated [level][j][i] destination-grid buffer via per-level
+    // apply_regrid_plan + MPI_Allgatherv. Runs the identical source/metadata
+    // readiness, nx/ny/nlev/identity int-match, per-level MPI_Allreduce(MIN)
+    // readiness, and per-level MPI_Allgatherv (+ status MPI_Allreduce)
+    // collectives the current AssembleReplicatedField front half runs, so all
+    // ranks stay in lock-step. Produces the [level][j][i] full_destination
+    // buffer (sized field_nlev * nx_ * ny_) into out_buffer. Does NOT touch
+    // import_state or stream_view and takes no cece_core_data_ptr
+    // (Req 1.4, 4.4, 9.1).
+    bool RegridToDestinationBuffer(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source_record, int file_nx,
+                                   int file_ny, int field_nlev, std::vector<double>& out_buffer, std::string& failure_detail);
+
+    // Back half of AssembleReplicatedField: transpose a [level][j][i]
+    // destination-grid buffer into the (i, j, level) core import DualView and
+    // write it authoritatively. Runs the same local [level][j][i] ->
+    // (i, j, level) transpose, the core-import-field-shape collective_all_ready
+    // gate, and the deep_copy + modify_device() + sync_host() the current
+    // AssembleReplicatedField back half runs. Local work plus the single
+    // core-import-shape collective gate (Req 4.5, 9.1).
+    bool WriteDestinationBufferToImport(const std::string& var_name, const std::vector<double>& dest_buffer, int field_nlev,
+                                        void* cece_core_data_ptr, std::string& failure_detail);
 
     // Parse config_file_ once at construction and populate stream_configs_ for
     // every model variable, resolving the same fields and defaults the legacy
@@ -134,6 +178,14 @@ class CeceDriverOrchestrator {
     // the plan splits only when mapalgo differs. Variables sharing the same
     // HandleKey and mapalgo produce the same key and share one regrid plan.
     static std::string StreamKey(const StreamConfig& cfg);
+
+    // Invalidate (valid = false) the endpoint cache entry of every variable
+    // whose computed StreamKey matches stream_key. Called when a regrid_plans_
+    // entry is built or rebuilt for that stream, because cached endpoints depend
+    // on the plan and must be rebuilt before reuse (Req 6.2). endpoint_caches_
+    // is keyed by var_name while regrid_plans_ is keyed by stream_key, so the
+    // var_name->stream_key mapping is derived from stream_configs_ + StreamKey.
+    void InvalidateEndpointCachesForStream(const std::string& stream_key);
 
     // Tolerance for comparing two resolved bracket weights for equality.
     static constexpr double kBracketWeightTol = 1e-12;
@@ -212,6 +264,12 @@ class CeceDriverOrchestrator {
     std::unordered_map<std::string, AmioHandleSet> amio_handles_;
     std::unordered_map<std::string, SliceCacheEntry> slice_caches_;
 
+    // Per-variable endpoint cache holding regrid(A)/regrid(B) for the current
+    // Bracket_Indices. Keyed by model variable name (like slice_caches_) so
+    // variables sharing one Regrid_Plan still get distinct endpoint pairs
+    // (Req 1, 7). Cleared in TeardownHandles (Req 6.3).
+    std::unordered_map<std::string, EndpointCacheEntry> endpoint_caches_;
+
     // HELM Orchestration and pipeline components
     std::unique_ptr<dagr::GraphOrchestrator> dagr_;
     std::unique_ptr<io::CeceIO> cece_io_;
@@ -266,6 +324,14 @@ class CeceDriverOrchestrator {
     // public structs in the cece namespace, so only bracket_equal needs friend
     // access. Has no effect on production behavior. (Task 13.3)
     friend struct CacheHitSkipTestAccess;
+
+    // Test-only access to the private static bracket_equal helper and the
+    // endpoint-cache decision logic for the temporal-endpoint-regrid-cache
+    // property tests (endpoint-blend equivalence, work reduction, tier
+    // precedence). EndpointCacheEntry / RecordBracket are public structs in the
+    // cece namespace, so only bracket_equal and the endpoint decision helper
+    // need friend access. Has no effect on production behavior. (Task 4.3)
+    friend struct EndpointCacheTestAccess;
 
     // Test-only access to the private static bracket_equal helper for the
     // cross-rank reuse-decision MPI integration test
