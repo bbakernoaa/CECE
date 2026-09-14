@@ -511,14 +511,20 @@ target_compile_definitions(test_utc_grid PRIVATE CECE_SOURCE_DIR="${CMAKE_CURREN
 
 add_executable(test_local_time_service tests/test_local_time_service.cpp)
 target_link_libraries(test_local_time_service PRIVATE cece GTest::gtest_main)
-target_compile_definitions(test_local_time_service PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(
+  test_local_time_service
+  PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 add_executable(test_local_time_stacking tests/test_local_time_stacking.cpp)
 target_link_libraries(test_local_time_stacking PRIVATE cece GTest::gtest_main)
 
 add_executable(test_local_time_fallback tests/test_local_time_fallback.cpp)
 target_link_libraries(test_local_time_fallback PRIVATE cece GTest::gtest_main)
-target_compile_definitions(test_local_time_fallback PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(
+  test_local_time_fallback
+  PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 add_executable(test_local_time_utc_outputs tests/test_local_time_utc_outputs.cpp)
 target_link_libraries(test_local_time_utc_outputs PRIVATE cece GTest::gtest_main)
