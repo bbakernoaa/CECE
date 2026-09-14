@@ -63,7 +63,7 @@ void ExecuteStackingEngine(cece::CeceInternalData& d, int hour, int day_of_week,
     if (d.stacking_engine) {
         cece::CeceStateResolver resolver(d.import_state, d.export_state, d.config.met_mapping, d.config.scale_factor_mapping, d.config.mask_mapping);
         // Compute over this rank's latitude band only (ny_local == ny on a single rank).
-        // Feature 001: forward the local-time service (null when disabled) and the
+        // forward the local-time service (null when disabled) and the
         // step's elapsed seconds so opted-in layers scale at local time.
         d.stacking_engine->Execute(resolver, d.nx, d.ny_local, d.nz, d.default_mask, hour, day_of_week, month, nullptr, d.local_time.get(),
                                    elapsed_seconds);
