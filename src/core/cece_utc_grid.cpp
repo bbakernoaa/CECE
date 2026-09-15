@@ -147,7 +147,7 @@ std::vector<std::int32_t> MapToNativeOffsetsSec(const UtcGrid& grid, const std::
 
     std::vector<std::int32_t> out(static_cast<std::size_t>(nx) * ny_local, 0);
     for (int j = 0; j < ny_local; ++j) {
-        const int row = UtcGridRowForLat(native_lats[static_cast<std::size_t>(j0 + j)]);
+        const int row = UtcGridRowForLat(native_lats[static_cast<std::size_t>(j0) + static_cast<std::size_t>(j)]);
         const int row_ncol = grid.ncol[static_cast<std::size_t>(row)];
         for (int i = 0; i < nx; ++i) {
             const int col = UtcGridColForLon(native_lons[static_cast<std::size_t>(i)], row_ncol);

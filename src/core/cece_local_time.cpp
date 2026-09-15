@@ -61,7 +61,7 @@ std::unique_ptr<LocalTimeService> LocalTimeService::Create(std::unique_ptr<IUtcO
     // provider can make the mapping instant-dependent here.
     std::vector<std::int32_t> host_offsets(static_cast<std::size_t>(nx) * ny_local, 0);
     for (int j = 0; j < ny_local; ++j) {
-        const double lat = native_lats[static_cast<std::size_t>(j0 + j)];
+        const double lat = native_lats[static_cast<std::size_t>(j0) + static_cast<std::size_t>(j)];
         for (int i = 0; i < nx; ++i) {
             const double lon = native_lons[static_cast<std::size_t>(i)];
             host_offsets[static_cast<std::size_t>(j) * nx + i] = provider->offsetSecondsAt(lat, lon, utc_start_epoch_secs);
