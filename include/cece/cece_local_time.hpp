@@ -10,6 +10,8 @@
 #include <memory>
 #include <vector>
 
+#include "cece/utc_grid.hpp"
+
 namespace cece {
 
 /**
@@ -152,21 +154,21 @@ class IUtcOffsetProvider {
 };
 
 /**
- * @brief v1 provider: nearest-cell lookup into the decoded static F1440 grid.
+ * @brief v1 provider: nearest-cell lookup into the decoded static reduced grid.
  *
- * Owns the dense 1440x2880 int8 quarter-hour offset field (decoded exactly once
- * by DecodeUtcGridRle). The utc_epoch_secs argument is accepted but unused —
- * the snapshot is static (DST is a future provider).
+ * Owns the dense cosine-reduced int8 quarter-hour offset field (decoded exactly
+ * once by DecodeUtcGridRle). The utc_epoch_secs argument is accepted but unused
+ * — the snapshot is static (DST is a future provider).
  */
 class StaticGridOffsetProvider final : public IUtcOffsetProvider {
    public:
-    /// Takes ownership of the dense grid; throws std::invalid_argument on size mismatch.
-    explicit StaticGridOffsetProvider(std::vector<std::int8_t> dense_grid);
+    /// Takes ownership of the decoded grid; throws std::invalid_argument on an empty grid.
+    explicit StaticGridOffsetProvider(UtcGrid grid);
 
     std::int32_t offsetSecondsAt(double lat, double lon, std::int64_t utc_epoch_secs) const override;
 
    private:
-    std::vector<std::int8_t> grid_;
+    UtcGrid grid_;
 };
 
 /**

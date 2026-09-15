@@ -170,7 +170,7 @@ TEST_F(LocalTimeServiceTest, ResolvePointQueryUsesProvider) {
 }
 
 TEST_F(LocalTimeServiceTest, StaticGridProviderMatchesKnownCities) {
-    auto dense = DecodeUtcGridRle(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f1440.rle");
+    auto dense = DecodeUtcGridRle(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f720r.rle");
     StaticGridOffsetProvider provider(std::move(dense));
     EXPECT_EQ(provider.offsetSecondsAt(40.0, -74.0, 0), -20 * kUtcOffsetQuarterHoursPerSecond);
     EXPECT_EQ(provider.offsetSecondsAt(35.68, 139.7, 0), 36 * kUtcOffsetQuarterHoursPerSecond);
@@ -178,7 +178,7 @@ TEST_F(LocalTimeServiceTest, StaticGridProviderMatchesKnownCities) {
 }
 
 TEST_F(LocalTimeServiceTest, CreateFromStaticGridBandsAreCorrect) {
-    auto dense = DecodeUtcGridRle(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f1440.rle");
+    auto dense = DecodeUtcGridRle(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f720r.rle");
     auto provider = std::make_unique<StaticGridOffsetProvider>(std::move(dense));
     const std::vector<double> lons = {-74.0, 0.0, 139.7};
     const std::vector<double> lats = {40.0, 51.5};

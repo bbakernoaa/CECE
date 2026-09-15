@@ -34,7 +34,7 @@ driver:
 # --- Local-time service (opt-in; default off elsewhere) ---
 local_time:
   enabled: true
-  grid_file: /work/data/utc_grid_f1440.rle
+  grid_file: /work/data/utc_grid_f720r.rle
 
 # Identity diurnal profile: factor[i] = i. The applied scale on a local-time
 # layer therefore equals the local hour used for that cell.

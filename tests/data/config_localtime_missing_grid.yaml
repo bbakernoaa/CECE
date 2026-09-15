@@ -19,7 +19,7 @@ driver:
 
 local_time:
   enabled: true
-  grid_file: /work/data/does_not_exist_f1440.rle
+  grid_file: /work/data/does_not_exist_f720r.rle
 
 temporal_profiles:
   hour_id:

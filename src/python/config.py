@@ -176,7 +176,7 @@ class LocalTimeConfig:
     enabled : bool, optional
         Master switch for local-time temporal scaling. Default is ``False``.
     grid_file : str or None, optional
-        Path to the RLE UTC-offset grid (e.g. ``data/utc_grid_f1440.rle``).
+        Path to the RLE UTC-offset grid (e.g. ``data/utc_grid_f720r.rle``).
         ``None``/empty means the repository default. Default is ``None``.
     """
 

@@ -155,7 +155,7 @@ top-level `local_time` section to be enabled; see
 ```yaml
 local_time:
   enabled: true
-  grid_file: data/utc_grid_f1440.rle
+  grid_file: data/utc_grid_f720r.rle
 
 species:
   co:
@@ -166,7 +166,8 @@ species:
 
 Implementation notes:
 
-- The UTC-offset grid (0.125°, quarter-hour precision) is decoded once at
+- The UTC-offset grid (cosine-reduced 0.125° lattice, quarter-hour precision —
+  uniform latitude rows, column count tapering with cos(lat)) is decoded once at
   initialization; each rank holds a read-only band-local device array of
   per-cell offsets. Nearest-cell lookup, no interpolation.
 - Per opted-in layer the engine owns a `(nx, ny_local, 1)` factor field that

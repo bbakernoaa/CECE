@@ -235,13 +235,13 @@ pre-feature run.
 | Key | Type | Description |
 | --- | --- | --- |
 | `enabled` | Boolean | Master switch. When `false` (default) or the section is absent, the grid file is never opened and no memory is allocated. |
-| `grid_file` | String | Path to the RLE-compressed UTC-offset grid (e.g. `data/utc_grid_f1440.rle`). Defaults to `data/utc_grid_f1440.rle` when empty. |
+| `grid_file` | String | Path to the RLE-compressed UTC-offset grid (e.g. `data/utc_grid_f720r.rle`). Defaults to `data/utc_grid_f720r.rle` when empty. |
 
 **Example:**
 ```yaml
 local_time:
   enabled: true
-  grid_file: data/utc_grid_f1440.rle
+  grid_file: data/utc_grid_f720r.rle
 
 temporal_profiles:
   traffic_diurnal: [0.5, 0.3, 0.2, 0.3, 0.6, 1.2, 1.8, 1.5, 1.2, 1.0, 1.1, 1.2,
@@ -258,9 +258,12 @@ species:
 
 ### How it works
 
-- The grid file is decoded **once** at initialization into a 0.125° global
+- The grid file is decoded **once** at initialization into a dense cosine-reduced
   raster of signed UTC offsets (quarter-hour precision, produced by
-  `scripts/python/utcoffset_generator.py` from a timezone snapshot). Each rank
+  `scripts/python/utcoffset_generator.py` from a timezone snapshot): 1440 uniform
+  0.125° latitude rows whose column count tapers toward the poles
+  (`ncol = max(4, 4·round(720·cos lat))`), giving ~14 km ground resolution
+  everywhere at 36% fewer cells than a full regular grid. Each rank
   keeps only a read-only band-local device array of its own cells' offsets.
 - Each cell uses the **nearest grid cell** (no interpolation). Ocean and
   unresolved points carry offset 0, i.e. UTC.

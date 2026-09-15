@@ -86,7 +86,7 @@ TEST_F(LocalTimeFallbackTest, DisabledAttachesNoServiceEvenWithBogusPath) {
 TEST_F(LocalTimeFallbackTest, MissingGridWarnsOnceAndFallsBackToUtc) {
     CeceInternalData data;
     data.config.local_time.enabled = true;
-    data.config.local_time.grid_file = "/definitely/not/here_f1440.rle";
+    data.config.local_time.grid_file = "/definitely/not/here_f720r.rle";
     int rc = -1;
     cece_core_local_time_init(&data, 2, 1, 1, lons_.data(), 2, lats_.data(), 1, 0, &rc);
     EXPECT_EQ(rc, 0);  // run must complete, not abort
@@ -109,7 +109,7 @@ TEST_F(LocalTimeFallbackTest, MissingGridWarnsOnceAndFallsBackToUtc) {
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeFallbackTest, TruncatedGridWarnsOnceAndFallsBackToUtc) {
-    std::ifstream in(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f1440.rle", std::ios::binary);
+    std::ifstream in(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f720r.rle", std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(in));
     std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     ASSERT_GT(bytes.size(), 30u);
@@ -143,7 +143,7 @@ TEST_F(LocalTimeFallbackTest, TruncatedGridWarnsOnceAndFallsBackToUtc) {
 TEST_F(LocalTimeFallbackTest, ValidGridLoadsWithoutWarning) {
     CeceInternalData data;
     data.config.local_time.enabled = true;
-    data.config.local_time.grid_file = std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f1440.rle";
+    data.config.local_time.grid_file = std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f720r.rle";
     int rc = -1;
     cece_core_local_time_init(&data, 2, 1, 1, lons_.data(), 2, lats_.data(), 1, 0, &rc);
     EXPECT_EQ(rc, 0);

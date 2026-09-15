@@ -28,7 +28,7 @@
 namespace {
 
 /// Repository default grid path used when local_time.grid_file is empty.
-constexpr const char* kDefaultUtcGridFile = "data/utc_grid_f1440.rle";
+constexpr const char* kDefaultUtcGridFile = "data/utc_grid_f720r.rle";
 
 }  // namespace
 

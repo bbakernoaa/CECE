@@ -22,10 +22,9 @@ namespace cece {
 // StaticGridOffsetProvider
 // ---------------------------------------------------------------------------
 
-StaticGridOffsetProvider::StaticGridOffsetProvider(std::vector<std::int8_t> dense_grid) : grid_(std::move(dense_grid)) {
-    if (grid_.size() != static_cast<std::size_t>(kUtcGridCells)) {
-        throw std::invalid_argument("StaticGridOffsetProvider: dense grid must hold " + std::to_string(kUtcGridCells) + " cells, got " +
-                                    std::to_string(grid_.size()));
+StaticGridOffsetProvider::StaticGridOffsetProvider(UtcGrid grid) : grid_(std::move(grid)) {
+    if (grid_.cells.empty() || grid_.nrows <= 0) {
+        throw std::invalid_argument("StaticGridOffsetProvider: decoded grid is empty");
     }
 }
 
@@ -33,8 +32,8 @@ std::int32_t StaticGridOffsetProvider::offsetSecondsAt(double lat, double lon, s
     // Static snapshot: the instant is accepted for the seam (a DST-aware
     // provider will read it) but unused here (spec Assumptions).
     const int row = UtcGridRowForLat(lat);
-    const int col = UtcGridColForLon(lon);
-    return static_cast<std::int32_t>(grid_[static_cast<std::size_t>(row) * kUtcGridCols + col]) * kUtcOffsetQuarterHoursPerSecond;
+    const int col = UtcGridColForLon(lon, static_cast<int>(grid_.ncol[static_cast<std::size_t>(row)]));
+    return static_cast<std::int32_t>(grid_.cells[grid_.index(row, col)]) * kUtcOffsetQuarterHoursPerSecond;
 }
 
 // ---------------------------------------------------------------------------

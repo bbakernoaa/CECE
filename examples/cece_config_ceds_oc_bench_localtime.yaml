@@ -26,7 +26,7 @@ driver:
 # --- Local-time service (the feature under benchmark) ---
 local_time:
   enabled: true
-  grid_file: /work/data/utc_grid_f1440.rle
+  grid_file: /work/data/utc_grid_f720r.rle
 
 # Identity diurnal profile so the applied factor equals the local hour.
 temporal_profiles:

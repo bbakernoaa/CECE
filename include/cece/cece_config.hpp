@@ -453,7 +453,7 @@ struct DriverConfig {
  */
 struct LocalTimeConfig {
     bool enabled = false;   ///< Master switch for local-time temporal scaling.
-    std::string grid_file;  ///< Path to the RLE UTC-offset grid; empty => "data/utc_grid_f1440.rle".
+    std::string grid_file;  ///< Path to the RLE UTC-offset grid; empty => "data/utc_grid_f720r.rle".
 };
 
 /**
