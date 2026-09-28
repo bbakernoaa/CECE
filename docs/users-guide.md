@@ -44,17 +44,21 @@ If you encounter `overlayfs` errors or other Docker-related environment issues w
 # Inside the JCSDA Docker container
 source /opt/spack-environment/activate.sh
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake ..
 make -j$(nproc)
 ```
+
+This relies on CECE's default `CMAKE_BUILD_TYPE` (`RelWithDebInfo`: optimized, with debug symbols).
+For a leaner production build without debug symbols, pass `-DCMAKE_BUILD_TYPE=Release` explicitly.
+For active development, `-DCMAKE_BUILD_TYPE=Debug` disables optimizations so tools like `gdb` and sanitizers behave predictably, at the cost of much slower runtime.
 
 ### Build Options
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `CMAKE_BUILD_TYPE` | Build type (Release, Debug) | `Release` |
+| `CMAKE_BUILD_TYPE` | Build type (RelWithDebInfo, Release, Debug) | `RelWithDebInfo` |
 | `Kokkos_ENABLE_SERIAL` | Enable Serial execution space | `ON` |
-| `Kokkos_ENABLE_OPENMP` | Enable OpenMP multi-core support | `ON` |
+| `Kokkos_ENABLE_OPENMP` | Enable OpenMP multi-core support | `ON` (if OpenMP detected) |
 | `Kokkos_ENABLE_CUDA` | Enable NVIDIA GPU support | `OFF` |
 | `Kokkos_ENABLE_HIP` | Enable AMD GPU support | `OFF` |
 
@@ -63,7 +67,7 @@ Example for targeting NVIDIA GPUs:
 cmake .. -DKokkos_ENABLE_CUDA=ON -DKokkos_ARCH_AMPERE80=ON
 ```
 
-Example for CPU-only with OpenMP:
+Example for CPU-only with OpenMP (same as defaults, assuming OpenMP support is detected at configure time, but explicit):
 ```bash
 cmake .. -DKokkos_ENABLE_SERIAL=ON -DKokkos_ENABLE_OPENMP=ON
 ```
@@ -131,9 +135,6 @@ cece_data:
   streams:
     - name: "GLOBAL_INVENTORY"
       file: "/data/inventories/global_emissions.nc"
-      yearFirst: 2020
-      yearLast: 2020
-      yearAlign: 2020
       taxmode: "cycle"
       variables:
         - file: "CO_total"
@@ -172,9 +173,8 @@ cece_data:
   streams:
     - name: "anthro_emissions"
       file: "/data/emissions/CEDS_CO_anthro_2020.nc"
-      yearFirst: 2020
-      yearLast: 2020
-      yearAlign: 2020
+      # cadence defaults to "series": the file's own time axis is decoded and the
+      # simulation time is bracketed against the actual record times.
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
@@ -184,16 +184,26 @@ cece_data:
 
     - name: "biogenic_emissions"
       file: "/data/emissions/MEGAN_ISOP_2020.nc"
-      yearFirst: 2020
-      yearLast: 2020
-      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       variables:
         - file: "ISOP_emis"
           model: "MEGAN_ISOP"
+
+    - name: "diurnal_profile"
+      file: "/data/profiles/diurnal_factors.nc"
+      cadence: "hourly"   # 24-record hour-of-day climatology, not a time series
+      mapalgo: "bilinear"
+      variables:
+        - file: "FH_weekday"
+          model: "DIURNAL_SCALE"
 ```
+
+By default (`cadence: series`) CECE decodes the file's CF time axis and selects the
+record(s) matching the simulation date-time. Use `cadence: hourly`/`weekly` for
+climatological profiles indexed by hour-of-day or day-of-week, and `cadence: stepwise`
+to ignore time and walk the record index one step at a time.
 
 For the full set of stream options (cadence, data_model, refresh_interval_seconds, etc.), see the [Configuration Documentation](configuration.md#cece_data).
 

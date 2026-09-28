@@ -471,6 +471,9 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
             final_attrs["references"] = "CECE Documentation: https://ufs-community.github.io/CECE, Repository: https://github.com/ufs-community/cece";
             final_attrs["comment"] = "Target spatial grid: " + std::to_string(nx_) + "x" + std::to_string(ny_) + "x" + std::to_string(nz_);
             final_attrs["gridspec_file"] = (gridspec_file_.empty() ? "none" : gridspec_file_);
+            final_attrs["date_created"] = GetCurrentTimestamp();
+            final_attrs["date_modified"] = GetCurrentTimestamp();
+            final_attrs["date_metadata_modified"] = GetCurrentTimestamp();
 
             for (const auto& [key, value] : config_.global_attributes) {
                 final_attrs[key] = value;
@@ -497,27 +500,39 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "  lon:\n"
                    << "    attributes:\n"
                    << "      units: \"degrees_east\"\n"
+                   << "      standard_name: \"longitude\"\n"
                    << "      long_name: \"longitude\"\n"
                    << "      bounds: \"lon_bnds\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n"
                    << "  lat:\n"
                    << "    attributes:\n"
                    << "      units: \"degrees_north\"\n"
+                   << "      standard_name: \"latitude\"\n"
                    << "      long_name: \"latitude\"\n"
                    << "      bounds: \"lat_bnds\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n"
                    << "  lev:\n"
                    << "    attributes:\n"
-                   << "      units: \"level\"\n"
+                   << "      units: \"1\"\n"
+                   << "      standard_name: \"model_level_number\"\n"
                    << "      long_name: \"vertical level\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n"
                    << "  time:\n"
                    << "    attributes:\n"
                    << "      units: \"seconds since " << start_time_iso8601_ << "\"\n"
                    << "      long_name: \"time\"\n"
+                   << "      standard_name: \"time\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n"
                    << "  lon_bnds:\n"
                    << "    attributes:\n"
                    << "      units: \"degrees_east\"\n"
+                   << "      standard_name: \"longitude\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n"
                    << "  lat_bnds:\n"
                    << "    attributes:\n"
-                   << "      units: \"degrees_north\"\n";
+                   << "      units: \"degrees_north\"\n"
+                   << "      standard_name: \"latitude\"\n"
+                   << "      coverage_content_type: \"coordinate\"\n";
 
             if (ny_ == 1) {
                 m_file << "  mesh:\n"
