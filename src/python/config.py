@@ -166,7 +166,7 @@ class EmissionLayer:
 @dataclass
 class LocalTimeConfig:
     """
-    Configuration for the local-time service (feature 001).
+    Configuration for the local-time service.
 
     Opt-in: when disabled (the default) no UTC-offset grid is opened and
     temporal scaling behaves exactly as the pre-feature UTC path.
@@ -176,7 +176,7 @@ class LocalTimeConfig:
     enabled : bool, optional
         Master switch for local-time temporal scaling. Default is ``False``.
     grid_file : str or None, optional
-        Path to the RLE UTC-offset grid (e.g. ``data/utc_grid_f720r.rle``).
+        Path to the RLE UTC-offset grid (e.g. ``data/utc_grid_720r.rle``).
         ``None``/empty means the repository default. Default is ``None``.
     """
 
@@ -802,7 +802,7 @@ class CeceConfig:
         for name, factors in config_dict.get("temporal_cycles", {}).items():
             self.add_temporal_cycle(name, factors)
 
-        # Local-time service (feature 001)
+        # Local-time service
         lt = config_dict.get("local_time", {})
         if lt:
             self._local_time = LocalTimeConfig(
@@ -832,5 +832,5 @@ class CeceConfig:
 
     @property
     def local_time(self) -> LocalTimeConfig:
-        """LocalTimeConfig : Local-time service settings (feature 001)."""
+        """LocalTimeConfig : Local-time service settings."""
         return self._local_time

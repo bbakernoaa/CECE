@@ -2,7 +2,7 @@
 // CECE — Chemical Emissions Coupling Engine
 // Feature 001 (local-time support) — decoder tests for the cosine-reduced UTC-offset grid.
 //
-// Decodes the real data/utc_grid_f720r.rle and checks: the reduced-lattice
+// Decodes the real data/utc_grid_720r.rle and checks: the reduced-lattice
 // invariants (row widths, total cell count, taper monotonicity), the (lat,lon)
 // probe offsets against the generator's own expansion, the all-or-nothing
 // guarantee (FR-003, FR-008), and the nearest-cell mapping (FR-004).
@@ -25,7 +25,7 @@ namespace cece {
 namespace {
 
 std::string GridPath() {
-    return std::string(CECE_SOURCE_DIR) + "/data/utc_grid_f720r.rle";
+    return std::string(CECE_SOURCE_DIR) + "/data/utc_grid_720r.rle";
 }
 
 /// Reference offsets (quarter-hours) at named probe points, verified against

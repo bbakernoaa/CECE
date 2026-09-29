@@ -235,13 +235,13 @@ pre-feature run.
 | Key | Type | Description |
 | --- | --- | --- |
 | `enabled` | Boolean | Master switch. When `false` (default) or the section is absent, the grid file is never opened and no memory is allocated. |
-| `grid_file` | String | Path to the RLE-compressed UTC-offset grid (e.g. `data/utc_grid_f720r.rle`). Defaults to `data/utc_grid_f720r.rle` when empty. |
+| `grid_file` | String | Path to the RLE-compressed UTC-offset grid (e.g. `data/utc_grid_720r.rle`). Defaults to `data/utc_grid_720r.rle` when empty. |
 
 **Example:**
 ```yaml
 local_time:
   enabled: true
-  grid_file: data/utc_grid_f720r.rle
+  grid_file: data/utc_grid_720r.rle
 
 temporal_profiles:
   traffic_diurnal: [0.5, 0.3, 0.2, 0.3, 0.6, 1.2, 1.8, 1.5, 1.2, 1.0, 1.1, 1.2,

@@ -155,7 +155,7 @@ top-level `local_time` section to be enabled; see
 ```yaml
 local_time:
   enabled: true
-  grid_file: data/utc_grid_f720r.rle
+  grid_file: data/utc_grid_720r.rle
 
 species:
   co:

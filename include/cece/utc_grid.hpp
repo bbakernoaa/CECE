@@ -14,7 +14,7 @@ namespace cece {
 
 /**
  * @brief Grid constants for the cosine-reduced static UTC-offset raster
- *        (data/utc_grid_f720r.rle).
+ *        (data/utc_grid_720r.rle).
  *
  * The grid keeps 1440 uniform latitude rows (0.125°, centers
  * lat = 90 - (row + 0.5) * 0.125) laid out North→South, West→East, but tapers

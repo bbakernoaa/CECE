@@ -9,12 +9,14 @@ Output format (v2, self-describing), little-endian:
     6       2*N   ncol[row] uint16 * N       (per-row column counts)
     ...     ...   run-length tokens: { uint16 run_length; int8 offset_15min }
 
-The grid keeps 1440 uniform latitude rows (0.125 deg, centers
-``lat = 90 - (row + 0.5) * 0.125``) and tapers columns toward the poles so each
-row holds ``ncol(row) = max(4, 4 * round(720 * cos(lat)))`` points. That yields
-~2.64M cells (36% fewer than the old 1440x2880 regular raster) at a constant
-~14 km ground resolution -- timezone-offset data does not need 0.125 deg
-resolution near the poles.
+The grid geometry has a single free parameter, the equatorial quarter-circle
+point count ``N`` (= 720, as in the shipped file name ``utc_grid_720r.rle``).
+Everything else derives from it: 2N uniform latitude rows (1440 at 0.125 deg,
+centers ``lat = 90 - (row + 0.5) * step``), 4N equatorial columns (2880), and
+a cosine taper to ``ncol(row) = max(4, 4 * round(N * cos(lat)))`` points per
+row. That yields ~2.64M cells (36% fewer than the old 1440x2880 regular
+raster) at a constant ~14 km ground resolution -- timezone-offset data does
+not need 0.125 deg resolution near the poles.
 
 Two modes:
 
@@ -28,8 +30,7 @@ Two modes:
                          --ref-date, then emit the reduced layout. Needs the
                          third-party dep; imported lazily so --rebin never does.
 
-Both write the same header + RLE stream. See
-specs/001-local-time-support/design-reduced-grid.md for the design rationale.
+Both write the same header + RLE stream.
 """
 
 import argparse
@@ -39,10 +40,14 @@ from datetime import datetime, timezone
 
 # ---------------------------------------------------------------------------
 # Grid geometry (shared by both modes and by the C++ decoder contract)
+#
+# Single source of truth: N, the equatorial quarter-circle point count. The
+# derived quantities match the C++ constants in include/cece/utc_grid.hpp.
 # ---------------------------------------------------------------------------
-NROWS = 1440  # 180 / 0.125
-STEP = 0.125  # degrees; ~14 km at the equator
-FULL_NCOL = 2880  # equatorial / v1 column count
+N = 720  # equatorial quarter-circle points; the "720" in the file name
+NROWS = 2 * N  # latitude rows: 180 deg / step -> 1440
+STEP = 180.0 / NROWS  # degrees; ~14 km at the equator -> 0.125
+FULL_NCOL = 4 * N  # equatorial / v1 column count -> 2880
 MAGIC = b"UTC1"
 
 
@@ -54,13 +59,11 @@ def row_center_lat(row: int) -> float:
 def reduced_ncol(row: int) -> int:
     """Cosine-tapered column count for a row: constant ground resolution.
 
-    ncol = 4 * round(720 * cos(lat)); 2880 at the equator (matching v1),
-    tapering to 4 at the poles. 720 = FULL_NCOL / 4 keeps the equatorial row
-    at the full 2880 columns.
+    ncol = 4 * round(N * cos(lat)); 4N at the equator (matching v1), tapering
+    to 4 at the poles. The factor of 4 keeps the equatorial row at the full
+    4N = 2880 columns.
     """
-    return max(
-        4, 4 * round((FULL_NCOL // 4) * math.cos(math.radians(row_center_lat(row))))
-    )
+    return max(4, 4 * round(N * math.cos(math.radians(row_center_lat(row)))))
 
 
 def reduced_ncols() -> list:
@@ -197,9 +200,18 @@ def main():
     mode.add_argument(
         "--from-timezones", action="store_true", help="rasterize with timezonefinder"
     )
-    ap.add_argument("-o", "--output", default="utc_grid_f720r.rle", help="output path")
+    ap.add_argument(
+        "-o",
+        "--output",
+        default=f"utc_grid_{N}r.rle",
+        help="output path (default derived from the grid parameter N)",
+    )
     ap.add_argument(
         "--ref-date",
+        # Arbitrary mid-month noon UTC snapshot. The shipped grid is produced
+        # with --rebin, so this instant only matters for --from-timezones
+        # regeneration. Noon keeps the snapshot away from the local-midnight
+        # date boundary, and mid-January is far from any DST transition.
         default="2026-01-15T12:00:00",
         help="timezone snapshot instant (UTC)",
     )
