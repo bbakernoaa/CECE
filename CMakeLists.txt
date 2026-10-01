@@ -332,8 +332,6 @@ if(CECE_HAS_FORTRAN)
     src/core/physics/legacy_fortran.F90
     src/core/physics/cece_sea_salt_fortran_bridge.cpp
     src/core/physics/sea_salt_kernel.F90
-    src/core/physics/cece_megan_fortran_bridge.cpp
-    src/core/physics/megan_kernel.F90
     src/core/physics/cece_dms_fortran_bridge.cpp
     src/core/physics/dms_kernel.F90
     src/core/physics/cece_lightning_fortran_bridge.cpp
@@ -350,8 +348,6 @@ if(CECE_HAS_FORTRAN)
     src/core/physics/k14_kernel.F90
     src/core/physics/cece_volcano_fortran_bridge.cpp
     src/core/physics/volcano_kernel.F90
-    src/core/physics/cece_megan3_fortran_bridge.cpp
-    src/core/physics/megan3_kernel.F90
     src/core/physics/cece_bdsnp_fortran_bridge.cpp
     src/core/physics/bdsnp_kernel.F90
     src/core/cece_ingestor_bridge.cpp
@@ -456,6 +452,35 @@ if(POLICY CMP0178)
   cmake_policy(SET CMP0178 OLD)
 endif()
 
+# Test data: the FV3/cubed-sphere regrid tests in tests/test_cece_utils.cpp need
+# the real C96 grid_spec and native-grid files for tile 1. These are NetCDF
+# fixtures that are not committed to the repo (*.nc is gitignored), so fetch them
+# into data/ at configure time when missing. This mirrors the NOAA download used
+# by tests/test_all_cubed_sphere_tiles.sh; if the fetch fails the tests still run
+# and report a clear "Missing test file" assertion rather than breaking configure.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data")
+set(CECE_C96_BASE_URL "https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/C96")
+foreach(_c96_file C96_grid_spec.tile1.nc C96_grid.tile1.nc)
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/${_c96_file}")
+    message(STATUS "Downloading ${_c96_file} for C96 regrid tests...")
+    file(
+      DOWNLOAD "${CECE_C96_BASE_URL}/${_c96_file}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/data/${_c96_file}"
+      STATUS _c96_status
+      TIMEOUT 120
+    )
+    list(GET _c96_status 0 _c96_code)
+    if(NOT _c96_code EQUAL 0)
+      list(GET _c96_status 1 _c96_msg)
+      file(REMOVE "${CMAKE_CURRENT_SOURCE_DIR}/data/${_c96_file}")
+      message(
+        WARNING
+        "Failed to download ${_c96_file}: ${_c96_msg}. C96 regrid tests will report a missing-file failure."
+      )
+    endif()
+  endif()
+endforeach()
+
 add_executable(test_driver_configuration tests/test_driver_configuration.cpp)
 target_link_libraries(test_driver_configuration PRIVATE cece GTest::gtest_main)
 
@@ -499,10 +524,13 @@ target_link_libraries(test_cece_compute PRIVATE cece GTest::gtest_main)
 
 add_executable(test_standalone_writer_attributes tests/test_standalone_writer_attributes.cpp)
 target_link_libraries(test_standalone_writer_attributes PRIVATE cece GTest::gtest)
+add_executable(test_rectilinear_gridspec tests/test_rectilinear_gridspec.cpp)
+target_link_libraries(test_rectilinear_gridspec PRIVATE cece GTest::gtest)
 
 # Ensure tests are run under MPI
 set_target_properties(
   test_standalone_writer_attributes
+  test_rectilinear_gridspec
   test_cece_utils
   PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
 )
@@ -633,6 +661,10 @@ target_link_libraries(test_repro_failure PRIVATE cece GTest::gtest_main)
 # CCPP Readiness and Core Link Isolation Test
 add_executable(test_ccpp_readiness tests/test_ccpp_readiness.cpp)
 target_link_libraries(test_ccpp_readiness PRIVATE cece_core GTest::gtest_main)
+target_compile_definitions(
+  test_ccpp_readiness
+  PRIVATE CECE_TEST_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/tests/cece_control_mock.yaml"
+)
 
 # Unit tests for field creation (Requirement R4) FENGSHA Dust Scheme Property
 # Tests
@@ -1310,6 +1342,22 @@ target_link_libraries(test_bdsnp PRIVATE cece GTest::gtest rapidcheck rapidcheck
 add_executable(test_bdsnp_runtime tests/test_bdsnp_runtime.cpp)
 target_link_libraries(test_bdsnp_runtime PRIVATE cece GTest::gtest)
 
+# HEMCO 3.12.1 MEGAN isoprene stateless source-conformance tests
+add_executable(test_hemco_megan_runtime tests/test_hemco_megan_runtime.cpp)
+target_link_libraries(test_hemco_megan_runtime PRIVATE cece GTest::gtest)
+target_compile_definitions(
+  test_hemco_megan_runtime
+  PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+# HEMCO 3.12.1 MEGAN synthetic global 4°×5° invariant tests
+add_executable(test_hemco_megan_global tests/test_hemco_megan_global.cpp)
+target_link_libraries(test_hemco_megan_global PRIVATE cece GTest::gtest_main)
+target_compile_definitions(
+  test_hemco_megan_global
+  PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
 if(ESMF_FOUND)
   add_executable(test_field_creation tests/test_field_creation.cpp)
   add_executable(test_field_creation_error_handling tests/test_field_creation_error_handling.cpp)
@@ -1417,7 +1465,7 @@ if(Python3_Interpreter_FOUND)
 
   add_test(
     NAME install_python_deps
-    COMMAND ${VENV_PYTHON} -I -m pip install pytest PyYAML matplotlib numpy
+    COMMAND ${VENV_PYTHON} -I -m pip install pytest PyYAML matplotlib netCDF4 numpy
   )
   set_tests_properties(
     install_python_deps
@@ -1447,6 +1495,15 @@ if(Python3_Interpreter_FOUND)
     PROPERTIES
       ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/scripts"
       FIXTURES_REQUIRED "python_deps_installed"
+  )
+
+  add_test(
+    NAME test_megan_global_source_conformance_python
+    COMMAND ${VENV_PYTHON} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_megan_global_parity.py
+  )
+  set_tests_properties(
+    test_megan_global_source_conformance_python
+    PROPERTIES FIXTURES_REQUIRED "python_deps_installed"
   )
 
   if(BUILD_PYTHON_BINDINGS)
@@ -1543,6 +1600,10 @@ gtest_discover_tests(
   PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false" PROCESSORS 1
 )
 gtest_discover_tests(test_physics PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+gtest_discover_tests(
+  test_rectilinear_gridspec
+  PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false" PROCESSORS 1
+)
 gtest_discover_tests(test_cece_ingestor PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
 gtest_discover_tests(test_hemco_mimic PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
 gtest_discover_tests(test_field_resolution_priority PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
@@ -1607,6 +1668,8 @@ gtest_discover_tests(test_ingest_collective_gate_order)
 gtest_discover_tests(test_ingest_single_write PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
 gtest_discover_tests(test_bdsnp PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
 gtest_discover_tests(test_bdsnp_runtime PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+gtest_discover_tests(test_hemco_megan_runtime PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+gtest_discover_tests(test_hemco_megan_global PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
 gtest_discover_tests(
   test_helm_cpp
   PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMP_PROC_BIND=false" PROCESSORS 1
