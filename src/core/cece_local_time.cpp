@@ -2,11 +2,11 @@
  * @file cece_local_time.cpp
  * @brief Local-time service: offset provider seam + band-local lookup utility.
  *
- * Implements the contracts in specs/001-local-time-support/contracts/
- * {offset-provider,local-time-service}.md. All arithmetic is integer-only and
- * shared with device kernels via the KOKKOS_INLINE_FUNCTION helpers in the
- * header (research D4); this translation unit owns the host-side construction
- * path (decode-once mapping, device mirror, UTC fallback).
+ * Implements the offset-provider and local-time-service contracts. All
+ * arithmetic is integer-only and shared with device kernels via the
+ * KOKKOS_INLINE_FUNCTION helpers in the header; this translation unit owns the
+ * host-side construction path (decode-once mapping, device mirror, UTC
+ * fallback).
  */
 
 #include "cece/cece_local_time.hpp"
@@ -55,7 +55,7 @@ std::unique_ptr<LocalTimeService> LocalTimeService::Create(std::unique_ptr<IUtcO
     }
 
     // Map the provider onto the native grid ONCE at the run start instant
-    // (v1 static-snapshot semantics, research D7). For the static-grid
+    // (v1 static-snapshot semantics). For the static-grid
     // provider this is identical to MapToNativeOffsetsSec; routing through the
     // provider interface keeps the seam honest — a future time-varying
     // provider can make the mapping instant-dependent here.
@@ -68,8 +68,8 @@ std::unique_ptr<LocalTimeService> LocalTimeService::Create(std::unique_ptr<IUtcO
         }
     }
 
-    // Build the device view and release the host buffer immediately (SC-005:
-    // nothing but the band-local device array outlives init).
+    // Build the device view and release the host buffer immediately: nothing
+    // but the band-local device array outlives init.
     service->offsets_ = OffsetView("utc_offsets", nx, ny_local);
     auto host_mirror = Kokkos::create_mirror_view(service->offsets_);
     for (int j = 0; j < ny_local; ++j) {

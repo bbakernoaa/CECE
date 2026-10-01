@@ -122,7 +122,7 @@ KOKKOS_INLINE_FUNCTION int LocalDayOfYearFromSecs(std::int64_t local_secs) {
 }
 
 /**
- * @brief Local civil components for a UTC instant + offset (spec FR-005).
+ * @brief Local civil components for a UTC instant + offset.
  */
 struct LocalTimeParts {
     int hour = 0;         ///< [0, 23]
@@ -133,7 +133,7 @@ struct LocalTimeParts {
 
 /**
  * @brief Pluggable UTC-offset source — the seam that isolates consumers from the
- *        concrete offset data (spec FR-010).
+ *        concrete offset data.
  *
  * v1: StaticGridOffsetProvider (static 2026-01-15 snapshot grid). A future
  * DST-aware / time-varying source implements the same method and uses the
@@ -172,17 +172,17 @@ class StaticGridOffsetProvider final : public IUtcOffsetProvider {
 };
 
 /**
- * @brief Central local-time utility (spec FR-001).
+ * @brief Central local-time utility.
  *
  * Holds a band-local (nx x ny_local) read-only device array of per-cell UTC
  * offsets in seconds, built exactly once at initialization by mapping the
  * provider onto the native grid at the run start instant. All derivations are
  * integer-only and identical on host and device; the offset is applied at
  * quarter-hour precision before extracting components so date boundaries roll
- * over correctly (FR-005).
+ * over correctly.
  *
  * The service is an internal computation input only — no output path (NetCDF,
- * provenance, diagnostics, logs) ever consults it (FR-009).
+ * provenance, diagnostics, logs) ever consults it.
  */
 class LocalTimeService {
    public:
@@ -204,9 +204,9 @@ class LocalTimeService {
                                                     std::int64_t utc_start_epoch_secs);
 
     /**
-     * @brief UTC-fallback service: zero offsets everywhere (grid load failed at
-     *        init; FR-008). UtcFallback() == true lets consumers take the exact
-     *        scalar UTC path so output remains bit-identical to a disabled run.
+     * @brief UTC-fallback service: zero offsets everywhere. UtcFallback() == true
+     *        lets consumers take the exact scalar UTC path so output remains
+     *        bit-identical to a disabled run.
      */
     static std::unique_ptr<LocalTimeService> CreateUtcFallback(int nx, int ny_local);
 
@@ -252,7 +252,7 @@ class LocalTimeService {
      */
     LocalTimeParts Resolve(double lat, double lon, std::int64_t utc_epoch_secs) const;
 
-    /// @brief Read-only device view for capture into Kokkos kernels (FR-011).
+    /// @brief Read-only device view for capture into Kokkos kernels.
     const OffsetView& Offsets() const {
         return offsets_;
     }

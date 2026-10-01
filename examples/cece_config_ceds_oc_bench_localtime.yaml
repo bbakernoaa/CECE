@@ -5,7 +5,7 @@
 #   - top-level local_time section enabled (F1440 UTC-offset grid),
 #   - an hourly diurnal identity profile (hour_id),
 #   - the OC_ENE layer opts into local-time scaling.
-# Used for the SC-005 cost check: run this and the baseline back to back
+# Used for the cost check: run this and the baseline back to back
 # and compare per-timestep wall clock. Target: single-digit % overhead —
 # the grid is decoded once at init (no per-step file I/O), and the only
 # per-step work is one (nx, ny_local) factor fill folded into the fused

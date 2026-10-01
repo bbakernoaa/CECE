@@ -810,6 +810,20 @@ class CeceConfig:
                 grid_file=lt.get("grid_file", None),
             )
 
+        # A layer that explicitly opts into local-time scaling while the
+        # feature is disabled would silently fall back to UTC scaling; reject
+        # it instead.
+        if not self._local_time.enabled:
+            for name, layers in self._species.items():
+                for layer in layers:
+                    if layer.use_local_time:
+                        raise ValueError(
+                            f"Species '{name}' layer '{layer.field_name}' sets "
+                            "use_local_time but local_time.enabled is false. "
+                            "Enable the local_time section or remove "
+                            "use_local_time from the layer."
+                        )
+
     @property
     def species(self) -> Dict[str, List[EmissionLayer]]:
         """dict : Mapping of species names to lists of ``EmissionLayer``."""

@@ -159,7 +159,7 @@ PYBIND11_MODULE(_cece_core, m) {
 
     py::class_<cece::TemporalCycle>(m, "TemporalCycle").def(py::init<>()).def_readwrite("factors", &cece::TemporalCycle::factors);
 
-    // --- LocalTimeConfig Binding (feature 001) ---
+    // --- LocalTimeConfig Binding ---
 
     py::class_<cece::LocalTimeConfig>(m, "LocalTimeConfig")
         .def(py::init<>())

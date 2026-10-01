@@ -1,9 +1,8 @@
 # =====================================================================
-# Local-time fallback fixture: enabled, but grid_file does not exist.
+# Local-time fail-fast fixture: enabled, but grid_file does not exist.
 # =====================================================================
-# Used by tests/test_local_time_fallback.cpp and quickstart SC-004.
-# Expected: exactly ONE startup warning, run completes, and output is
-# byte-identical to the same config with local_time disabled (UTC mode).
+# Expected: initialization fails with an error (the run does not start);
+# see tests/test_local_time_fallback.cpp for the equivalent unit check.
 # =====================================================================
 driver:
   start_time: "2023-01-01T06:00:00"

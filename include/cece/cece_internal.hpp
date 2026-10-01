@@ -38,7 +38,7 @@ struct CeceInternalData {
     std::string start_time_iso8601;    ///< Start time in ISO 8601 format for output.
     std::unique_ptr<CeceClock> clock;  ///< Clock for per-component refresh interval scheduling.
 
-    /// Local-time service (feature 001). Null when local_time is disabled —
+    /// Local-time service. Null when local_time is disabled —
     /// temporal scaling then takes the exact pre-feature UTC scalar path.
     std::unique_ptr<LocalTimeService> local_time;
 

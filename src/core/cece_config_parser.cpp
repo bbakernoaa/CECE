@@ -97,6 +97,20 @@ CeceConfig ParseConfig(const std::string& filename) {
         config.local_time.grid_file = string_or(local_time, "grid_file", config.local_time.grid_file);
     }
 
+    // A layer that explicitly opts into local-time scaling while the feature is
+    // disabled would silently fall back to UTC scaling; reject it instead.
+    if (!config.local_time.enabled) {
+        for (const auto& [species_name, layers] : config.species_layers) {
+            for (const auto& layer : layers) {
+                if (layer.use_local_time) {
+                    throw std::invalid_argument("Species '" + species_name + "' layer '" + layer.field_name +
+                                                "' sets use_local_time but local_time.enabled is false. Enable the local_time section or remove "
+                                                "use_local_time from the layer.");
+                }
+            }
+        }
+    }
+
     conf::Value schemes = root["physics_schemes"];
     for (std::size_t i = 0; schemes && i < schemes.size(); ++i) {
         conf::Value node = schemes[i];

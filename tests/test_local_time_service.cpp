@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // CECE — Chemical Emissions Coupling Engine
-// Feature 001 (local-time support) — T014 [US1] + T019/T020 [US2]: local-time
-// service tests (hour / day-of-week / month / day-of-year with rollover).
+// Local-time service tests (hour / day-of-week / month / day-of-year with
+// rollover), covering both the scalar and per-cell paths.
 //
 // Uses a ConstantOffsetProvider stub (an arbitrary IUtcOffsetProvider, also the
-// US4 seam proof) plus the real StaticGridOffsetProvider, and cross-checks the
+// DST-seam proof) plus the real StaticGridOffsetProvider, and cross-checks the
 // offset-0 case against CeceClock's independent gmtime decomposition.
 
 #include <gtest/gtest.h>
@@ -30,8 +30,8 @@ namespace {
 
 constexpr std::int64_t kHour = 3600;
 
-/// Stub provider: a fixed offset for every point/instant. Doubles as the US4
-/// proof that any IUtcOffsetProvider implementation plugs in unchanged.
+/// Stub provider: a fixed offset for every point/instant. Doubles as the proof
+/// that any IUtcOffsetProvider implementation plugs in unchanged.
 class ConstantOffsetProvider final : public IUtcOffsetProvider {
    public:
     explicit ConstantOffsetProvider(std::int32_t offset_secs) : offset_secs_(offset_secs) {}
@@ -56,7 +56,7 @@ class LocalTimeServiceTest : public ::testing::Test {
 };
 
 // ---------------------------------------------------------------------------
-// Hour-of-day with rollover (US1 / FR-005)
+// Hour-of-day with rollover
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeServiceTest, LocalHourMatchesUtcWhenOffsetZero) {
@@ -89,7 +89,7 @@ TEST_F(LocalTimeServiceTest, HalfHourOffsetGivesExactHour) {
 }
 
 // ---------------------------------------------------------------------------
-// Day-of-week / month / day-of-year rollover (US2 / FR-006)
+// Day-of-week / month / day-of-year rollover
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeServiceTest, DayOfWeekRollsOverForward) {
@@ -191,7 +191,7 @@ TEST_F(LocalTimeServiceTest, CreateFromStaticGridBandsAreCorrect) {
 }
 
 // ---------------------------------------------------------------------------
-// UTC fallback (FR-008) and elapsed-epoch helper
+// UTC fallback and elapsed-epoch helper
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeServiceTest, UtcFallbackYieldsZeroOffsetsAndUtcParts) {
@@ -217,7 +217,7 @@ TEST_F(LocalTimeServiceTest, UtcEpochSecsAddsStartInstant) {
 }
 
 // ---------------------------------------------------------------------------
-// Device-side availability (FR-011): the offset array is captured by kernels.
+// Device-side availability: the offset array is captured by kernels.
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeServiceTest, OffsetsViewUsableInKernel) {
@@ -231,7 +231,7 @@ TEST_F(LocalTimeServiceTest, OffsetsViewUsableInKernel) {
 }
 
 // ---------------------------------------------------------------------------
-// T026 [US4] — the IUtcOffsetProvider seam is ready for a DST-aware source.
+// The IUtcOffsetProvider seam is ready for a DST-aware source.
 // ---------------------------------------------------------------------------
 
 /// A deliberately time-varying provider (DST-style): UTC+1 in winter, UTC+2 in
@@ -254,14 +254,14 @@ TEST_F(LocalTimeServiceTest, TimeVaryingProviderDrivesServiceWithNoConsumerChang
 
     // 06:00Z on a summer day: local hour 8 (UTC+2) — the same service type,
     // built identically, resolves a different offset because the provider read
-    // the instant. This is the DST wiring point (FR-010).
+    // the instant. This is the DST wiring point.
     const std::int64_t summer = 1781503200;  // 2026-06-15T06:00Z
     auto svc_summer = LocalTimeService::Create(std::make_unique<SeasonalDstProvider>(), {0.0}, {50.0}, 1, 0, 1, summer);
     EXPECT_EQ(svc_summer->LocalHourAt(0, 0, svc_summer->UtcEpochSecs(0)), 8);
 }
 
 TEST_F(LocalTimeServiceTest, SeamIsolationNoConcreteProviderReferencesInConsumers) {
-    // Inspection guard (T026): the stacking engine, config parser, and Python
+    // Inspection guard: the stacking engine, config parser, and Python
     // bindings must depend only on the LocalTimeService / IUtcOffsetProvider
     // seam — never on the concrete StaticGridOffsetProvider (or the decoder),
     // so a future DST provider can be swapped in at the init entry alone.

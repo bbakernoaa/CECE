@@ -909,7 +909,7 @@ physics_schemes:
 }
 
 // ---------------------------------------------------------------------------
-// Feature 001 (local-time support) — T025 [US3]: opt-in config parsing.
+// Local-time support: opt-in config parsing.
 // Absent section / enabled:false must leave the defaults untouched so the
 // initialization short-circuit (no file open, no allocation) holds.
 // ---------------------------------------------------------------------------
@@ -1001,6 +1001,25 @@ species:
     CeceConfig config = ParseConfig(test_config_file);
     EXPECT_FALSE(config.local_time.enabled);
     EXPECT_TRUE(config.local_time.grid_file.empty());
+}
+
+TEST_F(DriverConfigurationTest, LocalTimeDisabledWithLayerOptInThrows) {
+    // A layer that opts into local-time scaling while the feature is disabled
+    // would silently stay on the UTC path; the parser must reject it instead.
+    WriteConfigFile(test_config_file, R"(
+local_time:
+  enabled: false
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+      use_local_time: true
+)");
+
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
 }
 
 int main(int argc, char** argv) {

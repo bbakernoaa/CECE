@@ -226,11 +226,12 @@ temporal_profiles:
 
 ## `local_time`
 
-Opt-in feature that converts UTC to **local solar time per grid cell** so that
+Opt-in feature that converts UTC to **local standard time per grid cell** so that
 temporal cycles (`diurnal_cycle`, `weekly_cycle`, `seasonal_cycle`) can be
-evaluated at local time. It is **disabled by default**; with the feature off
-(or when a layer omits `use_local_time`) behavior is bit-identical to a
-pre-feature run.
+evaluated at local time. Note this is civil clock time per time zone, not local
+solar time (which is based on Sun position). It is **disabled by default**; with
+the feature off (or when a layer omits `use_local_time`) behavior is
+bit-identical to a pre-feature run.
 
 | Key | Type | Description |
 | --- | --- | --- |
@@ -265,21 +266,24 @@ species:
   (`ncol = max(4, 4·round(720·cos lat))`), giving ~14 km ground resolution
   everywhere at 36% fewer cells than a full regular grid. Each rank
   keeps only a read-only band-local device array of its own cells' offsets.
-- Each cell uses the **nearest grid cell** (no interpolation). Ocean and
-  unresolved points carry offset 0, i.e. UTC.
+- Each cell uses the **nearest grid cell** (no interpolation). Every point on
+  Earth carries a UTC offset, including the oceans (the offset of the time zone
+  covering the point, e.g. an `Etc/GMT±n` ocean zone); only genuinely unresolved
+  points fall back to offset 0, i.e. UTC.
 - Local hour / day-of-week / month are derived with integer arithmetic and
   correct date rollover (a −8 h offset at 02:00 UTC yields 18:00 the previous
   local day, and the weekly cycle follows the local day).
 - **All outputs remain UTC**: NetCDF time axes, provenance records, and log
   timestamps are untouched — local time is an internal computation input only.
-- **Graceful fallback**: if the grid file is missing or corrupt, exactly one
-  warning is logged at startup and the run continues in UTC mode (offset 0
-  everywhere) — a partial grid is never silently used.
+- **Fail fast when enabled**: if the feature is enabled but the grid file is
+  missing or corrupt, initialization fails with an error — a partial or absent
+  grid is never silently used. (Layers that set `use_local_time` while the
+  feature is disabled are also rejected at parse time.)
 - The offset source sits behind a provider interface (`IUtcOffsetProvider`),
   so a future DST-aware / time-varying source can replace the static grid
   without any configuration-schema or consumer changes.
 
-See [examples/cece_config_localtime.yaml](https://github.com/ufs-community/CECE/blob/develop/examples/cece_config_localtime.yaml)
+See [examples/cece_config_localtime.yaml](../examples/cece_config_localtime.yaml)
 for a self-contained runnable example (an identity diurnal profile reveals the
 local hour actually used per cell).
 
@@ -303,7 +307,7 @@ The `species` block defines the emission targets and the layers that contribute 
 | `diurnal_cycle` | String | (Optional) Reference to temporal profile for diurnal scaling |
 | `weekly_cycle` | String | (Optional) Reference to temporal profile for weekly scaling |
 | `seasonal_cycle` | String | (Optional) Reference to temporal profile for seasonal scaling |
-| `use_local_time` | Boolean | (Optional) Evaluate this layer's temporal cycles at each cell's **local** time instead of UTC (requires the global `local_time.enabled`; Default: `false`) |
+| `use_local_time` | Boolean | (Optional) Evaluate this layer's temporal cycles at each cell's **local** time instead of UTC (requires the global `local_time.enabled`; configuring it while the feature is disabled is a parse error; Default: `false`) |
 
 ### Vertical Distribution Properties
 

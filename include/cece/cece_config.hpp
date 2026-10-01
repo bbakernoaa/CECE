@@ -446,7 +446,7 @@ struct DriverConfig {
 
 /**
  * @struct LocalTimeConfig
- * @brief Configuration for the local-time service (feature 001).
+ * @brief Configuration for the local-time service.
  *
  * Opt-in: when disabled (default) no grid file is opened, no allocation
  * happens, and temporal scaling behaves exactly as the pre-feature UTC path.
@@ -486,7 +486,7 @@ struct CeceConfig {
     CeceOutputConfig output_config;
     /// Configuration for the standalone NUOPC driver (optional).
     DriverConfig driver_config;
-    /// Configuration for the local-time service (feature 001; default off).
+    /// Configuration for the local-time service.
     LocalTimeConfig local_time;
     /// Registry of meteorology variable internal names to their external aliases.
     std::unordered_map<std::string, std::vector<std::string>> met_registry;

@@ -1,7 +1,7 @@
 # =====================================================================
 # CECE Local-Time Example: diurnal scaling evaluated at LOCAL time
 # =====================================================================
-# Demonstrates the local-time temporal-scaling feature (feature 001).
+# Demonstrates the local-time temporal-scaling feature.
 #
 # Key Features Tested:
 #   - Top-level `local_time` section (enabled + grid_file).

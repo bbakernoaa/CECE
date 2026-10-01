@@ -14,7 +14,7 @@
 
 namespace cece {
 
-class LocalTimeService;  // feature 001: per-cell local-time factor source (defined in cece_local_time.hpp)
+class LocalTimeService;  // per-cell local-time factor source (defined in cece_local_time.hpp)
 
 /**
  * @brief Alias for an unmanaged 3D device View, safe for use in POD-like structures
@@ -81,7 +81,7 @@ class StackingEngine {
     /**
      * @brief Executes the emission stacking for all species.
      *
-     * @param local_time       Optional local-time service (feature 001). When
+     * @param local_time       Optional local-time service. When
      *                         non-null and a layer opts in via use_local_time,
      *                         its temporal cycles are evaluated at each cell's
      *                         local time. Null => pure UTC scalar path (default).
@@ -138,7 +138,7 @@ class StackingEngine {
         // Integer category id computed at precompile time and used by device code
         int category_id = 0;
 
-        // Feature 001: evaluate this layer's temporal cycles at each cell's LOCAL
+        // Evaluate this layer's temporal cycles at each cell's LOCAL
         // time instead of the UTC scalar hour/dow/month.
         bool use_local_time = false;
     };
@@ -164,7 +164,7 @@ class StackingEngine {
         /// Flag to track if field handles are already resolved.
         bool fields_bound = false;
 
-        // Feature 001: engine-owned band-local (nx, ny_local, 1) per-cell temporal
+        // Engine-owned band-local (nx, ny_local, 1) per-cell temporal
         // factor fields, one per opted-in layer, deep-copied into DeviceLayer::scales[]
         // each step. The engine owns this memory so the unmanaged scale handles stay
         // valid for the whole fused-kernel lifetime.
@@ -179,7 +179,7 @@ class StackingEngine {
     void BindFields(CompiledSpecies& spec, FieldResolver& resolver, int nx, int ny, int nz, const LocalTimeService* local_time) const;
     void UpdateTemporalScales(CompiledSpecies& spec, int hour, int day_of_week, int month, const LocalTimeService* local_time,
                               std::int64_t utc_epoch_secs);
-    /// Feature 001: fill each opted-in layer's per-cell (nx, ny, 1) temporal
+    /// Fill each opted-in layer's per-cell (nx, ny, 1) temporal
     /// factor field from the local-time service at the step's UTC instant.
     void FillLocalTimeFactors(CompiledSpecies& spec, const LocalTimeService* local_time, std::int64_t utc_epoch_secs);
 };

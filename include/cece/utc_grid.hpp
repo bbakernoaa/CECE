@@ -62,8 +62,7 @@ struct UtcGrid {
  *
  * All-or-nothing: a file whose expanded length does not equal sum(ncol), whose
  * magic is wrong, or which cannot be opened/read is rejected wholesale — a
- * partially-populated grid must never mask real offsets as 0 (spec FR-003,
- * FR-008).
+ * partially-populated grid must never mask real offsets as 0.
  *
  * @param path Path to the .rle file.
  * @return Decoded grid; every cell value is in [-128, 127] quarter-hours.
@@ -93,9 +92,9 @@ int UtcGridColForLon(double lon, int row_ncol);
  * @brief Map a decoded reduced grid onto the native simulation grid, band-local.
  *
  * For each native cell (i, j_global = j0 + j), performs a nearest-grid-cell
- * lookup (no interpolation, spec FR-004) and converts the int8 quarter-hour
+ * lookup (no interpolation) and converts the int8 quarter-hour
  * offset to int32 seconds. Output is band-local to match the stacking kernel's
- * (i, j) indexing (research D2): out[i + j * nx], j in [0, ny_local).
+ * (i, j) indexing: out[i + j * nx], j in [0, ny_local).
  *
  * @param grid          Decoded reduced grid.
  * @param native_lons   1-D longitude coordinate array (size nx), degrees.

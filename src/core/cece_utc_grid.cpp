@@ -2,14 +2,13 @@
  * @file cece_utc_grid.cpp
  * @brief Decoder + native-grid mapper for the cosine-reduced UTC-offset grid.
  *
- * Implements the file-format contract in
- * specs/001-local-time-support/contracts/utc-grid-file.md: a self-describing
- * v2 file (magic + uint16 nrows + per-row uint16 column counts) followed by a
+ * Implements the file-format contract: a self-describing v2 file (magic +
+ * uint16 nrows + per-row uint16 column counts) followed by a
  * headerless run-length stream of little-endian 3-byte tokens
  * (uint16 run, int8 quarter-hour offset), expanded all-or-nothing to a dense
  * reduced lattice (1440 rows, ncol(row) = max(4, 4*round(720*cos lat))), plus
- * the exact inverse of the generator's cell-center floor mapping (research D1)
- * onto the native simulation grid.
+ * the exact inverse of the generator's cell-center floor mapping onto the
+ * native simulation grid.
  *
  * Deliberately free of Kokkos / config / MPI dependencies so the decoder is
  * unit-testable in isolation.

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // CECE — Chemical Emissions Coupling Engine
-// Feature 001 — T023 [US3]: all outputs stay UTC and the run is idempotent.
+// All outputs stay UTC and the run is idempotent.
 //
-// FR-009: the local-time service is an internal computation input only. This
+// The local-time service is an internal computation input only. This
 // test runs the stacking engine with per-cell local-time factors that vary
 // across the band and asserts that (a) the provenance record still carries the
 // UTC hour / day-of-week / month that were passed in — never a local value —
@@ -116,7 +116,7 @@ class LocalTimeUtcOutputsTest : public ::testing::Test {
 };
 
 // ---------------------------------------------------------------------------
-// FR-009 — provenance timestamps remain UTC despite local-time scaling
+// Provenance timestamps remain UTC despite local-time scaling
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeUtcOutputsTest, ProvenanceRecordsUtcTimeNotLocal) {
@@ -177,7 +177,7 @@ TEST_F(LocalTimeUtcOutputsTest, LocalTimeRunIsIdempotent) {
 }
 
 // ---------------------------------------------------------------------------
-// Disabled => byte-identical to the pure UTC scalar path (SC-001)
+// Disabled => byte-identical to the pure UTC scalar path
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeUtcOutputsTest, DisabledOutputBitIdenticalToUtcBaseline) {

@@ -150,7 +150,7 @@ void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, 
 
     spec.export_field = resolver.ResolveExportDevice(spec.export_name, nx, ny, nz);
 
-    // Feature 001: one engine-owned band-local (nx, ny, 1) factor field per
+    // One engine-owned band-local (nx, ny, 1) factor field per
     // opted-in layer, registered as an extra scale slot so the fused kernel
     // multiplies it in unchanged (extent(2)==1 => read at (i,j,0)). The engine
     // owns this memory so the unmanaged handle stays valid for the kernel life.
@@ -205,11 +205,11 @@ void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, 
             }
         }
 
-        // Feature 001: register the per-cell local-time factor field for this
+        // Register the per-cell local-time factor field for this
         // layer. Allocate lazily (index == current count) so the storage order
         // matches the layer order; the value is filled each step in
         // UpdateTemporalScales. A missing slot is a hard error, never a silent
-        // drop (FR-008 spirit: never mask a real offset).
+        // drop (never mask a real offset).
         if (layer.use_local_time && local_time != nullptr && !local_time->UtcFallback()) {
             while (spec.local_factor_fields.size() <= i) {
                 spec.local_factor_fields.emplace_back();  // null placeholder for non-opted layers
@@ -246,7 +246,7 @@ void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int d
         const auto& layer = spec.layers[i];
         DeviceLayer& dev = spec.host_layers(i);
 
-        // Feature 001: an opted-in layer with a live service evaluates its
+        // An opted-in layer with a live service evaluates its
         // temporal cycles per-cell (below); the scalar path is skipped so the
         // base scale alone carries the magnitude and the factor field carries
         // the per-cell diurnal/weekly/seasonal product.
@@ -307,7 +307,7 @@ void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int d
 }
 
 /**
- * @brief Fill the per-cell local-time factor fields (feature 001, US1/US2).
+ * @brief Fill the per-cell local-time factor fields.
  *
  * For every layer that opted in (use_local_time) and has a registered factor
  * field, evaluate the product of the layer's named temporal cycles at each
@@ -530,9 +530,9 @@ void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
         UpdateTemporalScales(spec, hour, day_of_week, month, local_time, utc_epoch_secs);
 
         // Update provenance with effective scales for this timestep.
-        // Feature 001: for opted-in layers this records the layer's scalar base
+        // For opted-in layers this records the layer's scalar base
         // scale only — the diurnal/weekly/seasonal product is per-cell (local
-        // time) and has no scalar representation. Provenance stays in UTC (FR-009).
+        // time) and has no scalar representation. Provenance stays in UTC.
         {
             std::vector<double> eff_scales(spec.layers.size());
             for (size_t li = 0; li < spec.layers.size(); ++li) {

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // CECE — Chemical Emissions Coupling Engine
-// Feature 001 (local-time support) — decoder tests for the cosine-reduced UTC-offset grid.
+// Local-time support: decoder tests for the cosine-reduced UTC-offset grid.
 //
 // Decodes the real data/utc_grid_720r.rle and checks: the reduced-lattice
 // invariants (row widths, total cell count, taper monotonicity), the (lat,lon)
 // probe offsets against the generator's own expansion, the all-or-nothing
-// guarantee (FR-003, FR-008), and the nearest-cell mapping (FR-004).
+// guarantee, and the nearest-cell mapping.
 
 #include <gtest/gtest.h>
 
@@ -72,13 +72,13 @@ TEST(UtcGridDecode, ProbeCitiesMatchReference) {
     // change under the taper (row 0 has 4 columns of 90 deg each) and are
     // pinned to the rebinned file's values.
     const std::vector<Probe> probes = {
-        {40.0, -74.0, -20},   // New York  (UTC-5)
-        {51.5, -0.125, 0},    // London    (UTC+0)
-        {28.6, 77.2, 22},     // Delhi     (UTC+5.5)
-        {35.68, 139.7, 36},   // Tokyo     (UTC+9)
+        {40.0, -74.0, -20},   // New York (UTC-5)
+        {51.5, -0.125, 0},    // London   (UTC+0)
+        {28.6, 77.2, 22},     // Delhi    (UTC+5.5)
+        {35.68, 139.7, 36},   // Tokyo    (UTC+9)
         {0.0, 0.0, 0},        // Atlantic (0,0)
-        {-33.86, 151.2, 44},  // Sydney    (UTC+11)
-        {52.5, 13.4, 4},      // Berlin    (UTC+1)
+        {-33.86, 151.2, 44},  // Sydney   (UTC+11)
+        {52.5, 13.4, 4},      // Berlin   (UTC+1)
         {90.0, -180.0, -36},  // N-pole / date-line corner (tapered: was -48)
         {-45.0, 179.99, 48},  // far south, near date line
     };
@@ -132,7 +132,7 @@ TEST(UtcGridMapping, MapToNativeProducesSecondsBandLocal) {
 TEST(UtcGridDecode, TruncatedFileThrows) {
     // Keep the header but drop most of the token stream: the expanded cell count
     // then falls short of sum(ncol) and must be rejected wholesale (never a
-    // partial grid masking 0s, FR-003).
+    // partial grid masking 0s).
     std::ifstream in(GridPath(), std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(in));
     std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

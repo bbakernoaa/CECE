@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // CECE — Chemical Emissions Coupling Engine
-// Feature 001 — T022/T024/T025 [US3]: safe opt-in + graceful UTC fallback.
+// Local-time support: safe opt-in + fail-fast grid loading.
 //
 // Drives the real initialization entry point (cece_core_local_time_init) with a
 // directly-constructed CeceInternalData (no file parser involved) and asserts
 // the deployment-safety contract:
-//   * disabled  => no service, no file access, rc 0 (byte-identical baseline).
-//   * missing / corrupt grid => EXACTLY ONE warning, a UTC-fallback service is
-//     attached, every lookup yields UTC parts, rc stays 0 (never a silent zero
-//     that masks a real offset, FR-008).
+//  * disabled  => no service, no file access, rc 0 (byte-identical baseline).
+//  * missing / corrupt grid while enabled => error (rc != 0), no service is
+//    attached — the run must not silently scale every layer in UTC mode.
 // Warning capture goes through helm/LOGS (CeceLogger::AddStreamSink), never by
 // hijacking std::cout.
 
@@ -65,7 +64,7 @@ class LocalTimeFallbackTest : public ::testing::Test {
 };
 
 // ---------------------------------------------------------------------------
-// Disabled short-circuit (T025): no service, no file access
+// Disabled short-circuit: no service, no file access
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeFallbackTest, DisabledAttachesNoServiceEvenWithBogusPath) {
@@ -80,35 +79,24 @@ TEST_F(LocalTimeFallbackTest, DisabledAttachesNoServiceEvenWithBogusPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Missing grid file => one warning + UTC fallback (T022, T024)
+// Missing grid file while enabled => error, no service attached
 // ---------------------------------------------------------------------------
 
-TEST_F(LocalTimeFallbackTest, MissingGridWarnsOnceAndFallsBackToUtc) {
+TEST_F(LocalTimeFallbackTest, MissingGridFailsWhenEnabled) {
     CeceInternalData data;
     data.config.local_time.enabled = true;
     data.config.local_time.grid_file = "/definitely/not/here_720r.rle";
     int rc = -1;
     cece_core_local_time_init(&data, 2, 1, 1, lons_.data(), 2, lats_.data(), 1, 0, &rc);
-    EXPECT_EQ(rc, 0);  // run must complete, not abort
-    ASSERT_NE(data.local_time, nullptr);
-    EXPECT_TRUE(data.local_time->UtcFallback());
-    EXPECT_EQ(CountFallbackWarnings(), 1) << "exactly one startup warning required (FR-008)";
-
-    // Every lookup yields UTC parts (offset 0 everywhere).
-    const std::int64_t epoch = 1768456800;  // 06:00Z
-    EXPECT_EQ(data.local_time->LocalHourAt(0, 0, epoch), 6);
-    EXPECT_EQ(data.local_time->LocalHourAt(1, 0, epoch), 6);
-    const auto p = data.local_time->Resolve(40.0, -74.0, epoch);
-    EXPECT_EQ(p.hour, 6);
-    EXPECT_EQ(p.day_of_week, 4);
-    EXPECT_EQ(p.month, 0);
+    EXPECT_NE(rc, 0);                     // explicit opt-in with an unreadable grid is an error
+    EXPECT_EQ(data.local_time, nullptr);  // never a silent UTC fallback masking a real offset
 }
 
 // ---------------------------------------------------------------------------
-// Truncated grid file => one warning + UTC fallback (all-or-nothing, FR-003)
+// Truncated grid file while enabled => error, no service attached
 // ---------------------------------------------------------------------------
 
-TEST_F(LocalTimeFallbackTest, TruncatedGridWarnsOnceAndFallsBackToUtc) {
+TEST_F(LocalTimeFallbackTest, TruncatedGridFailsWhenEnabled) {
     std::ifstream in(std::string(CECE_SOURCE_DIR) + "/data/utc_grid_720r.rle", std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(in));
     std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -126,14 +114,8 @@ TEST_F(LocalTimeFallbackTest, TruncatedGridWarnsOnceAndFallsBackToUtc) {
     cece_core_local_time_init(&data, 2, 1, 1, lons_.data(), 2, lats_.data(), 1, 0, &rc);
     std::remove(tmp.c_str());
 
-    EXPECT_EQ(rc, 0);
-    ASSERT_NE(data.local_time, nullptr);
-    EXPECT_TRUE(data.local_time->UtcFallback());
-    EXPECT_EQ(CountFallbackWarnings(), 1);
-    // A partial grid must never mask real offsets: fallback is uniform UTC.
-    auto host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), data.local_time->Offsets());
-    EXPECT_EQ(host(0, 0), 0);
-    EXPECT_EQ(host(1, 0), 0);
+    EXPECT_NE(rc, 0);
+    EXPECT_EQ(data.local_time, nullptr);
 }
 
 // ---------------------------------------------------------------------------

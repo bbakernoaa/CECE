@@ -1,15 +1,15 @@
 /**
  * @file cece_core_local_time_init.cpp
- * @brief Initialization of the local-time service (feature 001).
+ * @brief Initialization of the local-time service.
  *
  * Mirrors the cece_core_writer_initialize_* precedent: a C-linkage entry point
  * called once from the standalone driver (src/main.cpp) and the NUOPC facade
  * path after grid coordinates exist. It is a no-op when local_time is disabled,
- * so the default (disabled) behavior is byte-identical to a pre-feature run
- * (SC-001). When enabled it decodes the RLE UTC-offset grid exactly once, maps
- * it onto the native band grid, and attaches a read-only LocalTimeService to
- * CeceInternalData. Any decode failure warns once and falls back to a UTC
- * service rather than aborting the run (FR-008, SC-004).
+ * so the default (disabled) behavior is byte-identical to a pre-feature run.
+ * When enabled it decodes the RLE UTC-offset grid exactly once, maps it onto
+ * the native band grid, and attaches a read-only LocalTimeService to
+ * CeceInternalData. Any decode failure returns an error (rc = -1) so the run
+ * aborts rather than silently scaling every layer in UTC mode.
  */
 
 #include <mpi.h>
@@ -46,7 +46,8 @@ extern "C" {
  * @param lat_coords  Array of latitude coordinates (size ny, GLOBAL rows), degrees.
  * @param lat_len     Length of lat_coords.
  * @param mpi_comm_f  Fortran MPI communicator handle (band decomposition).
- * @param rc          0 on success (including disabled / UTC-fallback), -1 on bad args.
+ * @param rc          0 on success (including the disabled no-op), -1 on bad
+ *                    args or a grid that cannot be loaded when enabled.
  */
 void cece_core_local_time_init(void* data_ptr, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords, int lat_len,
                                int mpi_comm_f, int* rc) {
@@ -94,10 +95,12 @@ void cece_core_local_time_init(void* data_ptr, int nx, int ny, int nz, const dou
         CECE_LOG_INFO("[LOCAL_TIME] Local-time service initialized from '" + grid_file + "' (nx=" + std::to_string(nx) +
                       ", band j0=" + std::to_string(band.j0) + ", ny_local=" + std::to_string(band.ny_local) + ")");
     } catch (const std::exception& e) {
-        // FR-008 / SC-004: warn ONCE, fall back to UTC everywhere, keep running.
-        CECE_LOG_WARNING(std::string("[LOCAL_TIME] Failed to load UTC-offset grid '") + grid_file + "': " + e.what() +
-                         " — continuing in UTC mode (offset 0 everywhere).");
-        internal_data->local_time = cece::LocalTimeService::CreateUtcFallback(nx, band.ny_local);
+        // The feature was explicitly enabled, so a missing or corrupt grid is a
+        // configuration / deployment error: fail the run rather than quietly
+        // scaling every layer in UTC mode.
+        CECE_LOG_ERROR(std::string("[LOCAL_TIME] Failed to load UTC-offset grid '") + grid_file + "': " + e.what());
+        *rc = -1;
+        return;
     }
 }
 

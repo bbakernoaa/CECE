@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // CECE — Chemical Emissions Coupling Engine
-// Feature 001 — T015 [US1] + T020/T021 [US2]: end-to-end local-time temporal
-// scaling through the StackingEngine.
+// End-to-end local-time temporal scaling through the StackingEngine.
 //
-// Independent test (spec US1): one layer with an identity diurnal profile
+// Independent test: one layer with an identity diurnal profile
 // (factor[i] = i), enabled local time, one step at 06:00 UTC across cells with
 // offsets {-8, 0, +5.5, +12} hours. Each cell's applied scale must equal
 // D[(6 + offset) mod 24] => {22, 6, 11, 18}. With the feature disabled (or in
 // UTC-fallback mode) every cell must equal D[6] — bit-identical to the scalar
-// UTC path (SC-001, FR-008).
+// UTC path.
 
 #include <gtest/gtest.h>
 
@@ -69,7 +68,7 @@ class GridResolver : public FieldResolver {
 /// Longitude-indexed stub provider: offset chosen by matching the cell's
 /// longitude against a small table (the US1 {-8, 0, +5.5, +12} probe set).
 /// Implements the same IUtcOffsetProvider seam as the real grid provider, so
-/// the engine cannot tell them apart (US4).
+/// the engine cannot tell them apart.
 class TableOffsetProvider final : public IUtcOffsetProvider {
    public:
     TableOffsetProvider(std::vector<double> lons, std::vector<std::int32_t> offsets_secs)
@@ -157,7 +156,7 @@ TEST_F(LocalTimeStackingTest, DisabledIsBitIdenticalToUtcScalar) {
 
     GridResolver baseline;
     SetupFields(baseline, 4, 10.0);
-    // Layer flagged but no service => scalar UTC path (FR-008 default UTC).
+    // Layer flagged but no service => scalar UTC path (default UTC).
     StackingEngine engine_base(config);
     engine_base.Execute(baseline, 4, 1, 1, {}, 6, 4, 0, nullptr, nullptr, 0);
 
@@ -265,7 +264,7 @@ TEST_F(LocalTimeStackingTest, BaseScaleStillApplies) {
 }
 
 // ---------------------------------------------------------------------------
-// FR-008 spirit — never silently drop the local-time factor (loud slot check)
+// Never silently drop the local-time factor (loud slot check)
 // ---------------------------------------------------------------------------
 
 TEST_F(LocalTimeStackingTest, ScaleSlotExhaustionThrowsNotSilentDrop) {
