@@ -789,15 +789,3 @@ INSTANTIATE_TEST_SUITE_P(Oracle, HEMCO3121MeganOracle, ::testing::ValuesIn(gOrac
 });
 
 }  // namespace cece::hemco_megan::v3_12_1
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    if (!Kokkos::is_initialized()) {
-        Kokkos::initialize(argc, argv);
-    }
-    const int result = RUN_ALL_TESTS();
-    if (Kokkos::is_initialized()) {
-        Kokkos::finalize();
-    }
-    return result;
-}

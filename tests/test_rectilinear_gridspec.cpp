@@ -165,13 +165,3 @@ TEST_F(RectilinearGridspecTest, WriterPreservesCentresBoundsAndFieldValues) {
     nc_check(nc_close(f));
 }
 }  // namespace
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    MPI_Init(&argc, &argv);
-    Kokkos::initialize(argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    Kokkos::finalize();
-    MPI_Finalize();
-    return rc;
-}
