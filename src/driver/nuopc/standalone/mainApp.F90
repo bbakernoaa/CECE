@@ -8,11 +8,12 @@ program mainApp
 
   use ESMF
   use NUOPC
+  use mpi
   use driver, only: driver_SS => SetServices, set_driver_config_file, set_cece_config_file
 
   implicit none
 
-  integer :: rc, userRc
+  integer :: rc, userRc, mpierr
   type(ESMF_GridComp) :: drvComp
   character(len=512) :: driver_cfg_file, cece_yaml_file
 
@@ -112,5 +113,16 @@ program mainApp
 
   write(*,'(A)') "INFO: [mainApp] CECE execution completed successfully"
   write(*,'(A)') "INFO: [mainApp] Skipping ESMF_Finalize to avoid framework cleanup conflicts"
+
+  ! ESMF_Finalize is intentionally skipped above (it conflicts with the
+  ! framework cleanup on this standalone path), but ESMF_Initialize called
+  ! MPI_Init, and MPI requires MPI_Finalize before exit: without it, mpirun
+  ! flags every rank as "exited without calling finalize" and reports a
+  ! non-zero job status even though the simulation completed successfully.
+  ! Finalize MPI directly so multi-rank launches exit cleanly.
+  call MPI_Finalize(mpierr)
+  if (mpierr /= MPI_SUCCESS) then
+    write(*,'(A,I0)') "WARN: [mainApp] MPI_Finalize returned error code ", mpierr
+  end if
 
 end program mainApp

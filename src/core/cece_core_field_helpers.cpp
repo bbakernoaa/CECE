@@ -306,7 +306,15 @@ void cece_read_timing_config(const char* config_path, int path_len, char* start_
         }
         std::string start_default = *start_opt;
         std::string end_default = *end_opt;
-        int timestep_default = cfg.get_or("driver.timestep_seconds", 3600);
+        // 'driver.timestep_seconds' is required so both launch paths treat the
+        // timing keys the same way: the standalone driver reads it with a
+        // throwing accessor and aborts on a missing key, so defaulting here
+        // would let one config produce different clocks on the two drivers.
+        auto step_opt = cfg.try_int("driver.timestep_seconds");
+        if (!step_opt.has_value()) {
+            throw std::invalid_argument("Configuration missing required 'driver.timestep_seconds'");
+        }
+        int timestep_default = *step_opt;
 
         // Copy strings safely
         strncpy(start_time, start_default.c_str(), max_len - 1);

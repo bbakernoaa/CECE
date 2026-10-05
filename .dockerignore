@@ -1,0 +1,58 @@
+# Docker build context exclusions for CECE.
+#
+# The CECE Dockerfile installs a toolchain and sets WORKDIR /work; the source
+# tree is mounted at run time (`docker run -v "$PWD:/work"`), never COPYied into
+# the image. Excluding the heavy/generated directories therefore costs nothing
+# and keeps `docker build` from uploading them as context.
+
+# Build trees (multi-GB: object files, binaries, CMake cache)
+build/
+build*/
+bin/
+
+# Version control and CI metadata
+.git/
+.github/
+.gitignore
+.dockerignore
+
+# Large generated / input data
+data/
+*.nc
+*.nccf
+*.grib2
+
+# Local-only spec/agent tooling
+specs/
+specify/
+.specify/
+.superpowers/
+.gemini/
+.kiro/
+docs/superpowers/
+
+# Python caches and environments
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv*/
+*.egg-info/
+.pytest_cache/
+
+# Logs and ESMF runtime droppings
+*.log
+PET*.log
+*.ESMF_LogFile
+core.*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.temp
+*~

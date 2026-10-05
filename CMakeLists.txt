@@ -572,6 +572,10 @@ add_library(
   src/driver/cece_calendar.cpp
   src/driver/cece_time_indexing.cpp
   src/driver/cece_driver_facade.cpp
+  src/driver/cece_grid_spec_yaml.cpp
+  src/driver/cece_grid_spec_esmf.cpp
+  src/driver/cece_simulation.cpp
+  src/driver/cece_sim_c_abi.cpp
 )
 
 target_include_directories(

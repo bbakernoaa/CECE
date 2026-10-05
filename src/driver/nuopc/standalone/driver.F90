@@ -163,25 +163,15 @@ contains
       write(*,'(A,A,A,A,I0,A)') "INFO: [Driver] Using YAML timing: ", trim(start_time_str), &
                                " to ", trim(end_time_str), timestep_sec, " seconds"
     else
-      ! Fallback to hardcoded values if YAML fails
-      write(*,'(A)') "WARNING: [Driver] YAML timing config failed, using defaults"
-      call ESMF_TimeSet(startTime, timeString="2020-01-01T00:00:00", rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') "ERROR: Failed to set default start time rc=", rc
-        return
-      end if
-
-      call ESMF_TimeSet(stopTime, timeString="2020-01-01T06:00:00", rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') "ERROR: Failed to set default stop time rc=", rc
-        return
-      end if
-
-      call ESMF_TimeIntervalSet(timeStep, s=3600, rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') "ERROR: Failed to set default timestep rc=", rc
-        return
-      end if
+      ! The standalone C++ driver requires 'driver.start_time' and
+      ! 'driver.end_time' and aborts when either is missing, so the cap must
+      ! not quietly substitute defaults here -- doing so would let a config
+      ! run with a different clock on the two drivers. Fail loudly instead.
+      write(*,'(A,A,A)') "ERROR: [Driver] Failed to read timing from YAML ", &
+                         trim(g_cece_yaml_file), &
+                         " (driver.start_time/driver.end_time required)"
+      rc = ESMF_FAILURE
+      return
     end if
     if (rc /= ESMF_SUCCESS) then
       write(*,'(A,I0)') "ERROR: Failed to set timestep rc=", rc

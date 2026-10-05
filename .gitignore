@@ -24,6 +24,10 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
+# Python packaging
+dist/
+*.egg-info/
+
 # Python venv
 venv*/
 .venv*/
