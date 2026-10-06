@@ -65,15 +65,16 @@ contains
     allocate(lon(0), lat(0))
 
     if (have_grid .and. have_mesh) then
-      write(*,'(A)') 'ERROR: [CapGrid] Both an ESMF Grid and an ESMF Mesh were', &
-        ' provided; the cap cannot choose between them.'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[CapGrid] Both an ESMF Grid and an ESMF Mesh were provided;'// &
+        ' the cap cannot choose between them.', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     if (.not. have_grid .and. .not. have_mesh) then
-      write(*,'(A)') 'ERROR: [CapGrid] No parent ESMF Grid or Mesh supplied for', &
-        ' grid extraction.'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[CapGrid] No parent ESMF Grid or Mesh supplied for grid extraction.', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
 
@@ -111,25 +112,26 @@ contains
     type(ESMF_CoordSys_Flag) :: cs
     type(ESMF_Array) :: carr
     integer :: cdc1, cdc2
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
 
     call ESMF_GridGet(grid, dimCount=dimCount, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] ESMF_GridGet(dimCount) failed on the parent grid rc=', localrc
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
     call ESMF_GridGet(grid, coordSys=cs, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] ESMF_GridGet(coordSys) failed on the parent grid rc=', localrc
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
     call ESMF_GridGet(grid, tile=1, staggerloc=ESMF_STAGGERLOC_CENTER, &
       maxIndex=gmax, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] ESMF_GridGet(maxIndex) failed on the parent grid rc=', localrc
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
@@ -141,25 +143,32 @@ contains
       call ESMF_GridGetCoord(grid, coordDim=i, &
         staggerLoc=ESMF_STAGGERLOC_CENTER, array=carr, rc=localrc)
       if (localrc /= ESMF_SUCCESS) then
-        write(*,'(A,I0,A,I0)') 'ERROR: [CapGrid] ESMF_GridGetCoord(dim=', i, &
+        write(wmsg, '(A,I0,A,I0)') '[CapGrid] ESMF_GridGetCoord(dim=', i, &
           ') center coordinate array is unavailable on the parent grid rc=', localrc
-        rc = ESMF_FAILURE
+        call ESMF_LogSetError(rcToCheck=localrc, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
         return
       end if
       call ESMF_ArrayGet(carr, rank=cdc(i), rc=localrc)
       if (localrc /= ESMF_SUCCESS) then
-        write(*,'(A,I0,A,I0)') 'ERROR: [CapGrid] ESMF_ArrayGet(rank) failed for', &
+        write(wmsg, '(A,I0,A,I0)') '[CapGrid] ESMF_ArrayGet(rank) failed for', &
           ' coordinate dim ', i, ' rc=', localrc
-        rc = ESMF_FAILURE
+        call ESMF_LogSetError(rcToCheck=localrc, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
         return
       end if
+      ! NOTE: carr is a reference to the grid's own internal coordinate
+      ! Array (ESMF_GridGetCoord's array= variant hands back the stored
+      ! pointer, it does not allocate a copy). The grid owns it and frees it
+      ! with itself, so the cap must NOT destroy it here.
     end do
     cdc1 = cdc(1)
     cdc2 = cdc(2)
     if (dimCount /= 2) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] Parent ESMF Grid has dimCount=', dimCount, &
+      write(wmsg, '(A,I0)') '[CapGrid] Parent ESMF Grid has dimCount=', dimCount, &
         '; CECE supports only 2-D grids (unsupported topology, no fallback).'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     if (cs == ESMF_COORDSYS_SPH_RAD) then
@@ -167,10 +176,11 @@ contains
     else if (cs == ESMF_COORDSYS_SPH_DEG) then
       is_rad = 0
     else
-      write(*,'(A)') 'ERROR: [CapGrid] Parent ESMF Grid uses a Cartesian (or', &
-        ' unrecognized) coordinate system; CECE requires lat/lon on the sphere', &
-        ' (unsupported grid type, no fallback).'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[CapGrid] Parent ESMF Grid uses a Cartesian (or unrecognized)'// &
+        ' coordinate system; CECE requires lat/lon on the sphere'// &
+        ' (unsupported grid type, no fallback).', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
 
@@ -182,10 +192,11 @@ contains
     else if (cdc1 == 2 .and. cdc2 == 2) then
       call gather_curvilinear(grid, vm, nx, ny, lon, lat, localrc)
     else
-      write(*,'(A,I0,A,I0)') 'ERROR: [CapGrid] Parent ESMF Grid coordinate arrays', &
+      write(wmsg, '(A,I0,A,I0)') '[CapGrid] Parent ESMF Grid coordinate arrays', &
         ' have ranks (', cdc1, ',', cdc2, '); CECE supports only 1-D', &
         ' (rectilinear) or 2-D (curvilinear) center coordinates (no fallback).'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     if (localrc /= ESMF_SUCCESS) then
@@ -213,10 +224,12 @@ contains
     integer, allocatable :: counts(:), offsets(:)
     real(ESMF_KIND_R8), allocatable :: sendbuf(:), recvbuf(:)
     integer :: start_p, count_p
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
     call ESMF_VMGet(vm, petCount=petCount, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
@@ -233,9 +246,10 @@ contains
         computationalLBound=lbnd, computationalUBound=ubnd, &
         farrayPtr=ptr, rc=localrc)
       if (localrc /= ESMF_SUCCESS) then
-        write(*,'(A,I0,A,I0)') 'ERROR: [CapGrid] ESMF_GridGetCoord(dim=', i, &
+        write(wmsg, '(A,I0,A,I0)') '[CapGrid] ESMF_GridGetCoord(dim=', i, &
           ') failed for a rectilinear parent grid rc=', localrc
-        rc = ESMF_FAILURE
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
         return
       end if
       local_count = ubnd(1) - lbnd(1) + 1
@@ -304,10 +318,12 @@ contains
     integer, allocatable :: counts(:), offsets(:)
     real(ESMF_KIND_R8), allocatable :: sendbuf(:), recvbuf(:)
     integer :: i0, j0, ix, jy, src
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
     call ESMF_VMGet(vm, petCount=petCount, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
@@ -324,9 +340,10 @@ contains
         computationalLBound=lbnd, computationalUBound=ubnd, &
         farrayPtr=ptr, rc=localrc)
       if (localrc /= ESMF_SUCCESS) then
-        write(*,'(A,I0,A,I0)') 'ERROR: [CapGrid] ESMF_GridGetCoord(dim=', i, &
+        write(wmsg, '(A,I0,A,I0)') '[CapGrid] ESMF_GridGetCoord(dim=', i, &
           ') failed for a curvilinear parent grid rc=', localrc
-        rc = ESMF_FAILURE
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
         return
       end if
       local_ix = ubnd(1) - lbnd(1) + 1
@@ -406,20 +423,22 @@ contains
     type(ESMF_CoordSys_Flag) :: cs
     integer, allocatable :: ids(:)
     real(ESMF_KIND_R8), allocatable :: coords(:)
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
 
     call ESMF_MeshGet(mesh, spatialDim=sdim, coordSys=cs, nodeCount=nodeCount, &
       rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] ESMF_MeshGet failed on the parent mesh rc=', localrc
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
     if (sdim /= 2) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] Parent ESMF Mesh has spatialDim=', sdim, &
+      write(wmsg, '(A,I0)') '[CapGrid] Parent ESMF Mesh has spatialDim=', sdim, &
         '; CECE supports only 2-D (lat/lon) meshes (unsupported mesh type, no fallback).'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     if (cs == ESMF_COORDSYS_SPH_RAD) then
@@ -427,10 +446,11 @@ contains
     else if (cs == ESMF_COORDSYS_SPH_DEG) then
       is_rad = 0
     else
-      write(*,'(A)') 'ERROR: [CapGrid] Parent ESMF Mesh uses a Cartesian (or', &
-        ' unrecognized) coordinate system; CECE requires lat/lon on the sphere', &
-        ' (unsupported mesh type, no fallback).'
-      rc = ESMF_FAILURE
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[CapGrid] Parent ESMF Mesh uses a Cartesian (or unrecognized)'// &
+        ' coordinate system; CECE requires lat/lon on the sphere'// &
+        ' (unsupported mesh type, no fallback).', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
 
@@ -443,15 +463,16 @@ contains
 
     allocate(ids(nodeCount), coords(2*nodeCount))
     call ESMF_MeshGet(mesh, nodeIds=ids, nodeCoords=coords, rc=localrc)
-    if (localrc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'ERROR: [CapGrid] ESMF_MeshGet node coordinates failed rc=', localrc
+    if (ESMF_LogFoundError(rcToCheck=localrc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       rc = ESMF_FAILURE
       return
     end if
     do k = 1, nodeCount
       if (ids(k) < 1 .or. ids(k) > nx) then
-        write(*,'(A,I0)') 'ERROR: [CapGrid] Mesh node id out of range: ', ids(k)
-        rc = ESMF_FAILURE
+        write(wmsg, '(A,I0)') '[CapGrid] Mesh node id out of range: ', ids(k)
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
         return
       end if
       lon(ids(k)) = coords(2*k-1)
@@ -469,6 +490,7 @@ contains
     integer, intent(out)       :: rc
 
     integer :: localrc, petCount, n
+    character(len=700) :: wmsg
 
     call ESMF_VMGet(vm, petCount=petCount, rc=localrc)
     if (localrc /= ESMF_SUCCESS) then
@@ -477,8 +499,9 @@ contains
     end if
     n = size(send_vals)
     if (size(recv_all) < n*petCount) then
-      write(*,'(A)') 'ERROR: [CapGrid] internal gather buffer too small'
-      rc = ESMF_FAILURE
+      wmsg = '[CapGrid] internal gather buffer too small'
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     call ESMF_VMAllGather(vm, sendData=send_vals, recvData=recv_all, count=n, &

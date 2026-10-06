@@ -173,54 +173,41 @@ contains
     type(ESMF_GridComp) :: gcomp
     integer, intent(out) :: rc
 
-    write(*,'(A)') "INFO: [Cap] CECE_SetServices entered"
     rc = ESMF_SUCCESS
 
+    call ESMF_LogWrite('[Cap] CECE_SetServices entered', ESMF_LOGMSG_INFO)
+
     ! 1. Inherit NUOPC Model base services
-    write(*,'(A)') "INFO: [Cap] Calling NUOPC_CompDerive..."
     call NUOPC_CompDerive(gcomp, modelSS, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] NUOPC_CompDerive failed rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     ! 2. Register initialization phase 1 (Advertise)
-    write(*,'(A)') "INFO: [Cap] Specializing Initialize phase 1 (Advertise)..."
     call NUOPC_CompSpecialize(gcomp, specLabel=label_Advertise, &
       specRoutine=InitializeAdvertise, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] CompSpecialize(Advertise) failed rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     ! 3. Register initialization phase 2 (Realize)
-    write(*,'(A)') "INFO: [Cap] Specializing Initialize phase 2 (Realize)..."
     call NUOPC_CompSpecialize(gcomp, specLabel=label_RealizeProvided, &
       specRoutine=InitializeRealize, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] CompSpecialize(Realize) failed rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     ! 4. Register Run (Advance) phase
-    write(*,'(A)') "INFO: [Cap] Specializing Run (Advance) phase..."
     call NUOPC_CompSpecialize(gcomp, specLabel=model_label_Advance, &
       specRoutine=Run, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] CompSpecialize(Advance) failed rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     ! 5. Register Finalize phase
-    write(*,'(A)') "INFO: [Cap] Specializing Finalize phase..."
     call NUOPC_CompSpecialize(gcomp, specLabel=model_label_Finalize, &
       specRoutine=Finalize, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] CompSpecialize(Finalize) failed rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
-    write(*,'(A)') "INFO: [Cap] CECE_SetServices completed successfully"
+    call ESMF_LogWrite('[Cap] CECE_SetServices completed successfully', &
+      ESMF_LOGMSG_INFO)
   end subroutine CECE_SetServices
 
   !> @brief InitializeAdvertise (IPDv01p1)
@@ -234,7 +221,7 @@ contains
     integer, intent(out) :: rc
 
     rc = ESMF_SUCCESS
-    write(*,'(A)') "INFO: [Cap] InitializeAdvertise entered"
+    call ESMF_LogWrite('[Cap] InitializeAdvertise entered', ESMF_LOGMSG_INFO)
 
     ! Set YAML configuration path in the core C-API
     call cece_set_config_file_path(trim(g_config_file_path)//c_null_char, &
@@ -249,7 +236,8 @@ contains
     call cece_run_log_setup(trim(g_config_file_path)//c_null_char, &
                             int(len_trim(g_config_file_path), c_int))
 
-    write(*,'(A)') "INFO: [Cap] InitializeAdvertise completed successfully"
+    call ESMF_LogWrite('[Cap] InitializeAdvertise completed successfully', &
+      ESMF_LOGMSG_INFO)
   end subroutine InitializeAdvertise
 
   !> @brief InitializeRealize (IPDv01p3)
@@ -290,9 +278,10 @@ contains
     integer(c_int) :: desc_len
     character(len=512) :: yaml_desc
     logical :: vm_ok
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
-    write(*,'(A)') "INFO: [Cap] InitializeRealize entered"
+    call ESMF_LogWrite('[Cap] InitializeRealize entered', ESMF_LOGMSG_INFO)
 
     ! Retrieve the raw ESMF VM MPI communicator (same handle the C++ driver
     ! passes: an MPI_Comm_c2f value; 0 lets the facade default to
@@ -304,12 +293,14 @@ contains
       vm_ok = .true.
       call ESMF_VMGet(vm, mpiCommunicator=mpi_comm_val, rc=rc)
       if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') 'WARNING: [Cap] ESMF_VMGet communicator failed rc=', rc
+        write(wmsg, '(A,I0)') '[Cap] ESMF_VMGet communicator failed rc=', rc
+        call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
         mpi_comm_val = 0
         rc = ESMF_SUCCESS
       end if
     else
-      write(*,'(A,I0)') 'WARNING: [Cap] ESMF_GridCompGet(vm) failed rc=', rc
+      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(vm) failed rc=', rc
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
       mpi_comm_val = 0
       rc = ESMF_SUCCESS
     end if
@@ -322,40 +313,38 @@ contains
     mesh_is_present = .false.
     call ESMF_GridCompGet(comp, gridIsPresent=grid_is_present, rc=rc)
     if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'WARNING: [Cap] ESMF_GridCompGet(gridIsPresent) failed rc=', rc
+      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(gridIsPresent) failed rc=', rc
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
       grid_is_present = .false.
       rc = ESMF_SUCCESS
     end if
     call ESMF_GridCompGet(comp, meshIsPresent=mesh_is_present, rc=rc)
     if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') 'WARNING: [Cap] ESMF_GridCompGet(meshIsPresent) failed rc=', rc
+      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(meshIsPresent) failed rc=', rc
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
       mesh_is_present = .false.
       rc = ESMF_SUCCESS
     end if
     if (grid_is_present) then
       call ESMF_GridCompGet(comp, grid=parent_grid, rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') 'ERROR: [Cap] Parent grid flagged present but retrieval failed rc=', rc
-        return
-      end if
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
     end if
     if (mesh_is_present) then
       call ESMF_GridCompGet(comp, mesh=parent_mesh, rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(*,'(A,I0)') 'ERROR: [Cap] Parent mesh flagged present but retrieval failed rc=', rc
-        return
-      end if
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
     end if
 
     if (grid_is_present .or. mesh_is_present) then
       ! Assembling the global coordinates is a collective operation on the
       ! component's VM, so the parent-grid path cannot proceed without it.
       if (.not. vm_ok) then
-        write(*,'(A)') 'ERROR: [Cap] A parent ESMF grid is present but the', &
-          ' component VM could not be retrieved; cannot assemble global', &
-          ' coordinates (no fallback to a uniform grid).'
-        rc = ESMF_FAILURE
-        return
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+          msg='[Cap] Parent ESMF grid present but component VM unavailable;'// &
+          ' cannot assemble global coordinates (no uniform-grid fallback).', &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
       end if
       ! Parent-provided grid path. The vertical layer count is always read
       ! from the config (driver.grid.nz): a flat 2-D grid carries no vertical
@@ -364,9 +353,11 @@ contains
                                    int(len_trim(g_config_file_path), c_int), &
                                    nz_cfg, c_rc)
       if (c_rc /= 0 .or. nz_cfg <= 0) then
-        write(*,'(A,I0)') 'ERROR: [Cap] Could not resolve vertical layer count from config rc=', int(c_rc)
-        rc = ESMF_FAILURE
-        return
+        write(wmsg, '(A,I0)') '[Cap] Could not resolve vertical layer count', &
+          ' from config rc=', int(c_rc)
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
       end if
 
       ! Precedence: when the YAML also describes a grid, name it as ignored
@@ -380,12 +371,12 @@ contains
                                        desc_len, c_rc)
       if (c_rc == 0 .and. desc_len > 0) then
         if (desc_len <= len(yaml_desc)) then
-          write(*,'(A,A)') 'WARNING: [Cap] Parent ESMF grid takes precedence;', &
-            ' ignoring the grid defined in the CECE config: ', yaml_desc(1:desc_len)
+          write(wmsg, '(A,A)') '[Cap] Parent ESMF grid takes precedence;', &
+            ' ignoring the CECE config grid: ', yaml_desc(1:desc_len)
         else
-          write(*,'(A)') 'WARNING: [Cap] Parent ESMF grid takes precedence;', &
-            ' ignoring the grid defined in the CECE config.'
+          wmsg = '[Cap] Parent ESMF grid takes precedence; ignoring the CECE config grid.'
         end if
+        call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
       end if
 
       ! Extract the global coordinate arrays across PETs. ESMF coordinate
@@ -404,10 +395,10 @@ contains
              lon=gx_lon, lat=gx_lat, rc=gx_rc)
       end if
       if (gx_rc /= ESMF_SUCCESS) then
-        write(*,'(A)') 'ERROR: [Cap] Parent grid extraction failed; no fallback', &
-          ' to a uniform grid is attempted.'
-        rc = ESMF_FAILURE
-        return
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+          msg='[Cap] Parent grid extraction failed; no fallback to a uniform grid.', &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
       end if
 
       call cece_sim_create_from_esmf(trim(g_config_file_path)//c_null_char, &
@@ -420,18 +411,21 @@ contains
       if (allocated(gx_lon)) deallocate(gx_lon)
       if (allocated(gx_lat)) deallocate(gx_lat)
       if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
-        write(*,'(A,I0)') 'ERROR: [Cap] Failed to create CECE simulation on the', &
+        write(wmsg, '(A,I0)') '[Cap] Failed to create CECE simulation on the', &
           ' parent-provided grid rc=', int(c_rc)
         g_sim_ptr = c_null_ptr
-        rc = ESMF_FAILURE
-        return
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
       end if
 
-      write(*,'(A,I0,A,I0,A,I0)') 'INFO: [Cap] Simulation grid from parent ESMF object: ', &
-        gx_nx, 'x', gx_ny, 'x', int(nz_cfg)
+      write(wmsg, '(A,I0,A,I0,A,I0)') '[Cap] Simulation grid from parent ESMF', &
+        ' object: ', gx_nx, 'x', gx_ny, 'x', int(nz_cfg)
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
       ! The component is already associated with the parent grid/mesh, so no
       ! re-association is needed on this path.
-      write(*,'(A)') "INFO: [Cap] InitializeRealize completed successfully"
+      call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
+        ESMF_LOGMSG_INFO)
       return
     end if
 
@@ -446,10 +440,11 @@ contains
                                    int(len_trim(g_config_file_path), c_int), &
                                    int(mpi_comm_val, c_int), g_sim_ptr, c_rc)
     if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
-      write(*,'(A,I0)') "ERROR: [Cap] Failed to create CECE simulation rc=", int(c_rc)
+      write(wmsg, '(A,I0)') '[Cap] Failed to create CECE simulation rc=', int(c_rc)
       g_sim_ptr = c_null_ptr
-      rc = ESMF_FAILURE
-      return
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
     end if
 
     ! Read the resolved grid back so the component can be associated with a
@@ -458,27 +453,35 @@ contains
     call cece_sim_grid_info(g_sim_ptr, nx_c, ny_c, nz_c, topology_c, &
                             lon_min, lon_max, lat_min, lat_max, c_rc)
     if (c_rc /= 0) then
-      write(*,'(A,I0)') "ERROR: [Cap] Failed to read resolved grid info rc=", int(c_rc)
-      rc = ESMF_FAILURE
-      return
+      write(wmsg, '(A,I0)') '[Cap] Failed to read resolved grid info rc=', int(c_rc)
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
     end if
 
-    write(*,'(A,I0,A,I0,A,I0,A,I0)') "INFO: [Cap] Simulation grid: ", nx_c, "x", ny_c, "x", nz_c, &
-      " topology=", topology_c
+    write(wmsg, '(A,I0,A,I0,A,I0,A,I0)') '[Cap] Simulation grid: ', nx_c, &
+      'x', ny_c, 'x', nz_c, ' topology=', topology_c
+    call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
 
     grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/nx_c, ny_c/), &
       minCornerCoord=(/lon_min, lat_min/), &
       maxCornerCoord=(/lon_max, lat_max/), &
       coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(*,'(A,I0)') "ERROR: [Cap] Failed to create ESMF grid rc=", rc
-      return
-    end if
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     call ESMF_GridCompSet(comp, grid=grid, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
-    write(*,'(A)') "INFO: [Cap] InitializeRealize completed successfully"
+    ! The grid stays associated with the component after this routine
+    ! returns, so it must NOT be destroyed here: ESMF's allocation rule is
+    ! that items associated with a component are not destroyed with it, and
+    ! the component keeps using this grid until the framework tears it down.
+    ! Consistent with the NUOPC model templates, the grid handle is released
+    ! with the component at ESMF_Finalize rather than manually.
+    call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
+      ESMF_LOGMSG_INFO)
   end subroutine InitializeRealize
 
   !> @brief Run Advance step (Specialized via model_label_Advance)
@@ -497,6 +500,7 @@ contains
     type(ESMF_Time) :: currTime
     type(ESMF_Time) :: nextTime
     character(len=64) :: step_start_str, step_end_str
+    character(len=700) :: wmsg
     integer(c_int) :: complete_c
     integer(c_int) :: c_rc
 
@@ -505,29 +509,38 @@ contains
     ! Once the shared core reports completion, the host must stop stepping:
     ! do no further work on later advances (the harness may still call).
     if (g_complete) then
-      write(*,'(A)') "INFO: [Cap] Simulation already complete; skipping advance"
+      call ESMF_LogWrite('[Cap] Simulation already complete; skipping advance', &
+        ESMF_LOGMSG_INFO)
       return
     end if
 
     if (.not. c_associated(g_sim_ptr)) then
-      write(*,'(A)') "ERROR: [Cap] No live simulation at advance; was Realize skipped?"
-      rc = ESMF_FAILURE
-      return
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[Cap] No live simulation at advance; was Realize skipped?', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
     end if
 
-    call ESMF_GridCompGet(comp, clock=clock, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    ! Query the Model for its clock through the NUOPC interface (the
+    ! canonical Model Advance pattern), not the raw ESMF component getter.
+    call NUOPC_ModelGet(comp, modelClock=clock, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     call ESMF_ClockGet(clock, currTime=currTime, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     call ESMF_ClockGetNextTime(clock, nextTime, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     call ESMF_TimeGet(currTime, timeString=step_start_str, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
     call ESMF_TimeGet(nextTime, timeString=step_end_str, rc=rc)
-    if (rc /= ESMF_SUCCESS) return
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
 
     ! The writer counts steps 1-based (output frequency is checked as
     ! step_index % output_freq), matching the standalone driver's counter.
@@ -539,14 +552,16 @@ contains
                        int(len_trim(step_end_str), c_int), &
                        int(g_step_count, c_int), complete_c, c_rc)
     if (c_rc < 0) then
-      write(*,'(A,I0)') "ERROR: [Cap] cece_sim_step failed rc=", int(c_rc)
-      rc = ESMF_FAILURE
-      return
+      write(wmsg, '(A,I0)') '[Cap] cece_sim_step failed rc=', int(c_rc)
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
     end if
 
     if (complete_c /= 0) then
       g_complete = .true.
-      write(*,'(A)') "INFO: [Cap] Shared core reported simulation completion"
+      call ESMF_LogWrite('[Cap] Shared core reported simulation completion', &
+        ESMF_LOGMSG_INFO)
     end if
   end subroutine Run
 
@@ -556,20 +571,23 @@ contains
     integer, intent(out) :: rc
 
     integer(c_int) :: c_rc
+    character(len=700) :: wmsg
 
     rc = ESMF_SUCCESS
-    write(*,'(A)') "INFO: [Cap] Finalizing CECE NUOPC Cap..."
+    call ESMF_LogWrite('[Cap] Finalizing CECE NUOPC Cap...', ESMF_LOGMSG_INFO)
 
     ! Tear down the shared simulation: driver orchestrator destroy, then
     ! core finalize. Non-zero rc is a warning only — output has already
     ! been flushed — matching the standalone driver's teardown semantics.
     call cece_sim_finalize(g_sim_ptr, c_rc)
     if (c_rc /= 0) then
-      write(*,'(A,I0)') 'WARNING: [Cap] CECE teardown reported failures (rc=', int(c_rc)
+      write(wmsg, '(A,I0)') '[Cap] CECE teardown reported failures (rc=', int(c_rc)
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
     end if
     g_sim_ptr = c_null_ptr
 
-    write(*,'(A)') "INFO: [Cap] CECE NUOPC Cap finalized successfully"
+    call ESMF_LogWrite('[Cap] CECE NUOPC Cap finalized successfully', &
+      ESMF_LOGMSG_INFO)
   end subroutine Finalize
 
 end module cece_cap_mod
