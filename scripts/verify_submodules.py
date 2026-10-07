@@ -12,16 +12,16 @@ library logging exclusively.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, field
-from enum import StrEnum, unique
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum, unique
+from pathlib import Path
 
 
 @unique
@@ -151,7 +151,9 @@ def _get_gitmodules_property(repo_root: Path, sub_path: str, prop: str) -> str |
         if parent_dir != repo_root and not gitmodules_file.exists():
             continue
 
-        rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
+        rel_path = sub_path_obj.relative_to(
+            parent_dir.relative_to(repo_root)
+        ).as_posix()
 
         # 1. Direct lookup by rel_path
         code, out, _ = run_git_cmd(
@@ -421,7 +423,6 @@ def verify_submodules(
         if not is_submodule_excluded(p, upstream_config.excluded_submodules)
     }
 
-    # 1. Run git submodule status --recursive
     code, status_out, err = run_git_cmd(
         ["submodule", "status", "--recursive"], cwd=repo_root
     )
@@ -430,9 +431,9 @@ def verify_submodules(
         raise RuntimeError(f"git submodule status failed: {err}")
 
     raw_entries = [
-        e
-        for e in parse_submodule_status_lines(status_out)
-        if not is_submodule_excluded(e[2], upstream_config.excluded_submodules)
+        entry
+        for entry in parse_submodule_status_lines(status_out)
+        if not is_submodule_excluded(entry[2], upstream_config.excluded_submodules)
     ]
 
     if not raw_entries:
@@ -557,12 +558,11 @@ def get_web_url_from_remote(remote_url: str) -> str | None:
     if not remote_url:
         return None
     url = remote_url.strip().removesuffix(".git")
-    if url.startswith("http://") or url.startswith("https://"):
+    if url.startswith(("http://", "https://")):
         return url
 
     # Strip ssh:// and git@ prefixes
-    if url.startswith("ssh://"):
-        url = url[6:]
+    url = url.removeprefix("ssh://")
     if "@" in url:
         url = url.split("@", 1)[1]
 
@@ -686,17 +686,17 @@ def generate_step_summary(
 
     if excluded:
         excluded_display = ", ".join(f"`{p}`" for p in excluded)
-        lines.append(
-            f"**Excluded from verification ({len(excluded)}):** {excluded_display}"
-        )
-        lines.append("")
+        lines.extend((
+            f"**Excluded from verification ({len(excluded)}):** {excluded_display}",
+            "",
+        ))
 
     has_errors = any(s.status != VerificationStatus.OK for s in statuses)
     if has_errors:
-        lines.append("> [!WARNING]")
-        lines.append(
-            "> One or more submodules are out of sync with their upstream tracking branches."
-        )
+        lines.extend((
+            "> [!WARNING]",
+            "> One or more submodules are out of sync with their upstream tracking branches.",
+        ))
 
     summary_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("GitHub Step Summary written to %s", summary_file)
@@ -812,9 +812,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return 0 if all_ok else 1
 
-    except Exception as ex:
+    except Exception:
         logger.exception(
-            "Submodule verification terminated with an unhandled exception: %s", ex
+            "Submodule verification terminated with an unhandled exception"
         )
         return 1
 
