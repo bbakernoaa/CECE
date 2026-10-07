@@ -12,16 +12,16 @@ library logging exclusively.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, field
-from enum import StrEnum, unique
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum, unique
+from pathlib import Path
 
 
 @unique
@@ -151,7 +151,9 @@ def _get_gitmodules_property(repo_root: Path, sub_path: str, prop: str) -> str |
         if parent_dir != repo_root and not gitmodules_file.exists():
             continue
 
-        rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
+        rel_path = sub_path_obj.relative_to(
+            parent_dir.relative_to(repo_root)
+        ).as_posix()
 
         # 1. Direct lookup by rel_path
         code, out, _ = run_git_cmd(
@@ -269,41 +271,37 @@ def get_declared_submodules(repo_root: Path) -> set[str]:
     return declared
 
 
-def _is_nested_submodule(sub_path: str, all_sub_paths: list[str]) -> bool:
-    """Return True when sub_path sits beneath another submodule's path."""
-    return any(
-        other != sub_path and sub_path.startswith(other + "/")
-        for other in all_sub_paths
-    )
+def _compare_with_upstream(
+    status_obj: SubmoduleStatus, repo_root: Path, expected_sha: str
+) -> None:
+    if status_obj.current_sha.lower() == expected_sha.lower():
+        status_obj.status = VerificationStatus.OK
+        status_obj.detail = "Pointers match upstream HEAD"
+        return
 
-
-def _describe_pointer_drift(
-    repo_root: Path,
-    sub_path: str,
-    current_sha: str,
-    expected_sha: str,
-) -> str:
-    """Human-readable detail for a pointer that differs from upstream HEAD."""
+    status_obj.status = VerificationStatus.OUT_OF_SYNC
+    sub_dir = repo_root / status_obj.path
     count_code, count_out, _ = run_git_cmd(
-        ["rev-list", "--count", f"{current_sha}..{expected_sha}"],
-        cwd=repo_root / sub_path,
+        ["rev-list", "--count", f"{status_obj.current_sha}..{expected_sha}"],
+        cwd=sub_dir,
     )
     if count_code == 0 and count_out.isdigit():
-        return f"Behind upstream by {int(count_out)} commit(s)"
-    return "Drift detected (different commit from upstream HEAD)"
+        behind_count = int(count_out)
+        status_obj.detail = f"Behind upstream by {behind_count} commit(s)"
+    else:
+        status_obj.detail = "Drift detected (different commit from upstream HEAD)"
 
 
 def _verify_single_submodule(
+    repo_root: Path,
     status_char: str,
     current_sha: str,
     sub_path: str,
     is_nested: bool,
-    repo_root: Path,
     target_branch: str,
     branch_map: dict[str, str],
     upstream_config: UpstreamRemoteConfig,
 ) -> SubmoduleStatus:
-    """Verify one submodule entry and return its status object."""
     status_obj = SubmoduleStatus(
         path=sub_path,
         current_sha=current_sha,
@@ -326,7 +324,6 @@ def _verify_single_submodule(
         return status_obj
     status_obj.remote_url = remote_url
 
-    # Validate that .gitmodules remote matches canonical upstream (guard against unauthorized fork drift)
     canonical_remote = upstream_config.canonical_remotes.get(sub_path)
     if canonical_remote:
         norm_remote = get_web_url_from_remote(remote_url)
@@ -342,7 +339,6 @@ def _verify_single_submodule(
             )
             return status_obj
 
-    # Validate that .gitmodules branch does not conflict with parent target branch
     gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
     if (
         gitmodules_branch
@@ -374,22 +370,13 @@ def _verify_single_submodule(
 
     expected_sha = get_remote_branch_head_sha(remote_url, sub_branch)
     status_obj.expected_sha = expected_sha
-
     if not expected_sha:
         status_obj.status = VerificationStatus.ERROR
         status_obj.detail = f"Could not find HEAD SHA for branch '{sub_branch}'"
         logger.error("Could not find expected SHA for '%s' on %s", sub_path, remote_url)
         return status_obj
 
-    if current_sha.lower() == expected_sha.lower():
-        status_obj.status = VerificationStatus.OK
-        status_obj.detail = "Pointers match upstream HEAD"
-    else:
-        status_obj.status = VerificationStatus.OUT_OF_SYNC
-        status_obj.detail = _describe_pointer_drift(
-            repo_root, sub_path, current_sha, expected_sha
-        )
-
+    _compare_with_upstream(status_obj, repo_root, expected_sha)
     return status_obj
 
 
@@ -421,7 +408,6 @@ def verify_submodules(
         if not is_submodule_excluded(p, upstream_config.excluded_submodules)
     }
 
-    # 1. Run git submodule status --recursive
     code, status_out, err = run_git_cmd(
         ["submodule", "status", "--recursive"], cwd=repo_root
     )
@@ -430,9 +416,9 @@ def verify_submodules(
         raise RuntimeError(f"git submodule status failed: {err}")
 
     raw_entries = [
-        e
-        for e in parse_submodule_status_lines(status_out)
-        if not is_submodule_excluded(e[2], upstream_config.excluded_submodules)
+        entry
+        for entry in parse_submodule_status_lines(status_out)
+        if not is_submodule_excluded(entry[2], upstream_config.excluded_submodules)
     ]
 
     if not raw_entries:
@@ -446,22 +432,26 @@ def verify_submodules(
     else:
         logger.info("Discovered %d submodule(s) (direct and nested)", len(raw_entries))
     all_sub_paths = [entry[2] for entry in raw_entries]
-    results = [
-        _verify_single_submodule(
-            status_char=status_char,
-            current_sha=current_sha,
-            sub_path=sub_path,
-            is_nested=_is_nested_submodule(sub_path, all_sub_paths),
-            repo_root=repo_root,
-            target_branch=target_branch,
-            branch_map=branch_map,
-            upstream_config=upstream_config,
+    results: list[SubmoduleStatus] = []
+    for status_char, current_sha, sub_path in raw_entries:
+        is_nested = any(
+            other != sub_path and sub_path.startswith(other + "/")
+            for other in all_sub_paths
         )
-        for status_char, current_sha, sub_path in raw_entries
-    ]
+        results.append(
+            _verify_single_submodule(
+                repo_root,
+                status_char,
+                current_sha,
+                sub_path,
+                is_nested,
+                target_branch,
+                branch_map,
+                upstream_config,
+            )
+        )
 
-    # Cross-reference: verify every submodule declared in .gitmodules was checked
-    checked_paths = {s.path for s in results}
+    checked_paths = {status.path for status in results}
     missing_paths = declared_paths - checked_paths
     for missing in sorted(missing_paths):
         is_nested = "/" in missing
@@ -557,12 +547,11 @@ def get_web_url_from_remote(remote_url: str) -> str | None:
     if not remote_url:
         return None
     url = remote_url.strip().removesuffix(".git")
-    if url.startswith("http://") or url.startswith("https://"):
+    if url.startswith(("http://", "https://")):
         return url
 
     # Strip ssh:// and git@ prefixes
-    if url.startswith("ssh://"):
-        url = url[6:]
+    url = url.removeprefix("ssh://")
     if "@" in url:
         url = url.split("@", 1)[1]
 
@@ -686,17 +675,17 @@ def generate_step_summary(
 
     if excluded:
         excluded_display = ", ".join(f"`{p}`" for p in excluded)
-        lines.append(
-            f"**Excluded from verification ({len(excluded)}):** {excluded_display}"
-        )
-        lines.append("")
+        lines.extend((
+            f"**Excluded from verification ({len(excluded)}):** {excluded_display}",
+            "",
+        ))
 
     has_errors = any(s.status != VerificationStatus.OK for s in statuses)
     if has_errors:
-        lines.append("> [!WARNING]")
-        lines.append(
-            "> One or more submodules are out of sync with their upstream tracking branches."
-        )
+        lines.extend((
+            "> [!WARNING]",
+            "> One or more submodules are out of sync with their upstream tracking branches.",
+        ))
 
     summary_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("GitHub Step Summary written to %s", summary_file)
@@ -812,9 +801,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return 0 if all_ok else 1
 
-    except Exception as ex:
+    except Exception:
         logger.exception(
-            "Submodule verification terminated with an unhandled exception: %s", ex
+            "Submodule verification terminated with an unhandled exception"
         )
         return 1
 
