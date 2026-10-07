@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 /**
@@ -43,6 +42,10 @@ GridSpec GridSpec::from_esmf(int nx, int ny, int nz, bool is_rad, const std::vec
     // Unit conversion: the cap converts SPH_RAD sources before the call; the
     // flag is honored here as well so a radian source can never slip through
     // un-normalized (the same is_radian rule from_yaml applies to file grids).
+    // Kokkos note: these arrays are small target-grid metadata (O(nx+ny) or
+    // O(nx*ny) host doubles) consumed once during grid construction, so this
+    // normalization stays on the host; device-side execution would only add
+    // deep-copy and launch overhead without any parallelism benefit.
     auto normalize = [&](const std::vector<double>& in, bool wrap_lon) {
         std::vector<double> out(in.size(), 0.0);
         for (size_t i = 0; i < in.size(); ++i) {
@@ -82,7 +85,7 @@ GridSpec GridSpec::from_esmf(int nx, int ny, int nz, bool is_rad, const std::vec
     spec.lon_coords = normalize(lon, /*wrap_lon=*/true);
     spec.lat_coords = normalize(lat, /*wrap_lon=*/false);
 
-    spec.Validate();
+    spec.validate();
     return spec;
 }
 

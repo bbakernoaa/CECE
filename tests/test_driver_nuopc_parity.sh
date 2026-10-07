@@ -5,7 +5,7 @@
 # =====================================================================
 # Driver parity integration test
 # =====================================================================
-#   Verifies two properties: bit-for-byte output parity between the
+#   Verifies two properties: bit-for-bit output parity between the
 #   drivers, and field completeness through the cap.
 #
 # Runs BOTH CECE drivers — the C++ standalone driver (cece_standalone_driver)

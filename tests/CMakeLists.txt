@@ -581,8 +581,9 @@ if(ESMF_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/test_driver_nuopc_parity.sh --cxx-driver
         $<TARGET_FILE:cece_standalone_driver> --nuopc-app $<TARGET_FILE:cece_nuopc_app> --config
         ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_small.yaml --comparator
-        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist ${CMAKE_CURRENT_SOURCE_DIR}/nclist_vars.c
-        --fields oc --workdir ${CMAKE_BINARY_DIR}/_parity_workdir
+        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist
+        ${CMAKE_CURRENT_SOURCE_DIR}/helpers/nclist_vars.c --fields oc --workdir
+        ${CMAKE_BINARY_DIR}/_parity_workdir
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
     set_tests_properties(
@@ -613,8 +614,9 @@ if(ESMF_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/test_driver_nuopc_gridspec.sh --cxx-driver
         $<TARGET_FILE:cece_standalone_driver> --nuopc-app $<TARGET_FILE:cece_nuopc_app> --config
         ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_gridspec.yaml --comparator
-        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist ${CMAKE_CURRENT_SOURCE_DIR}/nclist_vars.c
-        --shaper ${CMAKE_CURRENT_SOURCE_DIR}/ncvar_shape.c --fields oc --workdir
+        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist
+        ${CMAKE_CURRENT_SOURCE_DIR}/helpers/nclist_vars.c --shaper
+        ${CMAKE_CURRENT_SOURCE_DIR}/helpers/ncvar_shape.c --fields oc --workdir
         ${CMAKE_BINARY_DIR}/_gridspec_workdir
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
@@ -645,8 +647,9 @@ if(ESMF_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/test_nuopc_distributed_output_equivalence.sh --cxx-driver
         $<TARGET_FILE:cece_standalone_driver> --nuopc-app $<TARGET_FILE:cece_nuopc_app> --config
         ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_small.yaml --comparator
-        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist ${CMAKE_CURRENT_SOURCE_DIR}/nclist_vars.c
-        --workdir ${CMAKE_BINARY_DIR}/_nuopc_equiv_workdir
+        ${CMAKE_CURRENT_SOURCE_DIR}/nccmp_var.c --varlist
+        ${CMAKE_CURRENT_SOURCE_DIR}/helpers/nclist_vars.c --workdir
+        ${CMAKE_BINARY_DIR}/_nuopc_equiv_workdir
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
     set_tests_properties(

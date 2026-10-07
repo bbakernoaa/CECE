@@ -207,6 +207,14 @@ contains
   !> @brief Gather 1-D lon/lat coordinate slices into global arrays.
   !> Each PET exchanges its (global start, count) pair, then all coordinate
   !> values are assembled by placement at the global start index.
+  !>
+  !> Memory: ESMF_VMAllGatherV delivers the full coordinate vector to every
+  !> PET (this is a replication, not a gather onto one rank), so each PET
+  !> transiently holds send + receive buffers of O(nx) and O(ny) doubles —
+  !> the same layout as the global arrays the facade needs anyway. Even at
+  !> extreme resolutions this is tiny next to the per-PET field storage
+  !> (nx*ny*nz), because 1-D coordinates scale with the grid's linear
+  !> dimensions, not its area.
   subroutine gather_rectilinear(grid, vm, nx, ny, lon, lat, rc)
     type(ESMF_Grid), intent(in)  :: grid
     type(ESMF_VM),   intent(in)  :: vm
@@ -301,6 +309,12 @@ contains
   !> (x fastest), matching the C++ curvilinear convention. Each PET exchanges
   !> (i0, j0, ix, jy) — the global origin and shape of its computational
   !> block — so placement is exact regardless of DE decomposition.
+  !>
+  !> Memory: like the rectilinear path, ESMF_VMAllGatherV replicates the full
+  !> coordinate set onto every PET (not onto a single rank), here O(nx*ny)
+  !> doubles per coordinate. That is the size the shared facade's GridSpec
+  !> must hold globally anyway; the transient send/receive buffers are the
+  !> only extra cost, and they are released when the gather returns.
   subroutine gather_curvilinear(grid, vm, nx, ny, lon, lat, rc)
     type(ESMF_Grid), intent(in)  :: grid
     type(ESMF_VM),   intent(in)  :: vm

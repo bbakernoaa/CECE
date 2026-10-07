@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: Apache-2.0
- * CECE - Chemical Emissions Coupling Engine
  *
  * ncvar_shape: prints the name, rank, and per-dimension names/sizes of one
  * variable in a NetCDF file. Used by the NUOPC cap grid-topology harness

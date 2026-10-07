@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 /**
  * @file cece_grid_spec_yaml.cpp
- * @brief GridSpec::from_yaml / Validate — the single YAML grid-resolution
+ * @brief GridSpec::from_yaml / validate — the single YAML grid-resolution
  * path shared by both CECE drivers.
  *
  * This is the grid-dimension and coordinate-resolution logic relocated from
@@ -58,15 +57,24 @@ std::string BuildCoordinateManifest(const std::string& path) {
     return manifest.str();
 }
 
+/// Outcome of a coordinate-array read: `found` says whether any candidate
+/// variable loaded; `values` carries the decoded coordinates; `extent0` /
+/// `extent1` are the leading-dimension extents of the variable that loaded
+/// (extent1 is 0 for rank-1 variables).
+struct CoordRead {
+    bool found = false;
+    std::vector<double> values;
+    int extent0 = 0;
+    int extent1 = 0;
+};
+
 /// Read one flattened coordinate array (lon or lat) out of an opened AMIO
 /// dataset, trying each candidate variable name in order. Applies CF packing,
 /// radian conversion (when `is_radian`), and longitude wrapping (when
-/// `wrap_lon`). Returns the decoded values plus the extent along the
-/// coordinate's leading dimension(s). `total_len` reports the element count.
-bool read_coord(amio_dataset_handle dataset, const std::vector<std::string>& names, bool is_radian, bool wrap_lon, std::vector<double>& out,
-                int& extent0, int& extent1) {
-    extent0 = 0;
-    extent1 = 0;
+/// `wrap_lon`). A decode failure logs and yields not-found (empty extents) so
+/// an unreadable variable can never pass as a loaded gridspec.
+CoordRead read_coord(amio_dataset_handle dataset, const std::vector<std::string>& names, bool is_radian, bool wrap_lon) {
+    CoordRead result;
     for (const auto& name : names) {
         amio_view_handle view = nullptr;
         if (amio_read(dataset, name.c_str(), 0, nullptr, &view) != AMIO_OK) {
@@ -76,21 +84,21 @@ bool read_coord(amio_dataset_handle dataset, const std::vector<std::string>& nam
         size_t view_size = 0;
         if (amio_view_data(view, &view_data, &view_size) != AMIO_OK) {
             amio_release_view(view);
-            return false;
+            return result;
         }
         amio_shape_t shape{};
         if (amio_view_shape(view, &shape) != AMIO_OK) {
             amio_release_view(view);
-            return false;
+            return result;
         }
         if (shape.rank == 1) {
-            extent0 = static_cast<int>(shape.extents[0]);
+            result.extent0 = static_cast<int>(shape.extents[0]);
         } else if (shape.rank == 2) {
-            extent0 = static_cast<int>(shape.extents[0]);
-            extent1 = static_cast<int>(shape.extents[1]);
+            result.extent0 = static_cast<int>(shape.extents[0]);
+            result.extent1 = static_cast<int>(shape.extents[1]);
         } else {
             amio_release_view(view);
-            return false;
+            return result;
         }
         int total_len = 1;
         for (int r = 0; r < shape.rank; ++r) {
@@ -104,25 +112,27 @@ bool read_coord(amio_dataset_handle dataset, const std::vector<std::string>& nam
         const bool ok = amio_view_dtype(view, &dtype) == AMIO_OK &&
                         cece::detail::widen_amio_elements(view_data, dtype, static_cast<std::size_t>(total_len), scale, offset, widened);
         if (!ok) {
-            // Leaving extent0 set here would let an empty coordinate array
+            // Resetting the result keeps a failed decode indistinguishable
+            // from "no variable found", so an empty coordinate array can never
             // pass as a loaded gridspec.
             CECE_LOG_ERROR("Could not decode gridspec coordinate variable '" + name + "'");
-            extent0 = 0;
+            result = CoordRead{};
             amio_release_view(view);
-            return false;
+            return result;
         }
-        out.resize(total_len);
+        result.values.resize(total_len);
         for (int i = 0; i < total_len; ++i) {
             double val = widened[i];
             if (is_radian) {
                 val = cece::detail::radians_to_degrees(val);
             }
-            out[i] = wrap_lon ? cece::detail::wrap_longitude(val) : val;
+            result.values[i] = wrap_lon ? cece::detail::wrap_longitude(val) : val;
         }
         amio_release_view(view);
-        return true;
+        result.found = true;
+        return result;
     }
-    return false;
+    return result;
 }
 
 }  // namespace
@@ -137,6 +147,119 @@ static const std::vector<std::string> kLonNames = {"grid_lont", "grid_lon",     
 static const std::vector<std::string> kLatNames = {"grid_latt", "grid_lat",        "XLAT",          "latCell",  "geolat",  "clat",
                                                    "gphit",     "mesh2d_face_lat", "lat",           "latitude", "LAT",     "lat_rho",
                                                    "nav_lat",   "mesh_node_y",     "mesh2d_node_y", "node_y",   "grid_yt", "y"};
+
+namespace {
+
+/// Return the first candidate variable name present in the dataset, or an
+/// empty string when none is. For longitude candidates, `is_radian` is set
+/// when the name that matched is one of the cell-centered cubed-sphere
+/// variables, which store radians (the historical driver rule). Purely
+/// observational: a probe failure just means "try the next name".
+std::string probe_coord_name(amio_dataset_handle dataset, const std::vector<std::string>& names, bool& is_radian) {
+    for (const auto& name : names) {
+        amio_view_handle probe = nullptr;
+        if (amio_read(dataset, name.c_str(), 0, nullptr, &probe) == AMIO_OK) {
+            amio_release_view(probe);
+            if (name == "lonCell" || name == "latCell" || name == "lonVertex" || name == "latVertex") {
+                is_radian = true;
+            }
+            return name;
+        }
+    }
+    return {};
+}
+
+/// The file to read target-grid coordinates from: the explicit
+/// `driver.gridspec_file` when set (and not the `none` sentinel), otherwise
+/// the first data stream's file. `explicit_gridspec` reports which one it
+/// was: an explicit file that fails to load is fatal, while a stream-inferred
+/// miss simply falls through to generated coordinates.
+std::string gridspec_input_file(conf::Config& config, bool& explicit_gridspec) {
+    explicit_gridspec = false;
+    auto gridspec_opt = config.try_string("driver.gridspec_file");
+    if (gridspec_opt.has_value() && !gridspec_opt->empty() && *gridspec_opt != "none" && *gridspec_opt != "NONE") {
+        explicit_gridspec = true;
+        return *gridspec_opt;
+    }
+    if (config.has("cece_data.streams")) {
+        auto streams = config.at("cece_data.streams");
+        if (streams.size() > 0) {
+            auto file_val = streams[static_cast<std::size_t>(0)]["file"];
+            if (file_val.is_defined()) {
+                return file_val.as_string();
+            }
+        }
+    }
+    return {};
+}
+
+/// Outcome of reading a file's coordinate arrays: `loaded` is true only when
+/// the file's shapes match the declared (nx, ny); `lon`/`lat` carry the
+/// decoded coordinates and `topology` the shape-derived classification.
+struct FileGridLoad {
+    bool loaded = false;
+    int nx = 0;
+    int ny = 0;
+    std::vector<double> lon;
+    std::vector<double> lat;
+    GridTopology topology = GridTopology::Rectilinear;
+};
+
+/// Read and classify the coordinate arrays of an opened gridspec dataset
+/// against the declared (nx, ny). Purely observational: a mismatch (or a
+/// dataset with no recognizable coordinates) reports not-loaded and leaves
+/// the caller's uniform-extents fallback in charge.
+FileGridLoad load_gridspec_coords(amio_dataset_handle dataset, int nx, int ny) {
+    FileGridLoad out;
+
+    // Longitude: is_radian only for the cell-centered cubed-sphere names,
+    // matching the historical driver rule.
+    bool is_radian = false;
+    (void)probe_coord_name(dataset, kLonNames, is_radian);
+    const CoordRead lon = read_coord(dataset, kLonNames, is_radian, /*wrap_lon=*/true);
+    int file_nx = 0;
+    if (lon.found) {
+        // 2-D: extents[1] is the x extent.
+        file_nx = lon.extent1 != 0 ? lon.extent1 : lon.extent0;
+    }
+
+    const CoordRead lat = read_coord(dataset, kLatNames, /*is_radian=*/false, /*wrap_lon=*/false);
+    int file_ny = 0;
+    if (lat.found) {
+        // Rank-1 or rank-2 latitude: the y extent is extents[0].
+        file_ny = lat.extent0;
+    }
+
+    // If nx and ny are not specified in the configuration, dynamically
+    // inherit them from the gridspec file. (The dimension guard in
+    // from_yaml requires them to be declared today; this stays for the
+    // historical behavior contract.)
+    if (nx == 0 && file_nx > 0) {
+        nx = file_nx;
+    }
+    if (ny == 0 && file_ny > 0) {
+        ny = (file_ny == file_nx) ? 1 : file_ny;
+    }
+
+    if (nx == file_nx && (ny == file_ny || (ny == 1 && file_ny == file_nx)) && file_nx > 0 && file_ny > 0) {
+        out.loaded = true;
+        out.nx = nx;
+        out.ny = ny;
+        out.lon = lon.values;
+        out.lat = lat.values;
+        if (ny == 1) {
+            out.topology = GridTopology::Unstructured;
+        } else if (out.lon.size() == static_cast<size_t>(nx) * static_cast<size_t>(ny) &&
+                   out.lat.size() == static_cast<size_t>(nx) * static_cast<size_t>(ny)) {
+            out.topology = GridTopology::Curvilinear;
+        } else {
+            out.topology = GridTopology::Rectilinear;
+        }
+    }
+    return out;
+}
+
+}  // namespace
 
 GridSpec GridSpec::from_yaml(const std::string& config_file, conf::Config& config) {
     GridSpec spec;
@@ -216,24 +339,9 @@ GridSpec GridSpec::from_yaml(const std::string& config_file, conf::Config& confi
         }
         spec.topology = GridTopology::Rectilinear;
     } else {
-        bool loaded_from_file = false;
         bool is_explicit_gridspec = false;
-        std::string input_file_path = "";
-        auto gridspec_opt = config.try_string("driver.gridspec_file");
-        if (gridspec_opt.has_value() && !gridspec_opt->empty() && *gridspec_opt != "none" && *gridspec_opt != "NONE") {
-            input_file_path = *gridspec_opt;
-            is_explicit_gridspec = true;
-        }
-        if (input_file_path.empty() && config.has("cece_data.streams")) {
-            auto streams = config.at("cece_data.streams");
-            if (streams.size() > 0) {
-                auto first_stream = streams[static_cast<std::size_t>(0)];
-                auto file_val = first_stream["file"];
-                if (file_val.is_defined()) {
-                    input_file_path = file_val.as_string();
-                }
-            }
-        }
+        const std::string input_file_path = gridspec_input_file(config, is_explicit_gridspec);
+        bool loaded_from_file = false;
 
         if (!input_file_path.empty()) {
             const std::string coord_manifest_content = BuildCoordinateManifest(input_file_path);
@@ -249,81 +357,21 @@ GridSpec GridSpec::from_yaml(const std::string& config_file, conf::Config& confi
                 if (amio_rc != AMIO_OK) {
                     CECE_LOG_ERROR("amio_open_dataset_from_string failed for dataset '" + input_file_path + "': " + amio_strerror(amio_rc));
                 } else {
-                    int file_nx = 0;
-                    int file_ny = 0;
-                    std::vector<double> file_lon_coords;
-                    std::vector<double> file_lat_coords;
-
-                    // Longitude: is_radian only for the cell-centered cubed-
-                    // sphere names, matching the historical driver rule.
-                    int lon_e0 = 0;
-                    int lon_e1 = 0;
-                    bool lon_found = false;
-                    bool is_radian = false;
-                    for (const auto& name : kLonNames) {
-                        amio_view_handle probe = nullptr;
-                        if (amio_read(coord_dataset, name.c_str(), 0, nullptr, &probe) == AMIO_OK) {
-                            amio_release_view(probe);
-                            if (name == "lonCell" || name == "latCell" || name == "lonVertex" || name == "latVertex") {
-                                is_radian = true;
-                            }
-                            lon_found = true;
-                            break;
-                        }
-                    }
-                    if (lon_found && read_coord(coord_dataset, kLonNames, is_radian, /*wrap_lon=*/true, file_lon_coords, lon_e0, lon_e1)) {
-                        if (lon_e1 != 0) {
-                            file_nx = lon_e1;  // 2-D: extents[1] is the x extent
-                        } else {
-                            file_nx = lon_e0;
-                        }
-                    }
-
-                    bool lat_found = false;
-                    for (const auto& name : kLatNames) {
-                        amio_view_handle probe = nullptr;
-                        if (amio_read(coord_dataset, name.c_str(), 0, nullptr, &probe) == AMIO_OK) {
-                            amio_release_view(probe);
-                            lat_found = true;
-                            break;
-                        }
-                    }
-                    int lat_e0 = 0;
-                    int lat_e1 = 0;
-                    if (lat_found && read_coord(coord_dataset, kLatNames, /*is_radian=*/false, /*wrap_lon=*/false, file_lat_coords, lat_e0, lat_e1)) {
-                        // Rank-1 or rank-2 latitude: the y extent is extents[0].
-                        file_ny = lat_e0;
-                    }
-
-                    // If nx and ny are not specified in the configuration, dynamically
-                    // inherit them from the gridspec file. (The dimension guard above
-                    // requires them to be declared today; this stays for the
-                    // historical behavior contract.)
-                    if (nx == 0 && file_nx > 0) {
-                        nx = file_nx;
-                    }
-                    if (ny == 0 && file_ny > 0) {
-                        ny = (file_ny == file_nx) ? 1 : file_ny;
-                    }
-
-                    if (nx == file_nx && (ny == file_ny || (ny == 1 && file_ny == file_nx)) && file_nx > 0 && file_ny > 0) {
-                        file_lons = file_lon_coords;
-                        file_lats = file_lat_coords;
+                    const FileGridLoad file_grid = load_gridspec_coords(coord_dataset, nx, ny);
+                    amio_close(coord_dataset);
+                    if (file_grid.loaded) {
+                        // Adopt any dimensions inherited from the file.
+                        nx = file_grid.nx;
+                        ny = file_grid.ny;
+                        file_lons = file_grid.lon;
+                        file_lats = file_grid.lat;
                         loaded_from_file = true;
                         spec.gridspec_file = input_file_path;
-                        if (ny == 1) {
-                            spec.topology = GridTopology::Unstructured;
-                        } else if (file_lons.size() == static_cast<size_t>(nx) * static_cast<size_t>(ny) &&
-                                   file_lats.size() == static_cast<size_t>(nx) * static_cast<size_t>(ny)) {
-                            spec.topology = GridTopology::Curvilinear;
-                        } else {
-                            spec.topology = GridTopology::Rectilinear;
-                        }
+                        spec.topology = file_grid.topology;
                     }
                 }
-                amio_close(coord_dataset);
+                amio_finalize(coord_core);
             }
-            amio_finalize(coord_core);
         }
 
         if (is_explicit_gridspec && !loaded_from_file) {
@@ -368,11 +416,11 @@ GridSpec GridSpec::from_yaml(const std::string& config_file, conf::Config& confi
     spec.lon_coords = std::move(file_lons);
     spec.lat_coords = std::move(file_lats);
 
-    spec.Validate();
+    spec.validate();
     return spec;
 }
 
-void GridSpec::Validate() const {
+void GridSpec::validate() const {
     if (nx <= 0 || ny <= 0 || nz <= 0) {
         throw std::invalid_argument("GridSpec: nx, ny, and nz must be positive (got nx=" + std::to_string(nx) + ", ny=" + std::to_string(ny) +
                                     ", nz=" + std::to_string(nz) + ")");
@@ -383,19 +431,17 @@ void GridSpec::Validate() const {
                                         " does not match the declared topology/dimensions (expected " + std::to_string(want) + ")");
         }
     };
-    switch (topology) {
-        case GridTopology::Rectilinear:
-            expect_size(static_cast<size_t>(nx), "lon", lon_coords.size());
-            expect_size(static_cast<size_t>(ny == 1 ? nx : ny), "lat", lat_coords.size());
-            break;
-        case GridTopology::Curvilinear:
-            expect_size(static_cast<size_t>(nx) * static_cast<size_t>(ny), "lon", lon_coords.size());
-            expect_size(static_cast<size_t>(nx) * static_cast<size_t>(ny), "lat", lat_coords.size());
-            break;
-        case GridTopology::Unstructured:
-            expect_size(static_cast<size_t>(nx), "lon", lon_coords.size());
-            expect_size(static_cast<size_t>(nx), "lat", lat_coords.size());
-            break;
+    if (topology == GridTopology::Rectilinear) {
+        expect_size(static_cast<size_t>(nx), "lon", lon_coords.size());
+        expect_size(static_cast<size_t>(ny == 1 ? nx : ny), "lat", lat_coords.size());
+    } else if (topology == GridTopology::Curvilinear) {
+        expect_size(static_cast<size_t>(nx) * static_cast<size_t>(ny), "lon", lon_coords.size());
+        expect_size(static_cast<size_t>(nx) * static_cast<size_t>(ny), "lat", lat_coords.size());
+    } else if (topology == GridTopology::Unstructured) {
+        expect_size(static_cast<size_t>(nx), "lon", lon_coords.size());
+        expect_size(static_cast<size_t>(nx), "lat", lat_coords.size());
+    } else {
+        throw std::invalid_argument("GridSpec: unrecognized topology value " + std::to_string(static_cast<int>(topology)));
     }
 }
 

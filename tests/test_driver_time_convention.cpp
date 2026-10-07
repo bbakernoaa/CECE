@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 /**
  * @file test_driver_time_convention.cpp
- * @brief Unit test for CeceSimulation::Step's time convention.
+ * @brief Unit test for CeceSimulation::step's time convention.
  *
  * Pins the two contract invariants that both drivers must share so their
  * output can be byte-for-byte identical:
@@ -177,7 +176,7 @@ class TimeConventionTest : public ::testing::Test {
 TEST_F(TimeConventionTest, IngestsAtStepStart) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
 
-    const cece::StepOutcome result = sim->Step("2023-02-01T00:00:00", "2023-03-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->step("2023-02-01T00:00:00", "2023-03-02T00:00:00", /*step_index=*/1);
 
     ASSERT_EQ(g_advance_calls.size(), 1u);
     EXPECT_EQ(g_advance_calls[0].iso, "2023-02-01T00:00:00");  // step START, not end
@@ -192,7 +191,7 @@ TEST_F(TimeConventionTest, StampsAtStepEndElapsed) {
     // start = 2023-01-01, step_end = 2023-02-01 -> 31 days = 2678400 s.
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
 
-    sim->Step("2023-01-01T00:00:00", "2023-02-01T00:00:00", /*step_index=*/1);
+    sim->step("2023-01-01T00:00:00", "2023-02-01T00:00:00", /*step_index=*/1);
 
     ASSERT_EQ(g_write_calls.size(), 1u);
     EXPECT_DOUBLE_EQ(g_write_calls[0].elapsed_seconds, 2678400.0);
@@ -203,7 +202,7 @@ TEST_F(TimeConventionTest, StampsAtStepEndElapsed) {
 TEST_F(TimeConventionTest, ForwardsStepIndex) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
 
-    sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/7);
+    sim->step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/7);
 
     ASSERT_EQ(g_write_calls.size(), 1u);
     EXPECT_EQ(g_write_calls[0].step_index, 7);
@@ -213,7 +212,7 @@ TEST_F(TimeConventionTest, ForwardsStepIndex) {
 TEST_F(TimeConventionTest, CallsInOrderIngestRunWrite) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
 
-    sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    sim->step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     // The shared recorder captures the exact sequence, so a reordered call
     // (e.g. writing before running) fails this assertion rather than passing
@@ -226,7 +225,7 @@ TEST_F(TimeConventionTest, CompletionSignalFromCoreRc) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_core_run_rc = 1;  // core clock reached the end time
 
-    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.complete);
     EXPECT_FALSE(result.error);
@@ -239,7 +238,7 @@ TEST_F(TimeConventionTest, CoreErrorShortCircuits) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_core_run_rc = -5;
 
-    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.error);
     EXPECT_EQ(result.rc, -5);
@@ -252,7 +251,7 @@ TEST_F(TimeConventionTest, IngestErrorShortCircuits) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_advance_rc = -3;
 
-    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.error);
     EXPECT_EQ(result.rc, -3);

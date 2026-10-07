@@ -286,7 +286,10 @@ branch, the target grid is selected as:
 
 4. **In coupled mode (cap only):** a parent-provided ESMF Grid/Mesh takes precedence
    over all of the above (see Coupled Mode Execution); the YAML grid is used only when
-   no parent grid is associated.
+   no parent grid is associated. This is the use case of a host model (NUOPC driver or
+   mediator) that owns the discretization: CECE must emit on the host's grid so the
+   exchanged fields are geographically consistent without regridding, and the YAML
+   grid section then only supplies the vertical layer count.
 
 **Validation:** `nx`, `ny`, and `nz` must all be positive, and the coordinate array
 lengths must match the declared topology. A configured `nz` that contradicts the input

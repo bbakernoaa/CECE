@@ -50,7 +50,7 @@ Requirements: `pyyaml`, `netCDF4`, `numpy`.
    radians converted, longitudes wrapped — and classifies the topology from the
    coordinate shapes (1-D -> rectilinear, 2-D flattened -> curvilinear, `ny = 1`
    node arrays -> unstructured). Runtime grid generation is skipped. If the file
-   cannot be loaded, the run fails loudly; there is no silent fallback.
+   cannot be loaded, the run fails loudly.
 2. **If `gridspec_file` is absent/empty**: Generate structured grid from `driver.grid.nx`/`ny`/bounds as usual.
 
 ## GRIDSPEC File Requirements

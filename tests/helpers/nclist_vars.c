@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: Apache-2.0
- * CECE - Chemical Emissions Coupling Engine
  *
  * nclist_vars: prints the names of all variables in a NetCDF file, one per
  * line. Companion to nccmp_var.c for the driver-parity harness

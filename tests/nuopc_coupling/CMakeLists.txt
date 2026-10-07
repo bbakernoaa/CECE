@@ -47,12 +47,11 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/data/OC-em-anthro_CMIP_CEDS_2023.nc")
       ${CMAKE_COMMAND} -E env "MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}"
       "MPIEXEC_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}" bash
       ${CMAKE_CURRENT_SOURCE_DIR}/test_nuopc_field_coupling.sh --app
-      $<TARGET_FILE:cece_nuopc_coupling_test> --nuopc-app
-      $<TARGET_FILE:cece_nuopc_app> --cxx-driver
+      $<TARGET_FILE:cece_nuopc_coupling_test> --nuopc-app $<TARGET_FILE:cece_nuopc_app> --cxx-driver
       $<TARGET_FILE:cece_standalone_driver> --config
-      ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_small_coupled.yaml
-      --dictionary ${CMAKE_CURRENT_SOURCE_DIR}/test_field_dictionary.yaml
-      --comparator ${PROJECT_SOURCE_DIR}/tests/nccmp_var.c --var oc --workdir
+      ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_small_coupled.yaml --dictionary
+      ${CMAKE_CURRENT_SOURCE_DIR}/test_field_dictionary.yaml --comparator
+      ${PROJECT_SOURCE_DIR}/tests/nccmp_var.c --var oc --workdir
       ${CMAKE_BINARY_DIR}/_coupling_workdir
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
   )

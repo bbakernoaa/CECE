@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 #ifndef CECE_GRID_DETAIL_HPP
 #define CECE_GRID_DETAIL_HPP
+
+#include <numbers>
 
 namespace cece {
 namespace detail {
@@ -24,7 +25,7 @@ constexpr double wrap_longitude(double lon) {
 /// Convert a radian-flagged coordinate to degrees. ESMF spherical-rad grids
 /// and radian-coded gridspec files both flow through this single rule.
 constexpr double radians_to_degrees(double rad) {
-    return rad * 180.0 / 3.14159265358979323846;
+    return rad * 180.0 / std::numbers::pi;
 }
 
 }  // namespace detail

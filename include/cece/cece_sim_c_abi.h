@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 #ifndef CECE_SIM_C_ABI_H

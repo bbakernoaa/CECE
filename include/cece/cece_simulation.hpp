@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 #ifndef CECE_SIMULATION_HPP
@@ -31,10 +30,10 @@ enum class GridTopology { Rectilinear, Curvilinear, Unstructured };
  * stream-inferred coordinates, uniform extents), and the NUOPC cap builds it
  * from an ESMF Grid/Mesh (or falls back to the same YAML path for standalone
  * runs). Everything downstream (cece_driver_create, the writer) consumes it
- * unchanged.
+ * unchanged. Methods are snake_case to match the C ABI and driver layer.
  *
  * Coordinate arrays are degrees, CF-unpacked, radians converted, longitudes
- * wrapped to [-180, 180) — the producer normalizes; Validate() checks shape.
+ * wrapped to [-180, 180) — the producer normalizes; validate() checks shape.
  * Flattened curvilinear and unstructured grids use the existing convention:
  * ny == 1 with lon/lat arrays of length nx (the node/cell count).
  */
@@ -91,11 +90,11 @@ struct GridSpec {
 
     /// Validate dimensions and coordinate-array shapes for the declared
     /// topology. Throws std::invalid_argument with a named diagnostic.
-    void Validate() const;
+    void validate() const;
 };
 
 /**
- * @brief Result of one CeceSimulation::Step.
+ * @brief Result of one CeceSimulation::step.
  *
  * Named StepOutcome (not StepResult) because cece::StepResult is already
  * taken by CeceClock::Advance's due-component schedule; both headers are
@@ -117,17 +116,18 @@ struct StepOutcome {
  * @brief Shared simulation lifecycle for both CECE drivers.
  *
  * Step-oriented (callbacks, not a blocking loop) so the ESMF-phase-driven
- * NUOPC cap and the C++ standalone main() drive it identically. Owns
- * everything that must not drift between drivers:
+ * NUOPC cap and the C++ standalone main() drive it identically. Methods are
+ * snake_case, matching the C ABI they back and the rest of the driver-layer
+ * API. Owns everything that must not drift between drivers:
  *
- *  - Create(): core p1 -> realize -> p2 -> export-field registration ->
+ *  - create(): core p1 -> realize -> p2 -> export-field registration ->
  *    driver orchestrator -> writer initialization, in that fixed order.
- *  - Step(): ingest at step_start, core run (the core clock owns
+ *  - step(): ingest at step_start, core run (the core clock owns
  *    hour/day-of-week/month), stamp output at step-end elapsed.
- *  - Finalize(): driver teardown -> core finalize with warning-only failure.
+ *  - finalize(): driver teardown -> core finalize with warning-only failure.
  *
  * The two drivers differ ONLY in how they produce the GridSpec passed to
- * Create().
+ * create().
  */
 class CeceSimulation {
    public:
@@ -136,17 +136,17 @@ class CeceSimulation {
     /// logging a named diagnostic (bad grid, core init failure, ...).
     /// mpi_comm is the real MPI communicator for band decomposition and the
     /// writer gather (MPI_COMM_WORLD in both drivers today).
-    static std::unique_ptr<CeceSimulation> Create(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out);
+    static std::unique_ptr<CeceSimulation> create(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out);
 
     /// Advance one timestep: ingest at step_start_iso, run the compute core,
     /// write the output record stamped with elapsed time derived from
     /// step_end_iso. step_index is the monotonic 0-based output counter.
-    StepOutcome Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index);
+    StepOutcome step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index);
 
     /// Tear down: driver orchestrator destroy, then core finalize. Sets
-    /// *rc_out to the teardown status (non-zero is a warning: output was
+    /// rc_out to the teardown status (non-zero is a warning: output was
     /// already flushed). The handle must not be used afterwards.
-    void Finalize(int* rc_out);
+    void finalize(int& rc_out);
 
     /// The resolved target grid the simulation was created with. Exposed for
     /// the C-ABI facade's grid-info entry so the NUOPC cap can set a matching
@@ -179,7 +179,7 @@ class CeceSimulation {
     ///
     /// @return true on success; false with *rc < 0 and a logged diagnostic
     ///         on unknown species, null/invalid extents, or a mismatch.
-    bool BindExportField(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc);
+    bool bind_export_field(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc);
 
     /// Copy a connected import field's ESMF-owned host memory into the core's
     /// import state for the current step (the NUOPC import binder). The
@@ -203,7 +203,7 @@ class CeceSimulation {
     /// @return true on success; false with *rc < 0 and a logged diagnostic on
     ///         a name that resolves to no configured input, null/invalid
     ///         extents, or a band mismatch.
-    bool SetImportField(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc);
+    bool set_import_field(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc);
 
     /// Read the configured vertical layer count (driver.grid.nz, default 1)
     /// from a CECE YAML. Exposed so the C-ABI facade's ESMF entry can supply
@@ -217,7 +217,7 @@ class CeceSimulation {
     /// and differs from the configured nz, the input cannot be stacked onto
     /// the target layers, so creation fails loudly rather than silently
     /// reinterpreting the vertical dimension. Throws std::invalid_argument.
-    static void ValidateNzAgainstStreams(const std::string& config_path, int nz);
+    static void validate_nz_against_streams(const std::string& config_path, int nz);
 
     ~CeceSimulation();
 
@@ -227,6 +227,12 @@ class CeceSimulation {
     CeceSimulation& operator=(CeceSimulation&&) = delete;
 
    private:
+    /// Body of create(): every step that can throw. create() wraps this in a
+    /// catch-all so no exception can cross the C ABI, and turns thrown
+    /// diagnostics into the logged failure return. Reports status through
+    /// rc_out exactly like create().
+    static std::unique_ptr<CeceSimulation> create_internal(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out);
+
     CeceSimulation() = default;
 
     // Test-only access, following the CeceDriverOrchestrator/

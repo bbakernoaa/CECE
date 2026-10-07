@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 /**
@@ -138,7 +137,7 @@ int main(int argc, char* argv[]) {
         }
 
         // The local-time service is initialized inside the shared facade
-        // (CeceSimulation::Create), so it applies identically here and in the
+        // (CeceSimulation::create), so it applies identically here and in the
         // NUOPC cap path.
 
         if (my_rank == 0) {

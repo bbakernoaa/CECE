@@ -75,9 +75,6 @@ module cece_cap_mod
       integer(c_int), value :: path_len
     end subroutine
 
-    ! void cece_sim_create_from_yaml(const char* config_path, int path_len,
-    !                                int mpi_comm_f, CeceSimulation** out_sim,
-    !                                int* rc)
     subroutine cece_sim_create_from_yaml(config_path, path_len, mpi_comm_f, out_sim, rc) &
                                          bind(C, name="cece_sim_create_from_yaml")
       import :: c_char, c_int, c_ptr
@@ -88,10 +85,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_step(CeceSimulation* sim,
-    !                    const char* step_start_iso, int step_start_len,
-    !                    const char* step_end_iso, int step_end_len,
-    !                    int step_index, int* complete_out, int* rc)
     subroutine cece_sim_step(sim, step_start_iso, step_start_len, &
                              step_end_iso, step_end_len, &
                              step_index, complete_out, rc) &
@@ -105,7 +98,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_finalize(CeceSimulation* sim, int* rc)
     subroutine cece_sim_finalize(sim, rc) &
                              bind(C, name="cece_sim_finalize")
       import :: c_ptr, c_int
@@ -113,10 +105,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_grid_info(const CeceSimulation* sim,
-    !                         int* nx, int* ny, int* nz, int* topology,
-    !                         double* lon_min, double* lon_max,
-    !                         double* lat_min, double* lat_max, int* rc)
     subroutine cece_sim_grid_info(sim, nx, ny, nz, topology, &
                                   lon_min, lon_max, lat_min, lat_max, rc) &
                                   bind(C, name="cece_sim_grid_info")
@@ -127,8 +115,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_nz_from_config(const char* config_path, int path_len,
-    !                              int* nz_out, int* rc)
     subroutine cece_sim_nz_from_config(config_path, path_len, nz_out, rc) &
                                        bind(C, name="cece_sim_nz_from_config")
       import :: c_char, c_int
@@ -138,9 +124,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_describe_yaml_grid(const char* config_path, int path_len,
-    !                                  char* buf, int buf_max,
-    !                                  int* buf_len_out, int* rc)
     subroutine cece_sim_describe_yaml_grid(config_path, path_len, buf, &
                                            buf_max, buf_len_out, rc) &
                                            bind(C, name="cece_sim_describe_yaml_grid")
@@ -153,11 +136,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_create_from_esmf(const char* config_path, int path_len,
-    !   int nx, int ny, int nz, int is_rad,
-    !   const double* lon_coords, int lon_len,
-    !   const double* lat_coords, int lat_len,
-    !   int mpi_comm_f, CeceSimulation** out_sim, int* rc)
     subroutine cece_sim_create_from_esmf(config_path, path_len, nx, ny, nz, &
                                          is_rad, lon_coords, lon_len, &
                                          lat_coords, lat_len, mpi_comm_f, &
@@ -176,9 +154,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_bind_export_field(CeceSimulation* sim,
-    !   const char* species, int species_len, double* data_ptr,
-    !   int nx, int ny_local, int nz, int* rc)
     ! Rebinds the core's persistent write-back target for `species` to the
     ! ESMF field's own storage. Pointer-map update only; ESMF owns the memory.
     subroutine cece_sim_bind_export_field(sim, species, species_len, data_ptr, &
@@ -193,9 +168,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_sim_set_import_field(CeceSimulation* sim,
-    !   const char* field, int field_len, const double* data_ptr,
-    !   int nx, int ny_local, int* rc)
     ! Copies a connected import field's ESMF-owned host storage into the
     ! core's import state for the current step. The configured input name is
     ! resolved through the met/scale/mask mappings inside the facade; the cap
@@ -218,8 +190,6 @@ module cece_cap_mod
     ! alphabetically by key, making the advertisement order identical on every
     ! rank. Each writer null-terminates and reports the string length; an empty
     ! optional attribute returns length zero.
-    ! void cece_nuopc_export_count(const char* config_path, int path_len,
-    !                              int* count, int* rc)
     subroutine cece_nuopc_export_count(config_path, path_len, count, rc) &
                                         bind(C, name="cece_nuopc_export_count")
       import :: c_char, c_int
@@ -229,11 +199,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_nuopc_export_spec(const char* config_path, int path_len,
-    !   int index, char* species, int species_cap, int* species_len,
-    !   char* std_name, int std_cap, int* std_len,
-    !   char* units, int units_cap, int* units_len,
-    !   char* name, int name_cap, int* name_len, int* rc)
     subroutine cece_nuopc_export_spec(config_path, path_len, index, &
                                       species, species_cap, species_len, &
                                       std_name, std_cap, std_len, &
@@ -249,8 +214,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_nuopc_import_count(const char* config_path, int path_len,
-    !                              int* count, int* rc)
     subroutine cece_nuopc_import_count(config_path, path_len, count, rc) &
                                         bind(C, name="cece_nuopc_import_count")
       import :: c_char, c_int
@@ -260,11 +223,6 @@ module cece_cap_mod
       integer(c_int), intent(out) :: rc
     end subroutine
 
-    ! void cece_nuopc_import_spec(const char* config_path, int path_len,
-    !   int index, char* field, int field_cap, int* field_len,
-    !   char* std_name, int std_cap, int* std_len,
-    !   char* units, int units_cap, int* units_len,
-    !   char* name, int name_cap, int* name_len, int* rc)
     subroutine cece_nuopc_import_spec(config_path, path_len, index, &
                                       field, field_cap, field_len, &
                                       std_name, std_cap, std_len, &
@@ -608,45 +566,55 @@ contains
 
     ! Retrieve the raw ESMF VM MPI communicator (same handle the C++ driver
     ! passes: an MPI_Comm_c2f value; 0 lets the facade default to
-    ! MPI_COMM_WORLD).
+    ! MPI_COMM_WORLD). VM loss is not fatal here — the facade falls back to
+    ! MPI_COMM_WORLD — so the standard rc check logs and recovers instead of
+    ! bailing out.
     mpi_comm_val = 0
     vm_ok = .false.
     call ESMF_GridCompGet(comp, vm=vm, rc=rc)
-    if (rc == ESMF_SUCCESS) then
-      vm_ok = .true.
-      call ESMF_VMGet(vm, mpiCommunicator=mpi_comm_val, rc=rc)
-      if (rc /= ESMF_SUCCESS) then
-        write(wmsg, '(A,I0)') '[Cap] ESMF_VMGet communicator failed rc=', rc
-        call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
-        mpi_comm_val = 0
-        rc = ESMF_SUCCESS
-      end if
-    else
-      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(vm) failed rc=', rc
-      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
+      vm_ok = .false.
       mpi_comm_val = 0
       rc = ESMF_SUCCESS
+    else
+      call ESMF_VMGet(vm, mpiCommunicator=mpi_comm_val, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) then
+        vm_ok = .false.
+        mpi_comm_val = 0
+        rc = ESMF_SUCCESS
+      else
+        vm_ok = .true.
+      end if
     end if
 
     ! Resolve the grid source. A parent grid/mesh already associated with the
     ! component wins over the config-built YAML grid. Query the presence
     ! flags first: retrieving an absent grid or mesh would itself be an
-    ! error, so the objects are only fetched when flagged present.
+    ! error, so the objects are only fetched when flagged present. A failed
+    ! presence query is treated as absent (the config-grid path still works).
     grid_is_present = .false.
     mesh_is_present = .false.
     call ESMF_GridCompGet(comp, gridIsPresent=grid_is_present, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(gridIsPresent) failed rc=', rc
-      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       grid_is_present = .false.
       rc = ESMF_SUCCESS
     end if
     call ESMF_GridCompGet(comp, meshIsPresent=mesh_is_present, rc=rc)
-    if (rc /= ESMF_SUCCESS) then
-      write(wmsg, '(A,I0)') '[Cap] ESMF_GridCompGet(meshIsPresent) failed rc=', rc
-      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) then
       mesh_is_present = .false.
       rc = ESMF_SUCCESS
+    end if
+    if (.not. grid_is_present .and. .not. mesh_is_present) then
+      ! No host-supplied geometry: the grid comes from the CECE config. This
+      ! is the supported standalone/testing configuration, but a coupled
+      ! run reaching it usually means the connect failed silently, so say so.
+      call ESMF_LogWrite('[Cap] No parent grid or mesh associated with the'// &
+        ' component; resolving the target grid from the CECE config.', &
+        ESMF_LOGMSG_WARNING)
     end if
     if (grid_is_present) then
       call ESMF_GridCompGet(comp, grid=parent_grid, rc=rc)

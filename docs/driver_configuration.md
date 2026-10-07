@@ -74,17 +74,14 @@ physics_schemes:
 driver:
   # Simulation start time (ISO8601 format: YYYY-MM-DDTHH:MM:SS)
   # Default: "2020-01-01T00:00:00"
-  # Requirements: 1.1, 1.3
   start_time: "2020-06-01T00:00:00"
 
   # Simulation end time (ISO8601 format: YYYY-MM-DDTHH:MM:SS)
   # Default: "2020-01-02T00:00:00"
-  # Requirements: 2.1, 2.3
   end_time: "2020-06-02T00:00:00"
 
   # Timestep duration in seconds (must be positive)
   # Default: 3600 (1 hour)
-  # Requirements: 3.1, 3.3
   timestep_seconds: 1800
 
   # Path to ESMF GRIDSPEC NetCDF file (optional)
@@ -122,8 +119,6 @@ driver:
 - `2020-01-01T00:00:00` - January 1, 2020 at midnight UTC
 - `2020-06-15T14:30:45` - June 15, 2020 at 2:30:45 PM UTC
 
-**Requirements**: 1.1, 1.3, 1.4
-
 ### end_time
 
 **Type**: String (ISO8601 format)
@@ -137,8 +132,6 @@ driver:
 **Examples**:
 - `2020-01-02T00:00:00` - January 2, 2020 at midnight UTC
 - `2020-06-16T00:00:00` - June 16, 2020 at midnight UTC
-
-**Requirements**: 2.1, 2.3, 2.4
 
 ### timestep_seconds
 
@@ -156,8 +149,6 @@ driver:
 **Validation**:
 - Must be > 0
 - A warning is logged if `(end_time - start_time) % timestep_seconds != 0`
-
-**Requirements**: 3.1, 3.2, 3.3
 
 ### gridspec_file
 
@@ -185,8 +176,6 @@ driver:
 
 **Validation**: Must be > 0
 
-**Requirements**: 14.3, 14.4, 14.7
-
 ### grid.ny
 
 **Type**: Integer
@@ -200,8 +189,6 @@ driver:
 - `180` - 360x180 grid (64,800 points)
 
 **Validation**: Must be > 0
-
-**Requirements**: 14.3, 14.4, 14.7
 
 ## Grid/Mesh Selection Logic
 
@@ -219,8 +206,6 @@ resolve the target grid by identical rules:
 3. **Otherwise**: generate a uniform grid from `grid.nx`/`ny`/`nz` and the lon/lat
    extents (`ny = 1` yields a flattened unstructured node row).
 
-**Requirements**: 14.1, 14.3, 14.4, 15.1, 15.4
-
 ## Execution Modes
 
 ### Standalone Mode
@@ -233,8 +218,6 @@ When the driver is executed directly (not invoked by a NUOPC_Driver framework):
   component, so metadata consumers see the correct geometry
 - Executes CECE component through all NUOPC phases
 - Manually manages clock advancement (if needed)
-
-**Requirements**: 15.1, 15.3
 
 ### Coupled Mode
 
@@ -255,8 +238,6 @@ with a parent grid before realization:
   YAML grid resolution the C++ driver runs.
 - Driver operates normally without a driver configuration section (documented defaults)
 
-**Requirements**: 1.5, 2.5, 3.5, 14.9, 15.2
-
 ## Default Values
 
 When driver configuration is missing from the config file, the following defaults are used:
@@ -269,8 +250,6 @@ When driver configuration is missing from the config file, the following default
 | `gridspec_file` | `null` (generate grid) |
 | `grid.nx` | `4` |
 | `grid.ny` | `4` |
-
-**Requirements**: 1.2, 2.2, 3.2, 14.5, 15.3, 20
 
 ## Validation Rules
 
@@ -288,23 +267,17 @@ The driver validates configuration parameters and exits with status 1 if validat
 
 **Error message**: `ERROR: [Driver] Invalid ISO8601 format: {value}`
 
-**Requirements**: 1.3, 2.3
-
 ### Time Ordering Validation
 
 - `start_time` must be strictly before `end_time`
 
 **Error message**: `ERROR: [Driver] Start time must be before end time`
 
-**Requirements**: 1.4, 2.4
-
 ### Timestep Validation
 
 - `timestep_seconds` must be > 0
 
 **Error message**: `ERROR: [Driver] Timestep must be positive`
-
-**Requirements**: 3.3
 
 ### Grid Dimension Validation
 
@@ -313,15 +286,11 @@ The driver validates configuration parameters and exits with status 1 if validat
 
 **Error message**: `ERROR: [Driver] Grid dimensions must be positive`
 
-**Requirements**: 14.7
-
 ### GRIDSPEC File Validation
 
 - If `gridspec_file` is specified, it must be a valid ESMF GRIDSPEC NetCDF file
 
 **Error message**: `ERROR: [CECE] ESMF_GridCreate from gridspec_file failed: rc={rc}`
-
-**Requirements**: 14.6
 
 ## Logging and Diagnostics
 
@@ -341,8 +310,6 @@ For large grids (>50k points), the driver logs the synchronization level:
 ```
 INFO: [Driver] Large grid (64800 points) - enhanced synchronization...
 ```
-
-**Requirements**: 4.3, 14.8, 19.3
 
 ## Examples
 
@@ -431,8 +398,6 @@ For grids larger than 50,000 points, the driver applies grid-size-dependent sync
 | 100,001 - 500,000 points | Extended: 3 VM barriers |
 | > 500,000 points | Maximum: 4 VM barriers |
 
-**Requirements**: 12.1, 12.2, 12.3, 12.4, 12.5
-
 ## Error Handling
 
 The driver implements comprehensive error handling:
@@ -451,23 +416,6 @@ The driver implements comprehensive error handling:
 
 - VM barrier failures during cleanup
 - Resource destruction failures
-
-**Requirements**: 18.1, 18.2, 18.3, 18.4
-
-## Requirements Mapping
-
-This documentation covers the following requirements:
-
-- **Requirement 1**: Configurable start time via CECE config file
-- **Requirement 2**: Configurable end time via CECE config file
-- **Requirement 3**: Configurable timestep via CECE config file
-- **Requirement 4**: ESMF clock creation with proper configuration
-- **Requirement 12**: Large grid synchronization (>50k points)
-- **Requirement 14**: Grid and mesh configuration via CECE config file
-- **Requirement 15**: Optional driver configuration in coupled mode
-- **Requirement 18**: Error handling and logging
-- **Requirement 19**: Driver configuration documentation
-- **Requirement 20**: Idempotent clock advancement
 
 ## See Also
 

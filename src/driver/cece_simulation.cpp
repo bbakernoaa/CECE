@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE — Chemical Emissions Coupling Engine
 // Copyright (c) HELM Project Contributors
 
 /**
@@ -82,7 +81,25 @@ void DecomposeIso8601(const std::string& iso, int& hour, int& day_of_week) {
 
 }  // namespace
 
-std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out) {
+std::unique_ptr<CeceSimulation> CeceSimulation::create(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out) {
+    if (rc_out) {
+        *rc_out = 0;
+    }
+    // Backs the C ABI (cece_sim_create): no exception may cross it. The body
+    // lives in create_internal; any throw becomes a logged failure return,
+    // and the unwinding unique_ptr finalizes whatever state was allocated.
+    try {
+        return create_internal(config_path, grid, comm, rc_out);
+    } catch (const std::exception& e) {
+        CECE_LOG_ERROR(std::string{"[SIM] initialization threw: "} + e.what());
+        if (rc_out) {
+            *rc_out = -1;
+        }
+        return nullptr;
+    }
+}
+
+std::unique_ptr<CeceSimulation> CeceSimulation::create_internal(const std::string& config_path, const GridSpec& grid, MPI_Comm comm, int* rc_out) {
     auto fail = [&](int code, const std::string& msg) {
         CECE_LOG_ERROR("[SIM] " + msg);
         if (rc_out) {
@@ -91,12 +108,8 @@ std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config
         return std::unique_ptr<CeceSimulation>(nullptr);
     };
 
-    if (rc_out) {
-        *rc_out = 0;
-    }
-
     try {
-        grid.Validate();
+        grid.validate();
     } catch (const std::exception& e) {
         return fail(-1, std::string("invalid grid specification: ") + e.what());
     }
@@ -105,7 +118,7 @@ std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config
     // data's declared levels; a mismatch is a loud failure, never a silent
     // reinterpretation of the vertical dimension.
     try {
-        ValidateNzAgainstStreams(config_path, grid.nz);
+        validate_nz_against_streams(config_path, grid.nz);
     } catch (const std::exception& e) {
         return fail(-1, e.what());
     }
@@ -117,109 +130,104 @@ std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config
     int nz = grid.nz;
     const int mpi_comm_f = MPI_Comm_c2f(comm);
 
-    // Everything below runs inside a catch-all: this function backs a C ABI
-    // (cece_sim_create) and must never let an exception cross it. On any
-    // throw the unique_ptr `sim` unwinds, whose destructor finalizes whatever
-    // core/driver state was already allocated.
-    try {
-        // 1. Configuration path + run logging (shared with both drivers so the
-        //    banner/log behavior is identical regardless of launch path).
-        cece_set_config_file_path(config_path.c_str(), static_cast<int>(config_path.length()));
-        cece_run_log_setup(config_path.c_str(), static_cast<int>(config_path.length()));
+    // The unique_ptr `sim` unwinds on any throw below, whose destructor
+    // finalizes whatever core/driver state was already allocated; create()
+    // converts the exception itself into the failure return.
+    // 1. Configuration path + run logging (shared with both drivers so the
+    //    banner/log behavior is identical regardless of launch path).
+    cece_set_config_file_path(config_path.c_str(), static_cast<int>(config_path.length()));
+    cece_run_log_setup(config_path.c_str(), static_cast<int>(config_path.length()));
 
-        auto sim = std::unique_ptr<CeceSimulation>(new CeceSimulation());
-        sim->config_path_ = config_path;
-        sim->grid_ = grid;
-        sim->comm_ = comm;
+    auto sim = std::unique_ptr<CeceSimulation>(new CeceSimulation());
+    sim->config_path_ = config_path;
+    sim->grid_ = grid;
+    sim->comm_ = comm;
 
-        int rc = 0;
+    int rc = 0;
 
-        // 2. Phase 1: allocate internal structures (StackingEngine, DiagnosticManager).
-        cece_core_initialize_p1(&sim->core_data_ptr_, &rc);
-        if (rc < 0) {
-            return fail(rc, "cece_core_initialize_p1 failed with rc=" + std::to_string(rc));
-        }
-
-        // 3. Realize: validate and lock configuration.
-        cece_core_realize(sim->core_data_ptr_, &rc);
-        if (rc < 0) {
-            return fail(rc, "cece_core_realize failed with rc=" + std::to_string(rc));
-        }
-
-        // 4. Phase 2: complete grid binding (dynamically sized).
-        cece_core_initialize_p2(sim->core_data_ptr_, &nx, &ny, &nz, &rc);
-        if (rc < 0) {
-            return fail(rc, "cece_core_initialize_p2 failed with rc=" + std::to_string(rc));
-        }
-
-        const cece::CeceConfig parsed_config = cece::ParseConfig(config_path);
-
-        // 5. Register the export fields configured for output with persistent
-        //    memory buffers, via the parsed config — the single authoritative
-        //    interpretation of output.fields. Data fields only: the collection
-        //    also carries the writer-managed coordinate variables.
-        //
-        //    Buffers are band-local (nx x ny_local x nz): the core writes back
-        //    only the rank's band via SyncAndCopyState, and the writer assembles
-        //    the global field at output time. On a single rank ny_local == ny,
-        //    byte-identical to the replicated allocation.
-        sim->band_ = BandDecomposition::compute(ny, comm);
-        for (const cece::CeceOutputField& field : parsed_config.output_config.fields.GetDataFields()) {
-            std::vector<double>& buffer = sim->export_buffers_[field.name] =
-                std::vector<double>(static_cast<std::size_t>(nx) * sim->band_.ny_local * nz, 0.0);
-            cece_core_set_export_field(sim->core_data_ptr_, field.name.c_str(), static_cast<int>(field.name.length()), buffer.data(), nx,
-                                       sim->band_.ny_local, nz, &rc);
-            if (rc < 0) {
-                return fail(rc, "cece_core_set_export_field failed for '" + field.name + "' with rc=" + std::to_string(rc));
-            }
-        }
-
-        // 6. Create the driver orchestrator facade (offline AMIO reading + AXIS
-        //    regridding pipeline) on the resolved grid coordinates.
-        cece_driver_create(config_path.c_str(), static_cast<int>(config_path.length()), nx, ny, nz, grid.lon_coords.data(),
-                           static_cast<int>(grid.lon_coords.size()), grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f,
-                           &sim->driver_ptr_, &rc);
-        if (rc < 0) {
-            return fail(rc, "cece_driver_create failed with rc=" + std::to_string(rc));
-        }
-
-        // 7. Standalone writer: initialize output writing with the resolved
-        //    coordinates (every from_yaml path produces concrete coordinates).
-        const std::string& start_time_str = parsed_config.driver_config.start_time;
-        cece_core_writer_initialize_with_coords(sim->core_data_ptr_, nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
-                                                grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), start_time_str.c_str(),
-                                                static_cast<int>(start_time_str.length()), mpi_comm_f, &rc);
-        if (rc < 0) {
-            return fail(rc, "standalone writer initialization failed with rc=" + std::to_string(rc));
-        }
-
-        // 7b. Local-time service: decode the UTC-offset grid once and attach it
-        //     to the core (no-op when local_time.enabled is false, so the
-        //     default path stays byte-identical). Lives in the shared facade so
-        //     the standalone driver and the NUOPC cap behave identically.
-        cece_core_local_time_init(sim->core_data_ptr_, nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
-                                  grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f, &rc);
-        if (rc < 0) {
-            return fail(rc, "local-time initialization failed with rc=" + std::to_string(rc));
-        }
-
-        // 8. Driver-side clock anchors for the output stamp: elapsed seconds are
-        //    measured from the configured start time, matching the historical
-        //    standalone driver convention (stamp at step end).
-        tick::Gregorian_Calendar cal;
-        sim->start_time_ = cal.to_time_point(tick::parse_iso8601(start_time_str));
-        sim->dt_seconds_ = static_cast<double>(parsed_config.driver_config.timestep_seconds);
-
-        if (rc_out) {
-            *rc_out = 0;
-        }
-        return sim;
-    } catch (const std::exception& e) {
-        return fail(-1, std::string{"initialization threw: "} + e.what());
+    // 2. Phase 1: allocate internal structures (StackingEngine, DiagnosticManager).
+    cece_core_initialize_p1(&sim->core_data_ptr_, &rc);
+    if (rc < 0) {
+        return fail(rc, "cece_core_initialize_p1 failed with rc=" + std::to_string(rc));
     }
+
+    // 3. Realize: validate and lock configuration.
+    cece_core_realize(sim->core_data_ptr_, &rc);
+    if (rc < 0) {
+        return fail(rc, "cece_core_realize failed with rc=" + std::to_string(rc));
+    }
+
+    // 4. Phase 2: complete grid binding (dynamically sized).
+    cece_core_initialize_p2(sim->core_data_ptr_, &nx, &ny, &nz, &rc);
+    if (rc < 0) {
+        return fail(rc, "cece_core_initialize_p2 failed with rc=" + std::to_string(rc));
+    }
+
+    const cece::CeceConfig parsed_config = cece::ParseConfig(config_path);
+
+    // 5. Register the export fields configured for output with persistent
+    //    memory buffers, via the parsed config — the single authoritative
+    //    interpretation of output.fields. Data fields only: the collection
+    //    also carries the writer-managed coordinate variables.
+    //
+    //    Buffers are band-local (nx x ny_local x nz): the core writes back
+    //    only the rank's band via SyncAndCopyState, and the writer assembles
+    //    the global field at output time. On a single rank ny_local == ny,
+    //    byte-identical to the replicated allocation.
+    sim->band_ = BandDecomposition::compute(ny, comm);
+    for (const cece::CeceOutputField& field : parsed_config.output_config.fields.GetDataFields()) {
+        std::vector<double>& buffer = sim->export_buffers_[field.name] =
+            std::vector<double>(static_cast<std::size_t>(nx) * sim->band_.ny_local * nz, 0.0);
+        cece_core_set_export_field(sim->core_data_ptr_, field.name.c_str(), static_cast<int>(field.name.length()), buffer.data(), nx,
+                                   sim->band_.ny_local, nz, &rc);
+        if (rc < 0) {
+            return fail(rc, "cece_core_set_export_field failed for '" + field.name + "' with rc=" + std::to_string(rc));
+        }
+    }
+
+    // 6. Create the driver orchestrator facade (offline AMIO reading + AXIS
+    //    regridding pipeline) on the resolved grid coordinates.
+    cece_driver_create(config_path.c_str(), static_cast<int>(config_path.length()), nx, ny, nz, grid.lon_coords.data(),
+                       static_cast<int>(grid.lon_coords.size()), grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f,
+                       &sim->driver_ptr_, &rc);
+    if (rc < 0) {
+        return fail(rc, "cece_driver_create failed with rc=" + std::to_string(rc));
+    }
+
+    // 7. Standalone writer: initialize output writing with the resolved
+    //    coordinates (every from_yaml path produces concrete coordinates).
+    const std::string& start_time_str = parsed_config.driver_config.start_time;
+    cece_core_writer_initialize_with_coords(sim->core_data_ptr_, nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
+                                            grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), start_time_str.c_str(),
+                                            static_cast<int>(start_time_str.length()), mpi_comm_f, &rc);
+    if (rc < 0) {
+        return fail(rc, "standalone writer initialization failed with rc=" + std::to_string(rc));
+    }
+
+    // 7b. Local-time service: decode the UTC-offset grid once and attach it
+    //     to the core (no-op when local_time.enabled is false, so the
+    //     default path stays byte-identical). Lives in the shared facade so
+    //     the standalone driver and the NUOPC cap behave identically.
+    cece_core_local_time_init(sim->core_data_ptr_, nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
+                              grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f, &rc);
+    if (rc < 0) {
+        return fail(rc, "local-time initialization failed with rc=" + std::to_string(rc));
+    }
+
+    // 8. Driver-side clock anchors for the output stamp: elapsed seconds are
+    //    measured from the configured start time, matching the historical
+    //    standalone driver convention (stamp at step end).
+    tick::Gregorian_Calendar cal;
+    sim->start_time_ = cal.to_time_point(tick::parse_iso8601(start_time_str));
+    sim->dt_seconds_ = static_cast<double>(parsed_config.driver_config.timestep_seconds);
+
+    if (rc_out) {
+        *rc_out = 0;
+    }
+    return sim;
 }
 
-StepOutcome CeceSimulation::Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index) {
+StepOutcome CeceSimulation::step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index) {
     StepOutcome result;
     int rc = 0;
 
@@ -279,7 +287,7 @@ StepOutcome CeceSimulation::Step(const std::string& step_start_iso, const std::s
     }
 }
 
-bool CeceSimulation::BindExportField(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc) {
+bool CeceSimulation::bind_export_field(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc) {
     if (rc != nullptr) {
         *rc = 0;
     }
@@ -348,7 +356,7 @@ bool CeceSimulation::BindExportField(const std::string& species, double* data_pt
     return true;
 }
 
-bool CeceSimulation::SetImportField(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc) {
+bool CeceSimulation::set_import_field(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc) {
     if (rc != nullptr) {
         *rc = 0;
     }
@@ -439,11 +447,9 @@ bool CeceSimulation::SetImportField(const std::string& field, const double* data
     return true;
 }
 
-void CeceSimulation::Finalize(int* rc_out) {
+void CeceSimulation::finalize(int& rc_out) {
     if (finalized_) {
-        if (rc_out) {
-            *rc_out = 0;
-        }
+        rc_out = 0;
         return;
     }
     finalized_ = true;
@@ -463,15 +469,17 @@ void CeceSimulation::Finalize(int* rc_out) {
         CECE_LOG_ERROR("[SIM] cece_core_finalize failed with rc=" + std::to_string(rc));
     }
 
-    if (rc_out) {
-        *rc_out = (destroy_rc != 0 || rc < 0) ? -1 : 0;
+    if (destroy_rc != 0 || rc < 0) {
+        rc_out = -1;
+    } else {
+        rc_out = 0;
     }
 }
 
 CeceSimulation::~CeceSimulation() {
     if (!finalized_ && (core_data_ptr_ != nullptr || driver_ptr_ != nullptr)) {
         int rc = 0;
-        Finalize(&rc);
+        finalize(rc);
     }
 }
 
@@ -487,7 +495,7 @@ int CeceSimulation::nz_from_config(const std::string& config_path) {
     return nz;
 }
 
-void CeceSimulation::ValidateNzAgainstStreams(const std::string& config_path, int nz) {
+void CeceSimulation::validate_nz_against_streams(const std::string& config_path, int nz) {
     conf::Config config = conf::Config::from_file(config_path);
     if (!config.has("cece_data.streams")) {
         return;

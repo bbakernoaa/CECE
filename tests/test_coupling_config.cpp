@@ -62,8 +62,12 @@ std::string WithNuopc(const std::string& nuopc_block) {
 
 class CouplingConfigTest : public ::testing::Test {
    protected:
-    void SetUp() override { path_ = "/tmp/cece_coupling_config_test.yaml"; }
-    void TearDown() override { std::remove(path_.c_str()); }
+    void SetUp() override {
+        path_ = "/tmp/cece_coupling_config_test.yaml";
+    }
+    void TearDown() override {
+        std::remove(path_.c_str());
+    }
 
     cece::CeceConfig Parse(const std::string& content) {
         WriteFile(path_, content);
@@ -154,7 +158,8 @@ TEST_F(CouplingConfigTest, MissingStandardNameRejected) {
 
 TEST_F(CouplingConfigTest, SlashInNamesRejected) {
     EXPECT_THROW(Parse(WithNuopc("nuopc:\n  export_fields:\n    oc:\n      standard_name: \"bad/name\"\n")), std::invalid_argument);
-    EXPECT_THROW(Parse(WithNuopc("nuopc:\n  export_fields:\n    oc:\n      standard_name: \"ok\"\n      name: \"bad/name\"\n")), std::invalid_argument);
+    EXPECT_THROW(Parse(WithNuopc("nuopc:\n  export_fields:\n    oc:\n      standard_name: \"ok\"\n      name: \"bad/name\"\n")),
+                 std::invalid_argument);
 }
 
 TEST_F(CouplingConfigTest, UnknownSubKeyRejected) {
