@@ -269,6 +269,130 @@ def get_declared_submodules(repo_root: Path) -> set[str]:
     return declared
 
 
+def _is_nested_submodule(sub_path: str, all_sub_paths: list[str]) -> bool:
+    """Return True when sub_path sits beneath another submodule's path."""
+    return any(
+        other != sub_path and sub_path.startswith(other + "/")
+        for other in all_sub_paths
+    )
+
+
+def _describe_pointer_drift(
+    repo_root: Path,
+    sub_path: str,
+    current_sha: str,
+    expected_sha: str,
+) -> str:
+    """Human-readable detail for a pointer that differs from upstream HEAD."""
+    count_code, count_out, _ = run_git_cmd(
+        ["rev-list", "--count", f"{current_sha}..{expected_sha}"],
+        cwd=repo_root / sub_path,
+    )
+    if count_code == 0 and count_out.isdigit():
+        return f"Behind upstream by {int(count_out)} commit(s)"
+    return "Drift detected (different commit from upstream HEAD)"
+
+
+def _verify_single_submodule(
+    status_char: str,
+    current_sha: str,
+    sub_path: str,
+    is_nested: bool,
+    repo_root: Path,
+    target_branch: str,
+    branch_map: dict[str, str],
+    upstream_config: UpstreamRemoteConfig,
+) -> SubmoduleStatus:
+    """Verify one submodule entry and return its status object."""
+    status_obj = SubmoduleStatus(
+        path=sub_path,
+        current_sha=current_sha,
+        target_branch="",
+        remote_url="",
+        is_nested=is_nested,
+    )
+
+    if status_char == "-":
+        status_obj.status = VerificationStatus.UNINITIALIZED
+        status_obj.detail = "Submodule is not initialized locally"
+        logger.warning("Submodule '%s' is not initialized.", sub_path)
+        return status_obj
+
+    remote_url = get_submodule_remote_url(repo_root, sub_path)
+    if not remote_url:
+        status_obj.status = VerificationStatus.ERROR
+        status_obj.detail = f"Could not determine remote URL for submodule '{sub_path}'"
+        logger.error("Could not determine remote URL for submodule '%s'", sub_path)
+        return status_obj
+    status_obj.remote_url = remote_url
+
+    # Validate that .gitmodules remote matches canonical upstream (guard against unauthorized fork drift)
+    canonical_remote = upstream_config.canonical_remotes.get(sub_path)
+    if canonical_remote:
+        norm_remote = get_web_url_from_remote(remote_url)
+        norm_canonical = get_web_url_from_remote(canonical_remote)
+        if norm_remote != norm_canonical:
+            status_obj.status = VerificationStatus.ERROR
+            status_obj.detail = f"Remote URL '{remote_url}' differs from canonical upstream '{canonical_remote}'"
+            logger.error(
+                "Submodule '%s' remote URL '%s' differs from canonical upstream '%s'",
+                sub_path,
+                remote_url,
+                canonical_remote,
+            )
+            return status_obj
+
+    # Validate that .gitmodules branch does not conflict with parent target branch
+    gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
+    if (
+        gitmodules_branch
+        and sub_path not in branch_map
+        and gitmodules_branch != target_branch
+    ):
+        status_obj.status = VerificationStatus.ERROR
+        status_obj.target_branch = gitmodules_branch
+        status_obj.detail = (
+            f".gitmodules branch '{gitmodules_branch}' "
+            f"differs from parent target branch '{target_branch}'"
+        )
+        logger.error(
+            "Submodule '%s' .gitmodules branch '%s' differs from parent target branch '%s'",
+            sub_path,
+            gitmodules_branch,
+            target_branch,
+        )
+        return status_obj
+
+    sub_branch = resolve_submodule_target_branch(
+        repo_root=repo_root,
+        sub_path=sub_path,
+        remote_url=remote_url,
+        parent_target_branch=target_branch,
+        branch_map=branch_map,
+    )
+    status_obj.target_branch = sub_branch
+
+    expected_sha = get_remote_branch_head_sha(remote_url, sub_branch)
+    status_obj.expected_sha = expected_sha
+
+    if not expected_sha:
+        status_obj.status = VerificationStatus.ERROR
+        status_obj.detail = f"Could not find HEAD SHA for branch '{sub_branch}'"
+        logger.error("Could not find expected SHA for '%s' on %s", sub_path, remote_url)
+        return status_obj
+
+    if current_sha.lower() == expected_sha.lower():
+        status_obj.status = VerificationStatus.OK
+        status_obj.detail = "Pointers match upstream HEAD"
+    else:
+        status_obj.status = VerificationStatus.OUT_OF_SYNC
+        status_obj.detail = _describe_pointer_drift(
+            repo_root, sub_path, current_sha, expected_sha
+        )
+
+    return status_obj
+
+
 def verify_submodules(
     repo_root: Path,
     target_branch: str,
@@ -322,115 +446,19 @@ def verify_submodules(
     else:
         logger.info("Discovered %d submodule(s) (direct and nested)", len(raw_entries))
     all_sub_paths = [entry[2] for entry in raw_entries]
-    results: list[SubmoduleStatus] = []
-    for status_char, current_sha, sub_path in raw_entries:
-        is_nested = any(
-            other != sub_path and sub_path.startswith(other + "/")
-            for other in all_sub_paths
-        )
-        status_obj = SubmoduleStatus(
-            path=sub_path,
+    results = [
+        _verify_single_submodule(
+            status_char=status_char,
             current_sha=current_sha,
-            target_branch="",
-            remote_url="",
-            is_nested=is_nested,
-        )
-
-        if status_char == "-":
-            status_obj.status = VerificationStatus.UNINITIALIZED
-            status_obj.detail = "Submodule is not initialized locally"
-            logger.warning("Submodule '%s' is not initialized.", sub_path)
-            results.append(status_obj)
-            continue
-
-        remote_url = get_submodule_remote_url(repo_root, sub_path)
-        if not remote_url:
-            status_obj.status = VerificationStatus.ERROR
-            status_obj.detail = (
-                f"Could not determine remote URL for submodule '{sub_path}'"
-            )
-            logger.error("Could not determine remote URL for submodule '%s'", sub_path)
-            results.append(status_obj)
-            continue
-        status_obj.remote_url = remote_url
-
-        # Validate that .gitmodules remote matches canonical upstream (guard against unauthorized fork drift)
-        canonical_remote = upstream_config.canonical_remotes.get(sub_path)
-        if canonical_remote:
-            norm_remote = get_web_url_from_remote(remote_url)
-            norm_canonical = get_web_url_from_remote(canonical_remote)
-            if norm_remote != norm_canonical:
-                status_obj.status = VerificationStatus.ERROR
-                status_obj.detail = f"Remote URL '{remote_url}' differs from canonical upstream '{canonical_remote}'"
-                logger.error(
-                    "Submodule '%s' remote URL '%s' differs from canonical upstream '%s'",
-                    sub_path,
-                    remote_url,
-                    canonical_remote,
-                )
-                results.append(status_obj)
-                continue
-
-        # Validate that .gitmodules branch does not conflict with parent target branch
-        gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
-        if gitmodules_branch and sub_path not in branch_map:
-            if gitmodules_branch != target_branch:
-                status_obj.status = VerificationStatus.ERROR
-                status_obj.target_branch = gitmodules_branch
-                status_obj.detail = (
-                    f".gitmodules branch '{gitmodules_branch}' "
-                    f"differs from parent target branch '{target_branch}'"
-                )
-                logger.error(
-                    "Submodule '%s' .gitmodules branch '%s' differs from parent target branch '%s'",
-                    sub_path,
-                    gitmodules_branch,
-                    target_branch,
-                )
-                results.append(status_obj)
-                continue
-
-        sub_branch = resolve_submodule_target_branch(
-            repo_root=repo_root,
             sub_path=sub_path,
-            remote_url=remote_url,
-            parent_target_branch=target_branch,
+            is_nested=_is_nested_submodule(sub_path, all_sub_paths),
+            repo_root=repo_root,
+            target_branch=target_branch,
             branch_map=branch_map,
+            upstream_config=upstream_config,
         )
-        status_obj.target_branch = sub_branch
-
-        expected_sha = get_remote_branch_head_sha(remote_url, sub_branch)
-        status_obj.expected_sha = expected_sha
-
-        if not expected_sha:
-            status_obj.status = VerificationStatus.ERROR
-            status_obj.detail = f"Could not find HEAD SHA for branch '{sub_branch}'"
-            logger.error(
-                "Could not find expected SHA for '%s' on %s", sub_path, remote_url
-            )
-            results.append(status_obj)
-            continue
-
-        if current_sha.lower() == expected_sha.lower():
-            status_obj.status = VerificationStatus.OK
-            status_obj.detail = "Pointers match upstream HEAD"
-        else:
-            status_obj.status = VerificationStatus.OUT_OF_SYNC
-            # Check how many commits behind/ahead if objects exist locally
-            sub_dir = repo_root / sub_path
-            count_code, count_out, _ = run_git_cmd(
-                ["rev-list", "--count", f"{current_sha}..{expected_sha}"],
-                cwd=sub_dir,
-            )
-            if count_code == 0 and count_out.isdigit():
-                behind_count = int(count_out)
-                status_obj.detail = f"Behind upstream by {behind_count} commit(s)"
-            else:
-                status_obj.detail = (
-                    "Drift detected (different commit from upstream HEAD)"
-                )
-
-        results.append(status_obj)
+        for status_char, current_sha, sub_path in raw_entries
+    ]
 
     # Cross-reference: verify every submodule declared in .gitmodules was checked
     checked_paths = {s.path for s in results}

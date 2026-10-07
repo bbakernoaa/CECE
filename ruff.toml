@@ -3,7 +3,7 @@
 "tests/**" = ["ANN001", "ANN201", "ANN202"]
 
 [lint]
-extend-select = ["C90", "PLR0915", "PLR1702", "RUF100"]
+extend-select = ["C90", "PLR0915", "RUF100"]
 extend-ignore = ["ANN204"]
 
 [lint.mccabe]
