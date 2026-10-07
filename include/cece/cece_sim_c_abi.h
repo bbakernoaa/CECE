@@ -220,6 +220,64 @@ void cece_sim_grid_from_esmf(int nx, int ny, int nz, int is_rad, const double* l
 void cece_sim_create_from_esmf(const char* config_path, int path_len, int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len,
                                const double* lat_coords, int lat_len, int mpi_comm_f, CeceSimulation** out_sim, int* rc);
 
+/**
+ * @brief Bind a realized export field's ESMF-owned memory as the persistent
+ * write-back target for `species` (the NUOPC coupling binder).
+ *
+ * Called from the cap's InitializeRealize for each CONNECTED export field,
+ * after NUOPC_Realize and ESMF_FieldGet(farrayPtr). This is a pointer-map
+ * update only: each step the core's write-back deep-copies the managed host
+ * view into whatever the persistent pointer map points at, so rebinding it
+ * redirects output into ESMF field storage. The managed DualView in the
+ * export state is never replaced (the stacking engine's device view is bound
+ * to it at compile time). `data_ptr` is borrowed — ESMF owns the memory and
+ * the core MUST NOT free or reallocate it.
+ *
+ * (nx, ny_local, nz) are the ESMF field's own per-PET extents; the facade
+ * verifies they match the species' managed view and this rank's band
+ * geometry. Unknown species or a dimension mismatch fails with rc < 0 and a
+ * logged diagnostic — never a silent fallback.
+ *
+ * @param sim          Handle from cece_sim_create*.
+ * @param species      Species key as configured under `nuopc: export_fields`.
+ * @param species_len  Length of species (existing cece_core_* convention).
+ * @param data_ptr     The field's farrayPtr (ESMF-owned, band-shaped).
+ * @param nx           Field longitude extent (must match the core grid).
+ * @param ny_local     Field latitude extent (must match this rank's band).
+ * @param nz           Field vertical extent (must match the core grid).
+ * @param rc           0 on success, < 0 on failure.
+ */
+void cece_sim_bind_export_field(CeceSimulation* sim, const char* species, int species_len, double* data_ptr, int nx, int ny_local, int nz, int* rc);
+
+/**
+ * @brief Copy a connected import field's ESMF-owned host memory into the
+ * core's import state for the current step (the NUOPC import binder).
+ *
+ * Called from the cap's Run for each CONNECTED import field, before the
+ * simulation steps. The configured internal input name is resolved through
+ * the meteorology/scale-factor/mask mappings to the import-state key, and the
+ * values are copied into that key's managed DualView (created on first use
+ * for a host-only field), then synced to device so the step's compute sees the
+ * host values. The managed view is reused, never replaced, so the device
+ * buffer the schemes sync to stays stable across steps. `data_ptr` is
+ * borrowed — ESMF owns the memory and the core MUST NOT free or reallocate
+ * it.
+ *
+ * A 2-D surface field arrives as (nx, ny_local) and is stored with a single
+ * vertical layer. The facade verifies (nx, ny_local) match this rank's band;
+ * a mismatch or an unusable existing view fails with rc < 0 and a logged
+ * diagnostic — never a silent fallback.
+ *
+ * @param sim         Handle from cece_sim_create*.
+ * @param field       Configured input name as under `nuopc: import_fields`.
+ * @param field_len   Length of field (existing cece_core_* convention).
+ * @param data_ptr    The field's farrayPtr (ESMF-owned, band-shaped, const).
+ * @param nx          Field longitude extent (must match the core grid).
+ * @param ny_local    Field latitude extent (must match this rank's band).
+ * @param rc          0 on success, < 0 on failure.
+ */
+void cece_sim_set_import_field(CeceSimulation* sim, const char* field, int field_len, const double* data_ptr, int nx, int ny_local, int* rc);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

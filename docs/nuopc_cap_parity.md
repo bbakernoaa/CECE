@@ -59,6 +59,46 @@ Notes:
   `InitializeRealize` with a named diagnostic. There is no fallback to a
   uniform grid.
 
+## Field coupling: how CECE exchanges data with a host
+
+When the YAML carries a `nuopc:` section (see the
+[Configuration Reference](configuration.md#nuopc)), the cap exchanges fields
+with the coupling framework through the standard NUOPC phases:
+
+1. **Advertise.** The cap declares one field per configured entry: exports
+   offer CECE's own geometry ("will provide") and imports accept the peer's
+   ("cannot provide"). Both sides of every pair request reference sharing.
+   Each `standard_name` must exist in the active NUOPC Field Dictionary —
+   which the **host application** installs before components initialize
+   (ESMF's preloaded dictionary covers only common ocean/land-surface names).
+   A name missing from the dictionary fails the run at advertise time, and
+   the error names it.
+2. **Realize.** Connected exports stay on CECE's component grid; connected
+   imports are realized on the grid transferred from the providing peer, so
+   the two sides share an identical data distribution. Configured-but-
+   unconnected fields are removed at realization: they allocate nothing and
+   produce no error, which is what makes a `nuopc:`-bearing config behave
+   exactly like the same config without peers.
+3. **Run.** Exports need no per-step data movement — a host that shares
+   CECE's decomposition reads CECE's computed storage by reference every
+   step. For imports, the cap copies the delivered values from the coupling
+   field into the simulation's input storage before each step, resolving the
+   configured input name through the meteorology/scale-factor/mask mappings.
+4. **Timestamps.** The cap stamps its exports at the step-**start** instant
+   rather than the framework's step-end default. A consumer's default import
+   check compares field timestamps against its own clock current time, which
+   during a driver sweep equals the step start; with shared fields the
+   consumer sees the provider's stamp directly, so step-end would always be
+   one step ahead and fail. Symmetrically, a provider whose connector runs
+   before it advances (e.g. a met source feeding CECE) needs no user-side
+   stamping at all: the framework's step-end default, delivered one sweep
+   late through the connector, equals the consumer's current step start.
+
+The standalone NUOPC app can emulate a dictionary-providing host for testing
+via `--field-dictionary <path.yaml>`; without the flag the preloaded
+dictionary applies and advertising specialized names fails as it would in an
+under-provisioned host.
+
 ## Running the parity checks
 
 All commands below run inside the ESMF-enabled dev container
@@ -128,8 +168,28 @@ Feeds synthetic ESMF-style coordinate arrays through the shared classification
 entry (`cece_sim_grid_from_esmf`) and asserts topology, unit conversion,
 wrapping, and loud rejection of unsupported shapes.
 
+### 6. Field-coupling integration harness
+
+```bash
+docker run --rm -v "$PWD:/work" -w /work/build \
+  -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
+  cece/cece-dev:esmf bash -c "ctest -R '^test_nuopc_field_coupling$' --output-on-failure"
+```
+
+Runs the two- and three-component driver app in
+`tests/nuopc_coupling/` (CECE plus a file-writing sink peer, and a constant
+met-source peer) against the coupled CEDS fixture and a minimal field
+dictionary, and asserts: the sink's received export matches the standalone
+output bit-for-bit at `-np 1` and `-np 2`; a configured-but-unconnected export
+is pruned without error; the met-source import is advertised, realized, and
+copied each step without disturbing the export; the standalone NUOPC app
+without a host dictionary fails at advertise naming the unknown standard
+name; and with `--field-dictionary` it succeeds and matches the C++ driver
+byte-for-byte.
+
 ## Related documentation
 
+- [Configuration Reference](configuration.md) — the `nuopc:` section schema.
 - [Driver Configuration Guide](driver_configuration.md) — cap execution modes,
   grid sources, and precedence rules.
 - [Driver Configuration Guide (full)](driver_configuration_guide.md) — all

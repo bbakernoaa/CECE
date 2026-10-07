@@ -3,7 +3,8 @@
 !>
 !> The cap is a thin adapter over the shared simulation contract
 !> (cece_sim_* C ABI): all lifecycle sequencing, export-field registration,
-!> the time convention (ingest at step start, stamp at step end), and
+!> the time convention (ingest at step start, file output stamped at step
+!> end, coupled export timestamps stamped at step start), and
 !> teardown live inside the shared core so they cannot diverge from the
 !> C++ standalone driver. The two drivers differ ONLY in how they obtain
 !> the target grid; this cap resolves it from the CECE YAML through the
@@ -16,6 +17,8 @@ module cece_cap_mod
   use NUOPC_Model, only: &
     label_Advertise, &
     label_RealizeProvided, &
+    label_RealizeAccepted, &
+    label_TimestampExport, &
     model_label_Advance => label_Advance, &
     model_label_Finalize => label_Finalize
   use cece_cap_grid_mod
@@ -38,6 +41,22 @@ module cece_cap_mod
   !> advances then do no work (contract: hosts must stop stepping on the
   !> same signal as the C++ driver).
   logical, save :: g_complete = .false.
+
+  !> @brief Step-start instant captured during Advance. Export fields are
+  !> stamped with this time by the TimestampExport specialization: a
+  !> consumer's default CheckImport compares import timestamps against its
+  !> clock currTime, which during a driver sweep equals the step start.
+  !> The framework default would stamp at step end, which is a full step
+  !> ahead of that check and fails whenever fields are reference-shared
+  !> (shared fields are seen live, with no connector lag to hide it).
+  type(ESMF_Time), save :: g_step_start_time
+
+  !> @brief State-item names of the NUOPC import fields that were connected
+  !> and realized on the component grid. Cached at realization so each Run
+  !> copies exactly those fields' host storage into the simulation, without
+  !> re-walking the config list (which also names unconnected imports that
+  !> were pruned and must not be touched). Absent when no import is connected.
+  character(len=ESMF_MAXSTR), allocatable, save :: g_import_names(:)
 
   ! C interfaces to the shared simulation facade (cece_driver library).
   ! These mirror include/cece/cece_sim_c_abi.h exactly.
@@ -156,6 +175,110 @@ module cece_cap_mod
       type(c_ptr), intent(out) :: out_sim
       integer(c_int), intent(out) :: rc
     end subroutine
+
+    ! void cece_sim_bind_export_field(CeceSimulation* sim,
+    !   const char* species, int species_len, double* data_ptr,
+    !   int nx, int ny_local, int nz, int* rc)
+    ! Rebinds the core's persistent write-back target for `species` to the
+    ! ESMF field's own storage. Pointer-map update only; ESMF owns the memory.
+    subroutine cece_sim_bind_export_field(sim, species, species_len, data_ptr, &
+                                          nx, ny_local, nz, rc) &
+                                          bind(C, name="cece_sim_bind_export_field")
+      import :: c_char, c_int, c_ptr, c_double
+      type(c_ptr), value :: sim
+      character(kind=c_char), intent(in) :: species(*)
+      integer(c_int), value :: species_len
+      type(c_ptr), value :: data_ptr
+      integer(c_int), value :: nx, ny_local, nz
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    ! void cece_sim_set_import_field(CeceSimulation* sim,
+    !   const char* field, int field_len, const double* data_ptr,
+    !   int nx, int ny_local, int* rc)
+    ! Copies a connected import field's ESMF-owned host storage into the
+    ! core's import state for the current step. The configured input name is
+    ! resolved through the met/scale/mask mappings inside the facade; the cap
+    ! only passes the field's own per-PET extents.
+    subroutine cece_sim_set_import_field(sim, field, field_len, data_ptr, &
+                                         nx, ny_local, rc) &
+                                         bind(C, name="cece_sim_set_import_field")
+      import :: c_char, c_int, c_ptr, c_double
+      type(c_ptr), value :: sim
+      character(kind=c_char), intent(in) :: field(*)
+      integer(c_int), value :: field_len
+      type(c_ptr), value :: data_ptr
+      integer(c_int), value :: nx, ny_local
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    ! Path-based NUOPC coupling config queries (cece_core library). They read
+    ! the optional `nuopc:` section straight from the YAML, so the cap can
+    ! advertise its fields before the simulation exists. Lists come back sorted
+    ! alphabetically by key, making the advertisement order identical on every
+    ! rank. Each writer null-terminates and reports the string length; an empty
+    ! optional attribute returns length zero.
+    ! void cece_nuopc_export_count(const char* config_path, int path_len,
+    !                              int* count, int* rc)
+    subroutine cece_nuopc_export_count(config_path, path_len, count, rc) &
+                                        bind(C, name="cece_nuopc_export_count")
+      import :: c_char, c_int
+      character(kind=c_char), intent(in) :: config_path(*)
+      integer(c_int), value :: path_len
+      integer(c_int), intent(out) :: count
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    ! void cece_nuopc_export_spec(const char* config_path, int path_len,
+    !   int index, char* species, int species_cap, int* species_len,
+    !   char* std_name, int std_cap, int* std_len,
+    !   char* units, int units_cap, int* units_len,
+    !   char* name, int name_cap, int* name_len, int* rc)
+    subroutine cece_nuopc_export_spec(config_path, path_len, index, &
+                                      species, species_cap, species_len, &
+                                      std_name, std_cap, std_len, &
+                                      units, units_cap, units_len, &
+                                      name, name_cap, name_len, rc) &
+                                      bind(C, name="cece_nuopc_export_spec")
+      import :: c_char, c_int
+      character(kind=c_char), intent(in) :: config_path(*)
+      integer(c_int), value :: path_len, index
+      character(kind=c_char), intent(out) :: species(*), std_name(*), units(*), name(*)
+      integer(c_int), value :: species_cap, std_cap, units_cap, name_cap
+      integer(c_int), intent(out) :: species_len, std_len, units_len, name_len
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    ! void cece_nuopc_import_count(const char* config_path, int path_len,
+    !                              int* count, int* rc)
+    subroutine cece_nuopc_import_count(config_path, path_len, count, rc) &
+                                        bind(C, name="cece_nuopc_import_count")
+      import :: c_char, c_int
+      character(kind=c_char), intent(in) :: config_path(*)
+      integer(c_int), value :: path_len
+      integer(c_int), intent(out) :: count
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    ! void cece_nuopc_import_spec(const char* config_path, int path_len,
+    !   int index, char* field, int field_cap, int* field_len,
+    !   char* std_name, int std_cap, int* std_len,
+    !   char* units, int units_cap, int* units_len,
+    !   char* name, int name_cap, int* name_len, int* rc)
+    subroutine cece_nuopc_import_spec(config_path, path_len, index, &
+                                      field, field_cap, field_len, &
+                                      std_name, std_cap, std_len, &
+                                      units, units_cap, units_len, &
+                                      name, name_cap, name_len, rc) &
+                                      bind(C, name="cece_nuopc_import_spec")
+      import :: c_char, c_int
+      character(kind=c_char), intent(in) :: config_path(*)
+      integer(c_int), value :: path_len, index
+      character(kind=c_char), intent(out) :: field(*), std_name(*), units(*), name(*)
+      integer(c_int), value :: field_cap, std_cap, units_cap, name_cap
+      integer(c_int), intent(out) :: field_len, std_len, units_len, name_len
+      integer(c_int), intent(out) :: rc
+    end subroutine
   end interface
 
 contains
@@ -194,13 +317,32 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
 
+    ! 3b. Register the accepted-import realization. CECE's imports accept the
+    ! host's geometry ("cannot provide"), so their fields are allocated on the
+    ! transferred grid in this phase, after the framework has moved the
+    ! provider's geometry across. This mirrors the export side's provider
+    ! realization and is where unconnected imports get pruned.
+    call NUOPC_CompSpecialize(gcomp, specLabel=label_RealizeAccepted, &
+      specRoutine=RealizeAccepted, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
     ! 4. Register Run (Advance) phase
     call NUOPC_CompSpecialize(gcomp, specLabel=model_label_Advance, &
       specRoutine=Run, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
 
-    ! 5. Register Finalize phase
+    ! 5. Override the export timestamping specialization point. The Model
+    ! wrapper attaches a default that stamps exports at the clock's current
+    ! time after the step loop (step end); coupled consumers check imports at
+    ! step start instead, so shared exports must carry the step-start stamp.
+    call NUOPC_CompSpecialize(gcomp, specLabel=label_TimestampExport, &
+      specRoutine=StampExports, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    ! 6. Register Finalize phase
     call NUOPC_CompSpecialize(gcomp, specLabel=model_label_Finalize, &
       specRoutine=Finalize, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
@@ -212,13 +354,26 @@ contains
 
   !> @brief InitializeAdvertise (IPDv01p1)
   !>
-  !> Records the configuration path and sets up run logging/banner only.
-  !> The simulation itself is built in InitializeRealize, where the target
-  !> grid is resolved — a parent component can only provide its grid once
-  !> realization has begun, so construction must wait for that phase.
+  !> Records the configuration path, sets up run logging/banner, and
+  !> advertises every emission export configured in the `nuopc:` section of
+  !> the CECE YAML. The lists come from the path-based config queries, which
+  !> return them sorted alphabetically, so the advertisement order is
+  !> deterministic and identical on every rank. The simulation itself is built
+  !> in InitializeRealize, where the target grid is resolved — a parent
+  !> component can only provide its grid once realization has begun, so
+  !> construction must wait for that phase.
   subroutine InitializeAdvertise(comp, rc)
     type(ESMF_GridComp)  :: comp
     integer, intent(out) :: rc
+
+    type(ESMF_State) :: exportState
+    type(ESMF_State) :: importState
+    integer(c_int) :: count_c, c_rc
+    integer :: i, nexp, nimp
+    character(kind=c_char), dimension(ESMF_MAXSTR) :: c_species, c_std, c_units, c_name
+    integer(c_int) :: species_len, std_len, units_len, name_len
+    character(len=ESMF_MAXSTR) :: key, std_name, units, item_name
+    character(len=700) :: msg
 
     rc = ESMF_SUCCESS
     call ESMF_LogWrite('[Cap] InitializeAdvertise entered', ESMF_LOGMSG_INFO)
@@ -236,9 +391,176 @@ contains
     call cece_run_log_setup(trim(g_config_file_path)//c_null_char, &
                             int(len_trim(g_config_file_path), c_int))
 
+    ! Advertise the configured emission exports. CECE is the provider for its
+    ! own export fields, so it offers the geometry ("will provide"); a peer
+    ! that accepts the transfer receives CECE's grid. With no `nuopc:` section
+    ! the count is zero and nothing is advertised, which keeps a standalone
+    ! cap run byte-for-byte identical to before coupling support.
+    call NUOPC_ModelGet(comp, exportState=exportState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    call cece_nuopc_export_count(trim(g_config_file_path)//c_null_char, &
+                                 int(len_trim(g_config_file_path), c_int), &
+                                 count_c, c_rc)
+    if (c_rc /= 0) then
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[Cap] Failed to count configured NUOPC export fields', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+    nexp = int(count_c)
+
+    do i = 0, nexp - 1
+      call cece_nuopc_export_spec(trim(g_config_file_path)//c_null_char, &
+        int(len_trim(g_config_file_path), c_int), int(i, c_int), &
+        c_species, int(ESMF_MAXSTR, c_int), species_len, &
+        c_std, int(ESMF_MAXSTR, c_int), std_len, &
+        c_units, int(ESMF_MAXSTR, c_int), units_len, &
+        c_name, int(ESMF_MAXSTR, c_int), name_len, c_rc)
+      if (c_rc /= 0) then
+        write(msg, '(A,I0)') '[Cap] Failed to read NUOPC export spec at index ', i
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+      key = nuopc_cbuf_to_string(c_species, int(species_len))
+      std_name = nuopc_cbuf_to_string(c_std, int(std_len))
+      units = nuopc_cbuf_to_string(c_units, int(units_len))
+      ! The state item name defaults to the species key unless the config
+      ! supplies an explicit name.
+      if (name_len > 0) then
+        item_name = nuopc_cbuf_to_string(c_name, int(name_len))
+      else
+        item_name = key
+      end if
+
+      ! CECE is the geometry provider for its own exports. Both share
+      ! policies must be requested explicitly: NUOPC_Advertise defaults them
+      ! to "not share", which would send the Connector down the remap path
+      ! instead of handing the connected consumer a reference to CECE's
+      ! storage. Sharing also requires identical PET distribution on both
+      ! sides, which holds here because the acceptor realizes on CECE's
+      ! transferred grid.
+      if (units_len > 0) then
+        call NUOPC_Advertise(exportState, StandardName=trim(std_name), &
+          name=trim(item_name), Units=trim(units), &
+          TransferOfferGeomObject='will provide', &
+          SharePolicyField='share', SharePolicyGeomObject='share', rc=rc)
+      else
+        ! No units configured: let the field dictionary's canonical units apply.
+        call NUOPC_Advertise(exportState, StandardName=trim(std_name), &
+          name=trim(item_name), &
+          TransferOfferGeomObject='will provide', &
+          SharePolicyField='share', SharePolicyGeomObject='share', rc=rc)
+      end if
+      if (rc /= ESMF_SUCCESS) then
+        write(msg, '(A,A,A)') '[Cap] Failed to advertise export field "', &
+          trim(item_name), '" (standard name not in the field dictionary?)'
+        call ESMF_LogSetError(rcToCheck=rc, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+    end do
+
+    write(msg, '(A,I0,A)') '[Cap] Advertised ', nexp, &
+      ' NUOPC export field(s) from the config'
+    call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+
+    ! Advertise the configured host-provided imports. CECE is the acceptor for
+    ! these fields, so it declares it cannot provide their geometry
+    ! ("cannot provide") and the Connector transfers the host's grid across.
+    ! The default (not share) policies are requested implicitly by omitting
+    ! them: a copied import is what the host-forcing path supplies, and the
+    ! cap reads the values each step rather than aliasing host storage. With no
+    ! import list the count is zero and nothing is advertised, so a standalone
+    ! cap run is unchanged.
+    call NUOPC_ModelGet(comp, importState=importState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    call cece_nuopc_import_count(trim(g_config_file_path)//c_null_char, &
+                                 int(len_trim(g_config_file_path), c_int), &
+                                 count_c, c_rc)
+    if (c_rc /= 0) then
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[Cap] Failed to count configured NUOPC import fields', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+    nimp = int(count_c)
+
+    do i = 0, nimp - 1
+      call cece_nuopc_import_spec(trim(g_config_file_path)//c_null_char, &
+        int(len_trim(g_config_file_path), c_int), int(i, c_int), &
+        c_species, int(ESMF_MAXSTR, c_int), species_len, &
+        c_std, int(ESMF_MAXSTR, c_int), std_len, &
+        c_units, int(ESMF_MAXSTR, c_int), units_len, &
+        c_name, int(ESMF_MAXSTR, c_int), name_len, c_rc)
+      if (c_rc /= 0) then
+        write(msg, '(A,I0)') '[Cap] Failed to read NUOPC import spec at index ', i
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+      key = nuopc_cbuf_to_string(c_species, int(species_len))
+      std_name = nuopc_cbuf_to_string(c_std, int(std_len))
+      units = nuopc_cbuf_to_string(c_units, int(units_len))
+      ! The state item name defaults to the configured input key unless the
+      ! config supplies an explicit name (same rule as the exports).
+      if (name_len > 0) then
+        item_name = nuopc_cbuf_to_string(c_name, int(name_len))
+      else
+        item_name = key
+      end if
+
+      ! Reference sharing must be requested on BOTH sides: NUOPC_Advertise
+      ! defaults the share policies to "not share", which would make the
+      ! Connector regrid the met grid instead of aliasing storage. CECE
+      ! realizes this import on the transferred met grid, so the two sides
+      ! share an identical data distribution and the connector can alias.
+      if (units_len > 0) then
+        call NUOPC_Advertise(importState, StandardName=trim(std_name), &
+          name=trim(item_name), Units=trim(units), &
+          TransferOfferGeomObject='cannot provide', &
+          SharePolicyField='share', SharePolicyGeomObject='share', rc=rc)
+      else
+        call NUOPC_Advertise(importState, StandardName=trim(std_name), &
+          name=trim(item_name), &
+          TransferOfferGeomObject='cannot provide', &
+          SharePolicyField='share', SharePolicyGeomObject='share', rc=rc)
+      end if
+      if (rc /= ESMF_SUCCESS) then
+        write(msg, '(A,A,A)') '[Cap] Failed to advertise import field "', &
+          trim(item_name), '" (standard name not in the field dictionary?)'
+        call ESMF_LogSetError(rcToCheck=rc, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+    end do
+
+    write(msg, '(A,I0,A)') '[Cap] Advertised ', nimp, &
+      ' NUOPC import field(s) from the config'
+    call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+
     call ESMF_LogWrite('[Cap] InitializeAdvertise completed successfully', &
       ESMF_LOGMSG_INFO)
   end subroutine InitializeAdvertise
+
+  !> @brief Convert a null-terminated C character buffer of reported length
+  !> into a Fortran string. The config-query C-ABI writers always
+  !> null-terminate and return the length, so the length is authoritative and
+  !> the buffer is scanned only that far.
+  function nuopc_cbuf_to_string(buf, n) result(str)
+    character(kind=c_char), intent(in) :: buf(*)
+    integer, intent(in) :: n
+    character(len=ESMF_MAXSTR) :: str
+    integer :: i
+    str = ' '
+    do i = 1, n
+      str(i:i) = buf(i)
+    end do
+  end function nuopc_cbuf_to_string
 
   !> @brief InitializeRealize (IPDv01p3)
   !>
@@ -263,6 +585,7 @@ contains
     type(ESMF_Grid) :: grid
     type(ESMF_VM) :: vm
     integer :: mpi_comm_val
+    integer :: pet_count
     integer(c_int) :: c_rc
     integer(c_int) :: nx_c, ny_c, nz_c, topology_c
     real(c_double) :: lon_min, lon_max, lat_min, lat_max
@@ -423,7 +746,12 @@ contains
         ' object: ', gx_nx, 'x', gx_ny, 'x', int(nz_cfg)
       call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
       ! The component is already associated with the parent grid/mesh, so no
-      ! re-association is needed on this path.
+      ! re-association is needed on this path. Realize the configured exports
+      ! on the parent geometry (a mesh-backed component is left unconnected:
+      ! emission fields are grid fields, and offering an unsupported
+      ! geometry fails rather than silently mis-coupling).
+      call realize_export_fields(comp, parent_grid, grid_is_present, int(nz_cfg), rc)
+      if (rc /= ESMF_SUCCESS) return  ! bail out
       call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
         ESMF_LOGMSG_INFO)
       return
@@ -463,9 +791,28 @@ contains
       'x', ny_c, 'x', nz_c, ' topology=', topology_c
     call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
 
+    ! Decompose the grid across the component's PETs by latitude rows only, so
+    ! each rank's local slab matches the row band the shared core owns. The
+    ! simulation partitions the global rows with the block formula
+    !   band_start(r) = r*(ny/size) + min(r, ny%size),
+    ! giving the first ny%size ranks one extra row. ESMF's balanced division of
+    ! a single dimension into DEs follows the same convention, so splitting the
+    ! latitude dimension into petCount balanced tiles and leaving longitude
+    ! whole reproduces the band geometry exactly at any PET count. Without this
+    ! the default column-first split hands each rank a different footprint than
+    ! its band and the export binding fails the extent check.
+    pet_count = 1
+    if (vm_ok) then
+      call ESMF_VMGet(vm, petCount=pet_count, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+    end if
+    if (pet_count < 1) pet_count = 1
+
     grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/nx_c, ny_c/), &
       minCornerCoord=(/lon_min, lat_min/), &
       maxCornerCoord=(/lon_max, lat_max/), &
+      regDecomp=(/1, pet_count/), &
       coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
@@ -480,9 +827,296 @@ contains
     ! the component keeps using this grid until the framework tears it down.
     ! Consistent with the NUOPC model templates, the grid handle is released
     ! with the component at ESMF_Finalize rather than manually.
+    call realize_export_fields(comp, grid, .true., nz_c, rc)
+    if (rc /= ESMF_SUCCESS) return  ! bail out
+
     call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
       ESMF_LOGMSG_INFO)
   end subroutine InitializeRealize
+
+  !> @brief Realize the configured NUOPC export fields on the component grid.
+  !>
+  !> Shared by both grid paths of InitializeRealize (parent-provided grid and
+  !> config-built uniform grid). For every species listed in the `nuopc:`
+  !> export section — the same alphabetical order advertised in
+  !> InitializeAdvertise — a connected field gets real storage on this
+  !> component's grid: an ESMF grid field with the ungridded vertical running
+  !> 1:nz (matching the consumer's realization), handed to NUOPC_Realize to
+  !> replace the advertised placeholder, then bound into the simulation so
+  !> each step's write-back lands directly in ESMF-owned memory (reference
+  !> sharing: no gather, no copy through the cap).
+  !>
+  !> A field the driver did not connect is removed from the export state, so
+  !> nothing is allocated for it and no unmatched item survives realization;
+  !> the removal is logged at INFO.
+  !>
+  !> `has_grid` is false only for a mesh-backed component: emission fields
+  !> are grid fields, so every export is reported as an unconnected removal
+  !> rather than mis-coupled onto an unsupported geometry.
+  subroutine realize_export_fields(comp, grid, has_grid, nz, rc)
+    type(ESMF_GridComp)      :: comp
+    type(ESMF_Grid)          :: grid
+    logical,    intent(in)   :: has_grid
+    integer(c_int), intent(in) :: nz
+    integer,    intent(out)  :: rc
+
+    type(ESMF_State) :: exportState
+    integer :: i, nexp
+    integer(c_int) :: count_c, c_rc
+    integer(c_int) :: species_len, std_len, units_len, name_len
+    character(kind=c_char), dimension(ESMF_MAXSTR) :: c_species, c_std, c_units, c_name
+    character(len=ESMF_MAXSTR) :: key, item_name
+    character(len=700) :: msg
+    logical :: connected
+    type(ESMF_Field) :: field
+    real(c_double), pointer :: fptr(:, :, :)
+    integer :: al(3), au(3)
+    integer :: fnx, fny, fnz
+    type(c_ptr) :: farray_ptr
+
+    rc = ESMF_SUCCESS
+
+    call NUOPC_ModelGet(comp, exportState=exportState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    call cece_nuopc_export_count(trim(g_config_file_path)//c_null_char, &
+                                 int(len_trim(g_config_file_path), c_int), &
+                                 count_c, c_rc)
+    if (c_rc /= 0) then
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[Cap] Failed to count configured NUOPC export fields at realize', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+    nexp = int(count_c)
+
+    do i = 0, nexp - 1
+      call cece_nuopc_export_spec(trim(g_config_file_path)//c_null_char, &
+        int(len_trim(g_config_file_path), c_int), int(i, c_int), &
+        c_species, int(ESMF_MAXSTR, c_int), species_len, &
+        c_std, int(ESMF_MAXSTR, c_int), std_len, &
+        c_units, int(ESMF_MAXSTR, c_int), units_len, &
+        c_name, int(ESMF_MAXSTR, c_int), name_len, c_rc)
+      if (c_rc /= 0) then
+        write(msg, '(A,I0)') '[Cap] Failed to read NUOPC export spec at index ', i
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+      key = nuopc_cbuf_to_string(c_species, int(species_len))
+      ! The state item name defaults to the species key unless the config
+      ! supplies an explicit name (identical rule to the advertise phase).
+      if (name_len > 0) then
+        item_name = nuopc_cbuf_to_string(c_name, int(name_len))
+      else
+        item_name = key
+      end if
+
+      connected = .false.
+      if (has_grid) then
+        connected = NUOPC_IsConnected(exportState, fieldName=trim(item_name), rc=rc)
+        if (rc /= ESMF_SUCCESS) then
+          ! An absent item simply means nothing was advertised under this
+          ! name (the advertise phase ran from the same list, so this cannot
+          ! happen for a configured field); treat it as not connected.
+          rc = ESMF_SUCCESS
+          connected = .false.
+        end if
+      end if
+
+      if (.not. connected) then
+        call ESMF_StateRemove(exportState, (/trim(item_name)/), rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        write(msg, '(A,A,A)') "[Cap] Removed unconnected export field '", &
+          trim(item_name), "'"
+        call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+        cycle
+      end if
+
+      ! Connected: allocate real storage on the component grid. The grid
+      ! covers two field dimensions (gridToFieldMap), and the vertical is an
+      ! ungridded dimension spanning 1:nz — the same shape the consumer
+      ! realizes on its side, which is what the field transfer matches on.
+      field = ESMF_FieldCreate(grid, typekind=ESMF_TYPEKIND_R8, &
+        staggerloc=ESMF_STAGGERLOC_CENTER, &
+        gridToFieldMap=(/1, 2/), &
+        ungriddedLBound=(/1/), ungriddedUBound=(/int(nz)/), &
+        name=trim(item_name), rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+
+      call NUOPC_Realize(exportState, field=field, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+
+      ! Hand the field's own memory to the simulation: from now on each
+      ! step's write-back deep-copies the computed band directly into it.
+      ! ESMF associates the pointer with the field's per-PET storage, bounds
+      ! included; the extents read back here are what the simulation verifies
+      ! against its own band decomposition before rebinding the write-back.
+      nullify(fptr)
+      call ESMF_FieldGet(field, farrayPtr=fptr, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      al = lbound(fptr)
+      au = ubound(fptr)
+      fnx = au(1) - al(1) + 1
+      fny = au(2) - al(2) + 1
+      fnz = au(3) - al(3) + 1
+
+      if (fnx <= 0 .or. fny <= 0 .or. fnz <= 0) then
+        ! This PET owns no rows of the field; there is nothing to write back
+        ! and nothing to bind. Skip rather than hand the core a null target.
+        write(msg, '(A,A,A,I0,A,I0,A,I0,A)') '[Cap] Export field "', &
+          trim(item_name), '" has empty storage on this PET (', &
+          fnx, 'x', fny, 'x', fnz, '); bind skipped'
+        call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+        cycle
+      end if
+
+      farray_ptr = C_LOC(fptr)
+      call cece_sim_bind_export_field(g_sim_ptr, key//c_null_char, &
+                                      int(len_trim(key), c_int), farray_ptr, &
+                                      int(fnx, c_int), int(fny, c_int), &
+                                      int(fnz, c_int), c_rc)
+      if (c_rc /= 0) then
+        write(msg, '(A,A,A,I0)') '[Cap] Failed to bind export field "', &
+          trim(item_name), '" to simulation storage rc=', int(c_rc)
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+
+      write(msg, '(A,A,A,I0,A,I0,A,I0,A)') '[Cap] Realized export field "', &
+        trim(item_name), '" (', fnx, 'x', fny, 'x', fnz, ') bound to simulation'
+      call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+    end do
+  end subroutine realize_export_fields
+
+  !> @brief Realize the accepted host-provided imports on the transferred grid.
+  !>
+  !> Runs in the accepted phase, after the framework has moved each connected
+  !> provider's geometry into CECE's import state. For every configured import
+  !> the same alphabetical list advertised in InitializeAdvertise: a connected
+  !> field is realized as a rank-2 R8 surface field on the transferred grid
+  !> (gridToFieldMap defaults to all grid dimensions, no ungridded vertical),
+  !> and its state-item name is cached so each Run can copy the delivered host
+  !> storage into the simulation. An import the host did not connect is removed
+  !> from the state and logged; CECE then falls back to file ingest for that
+  !> name, so the run proceeds unchanged.
+  subroutine RealizeAccepted(comp, rc)
+    type(ESMF_GridComp)      :: comp
+    integer,    intent(out)  :: rc
+
+    type(ESMF_State) :: importState
+    integer :: i, nimp, nkept
+    integer(c_int) :: count_c, c_rc
+    integer(c_int) :: field_len, std_len, units_len, name_len
+    character(kind=c_char), dimension(ESMF_MAXSTR) :: c_field, c_std, c_units, c_name
+    character(len=ESMF_MAXSTR) :: key, item_name
+    character(len=700) :: msg
+    logical :: connected
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite('[Cap] RealizeAccepted entered', ESMF_LOGMSG_INFO)
+
+    call NUOPC_ModelGet(comp, importState=importState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    ! Reset the cached connected-import list (idempotent across re-realize).
+    if (allocated(g_import_names)) deallocate(g_import_names)
+    allocate(g_import_names(0))
+
+    call cece_nuopc_import_count(trim(g_config_file_path)//c_null_char, &
+                                 int(len_trim(g_config_file_path), c_int), &
+                                 count_c, c_rc)
+    if (c_rc /= 0) then
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[Cap] Failed to count configured NUOPC import fields at realize', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+    nimp = int(count_c)
+
+    nkept = 0
+    do i = 0, nimp - 1
+      call cece_nuopc_import_spec(trim(g_config_file_path)//c_null_char, &
+        int(len_trim(g_config_file_path), c_int), int(i, c_int), &
+        c_field, int(ESMF_MAXSTR, c_int), field_len, &
+        c_std, int(ESMF_MAXSTR, c_int), std_len, &
+        c_units, int(ESMF_MAXSTR, c_int), units_len, &
+        c_name, int(ESMF_MAXSTR, c_int), name_len, c_rc)
+      if (c_rc /= 0) then
+        write(msg, '(A,I0)') '[Cap] Failed to read NUOPC import spec at index ', i
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(msg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+      key = nuopc_cbuf_to_string(c_field, int(field_len))
+      ! The state item name defaults to the configured input key unless the
+      ! config supplies an explicit name (identical rule to the advertise).
+      if (name_len > 0) then
+        item_name = nuopc_cbuf_to_string(c_name, int(name_len))
+      else
+        item_name = key
+      end if
+
+      connected = NUOPC_IsConnected(importState, fieldName=trim(item_name), rc=rc)
+      if (rc /= ESMF_SUCCESS) then
+        ! An absent item means nothing was advertised under this name; treat
+        ! it as not connected rather than failing.
+        rc = ESMF_SUCCESS
+        connected = .false.
+      end if
+
+      if (.not. connected) then
+        ! Realize with removeNotConnected so the placeholder is dropped and no
+        ! unmatched item survives realization; the transfer overload is the
+        ! documented way to prune an accepted-but-unconnected import.
+        call NUOPC_Realize(importState, fieldName=trim(item_name), &
+          typekind=ESMF_TYPEKIND_R8, &
+          realizeOnlyConnected=.true., removeNotConnected=.true., rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        write(msg, '(A,A,A)') "[Cap] Removed unconnected import field '", &
+          trim(item_name), "'"
+        call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+        cycle
+      end if
+
+      ! Connected: allocate the surface field on the transferred grid. A met
+      ! import is rank-2 with the grid's two dimensions mapping to the field
+      ! and no ungridded vertical (gridToFieldMap and ungridded bounds omitted).
+      call NUOPC_Realize(importState, fieldName=trim(item_name), &
+        typekind=ESMF_TYPEKIND_R8, &
+        realizeOnlyConnected=.true., removeNotConnected=.true., rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+
+      ! Cache the name so Run copies this field's storage each step.
+      block
+        character(len=ESMF_MAXSTR), allocatable :: tmp(:)
+        integer :: n
+        n = nkept + 1
+        allocate(tmp(n))
+        if (nkept > 0) tmp(1:nkept) = g_import_names(1:nkept)
+        call move_alloc(tmp, g_import_names)
+      end block
+      nkept = nkept + 1
+      g_import_names(nkept) = item_name
+
+      write(msg, '(A,A,A)') '[Cap] Realized import field ''', &
+        trim(item_name), ''' on the transferred grid'
+      call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+    end do
+
+    write(msg, '(A,I0,A,I0,A)') '[Cap] Realized ', nkept, ' of ', nimp, &
+      ' NUOPC import field(s)'
+    call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+  end subroutine RealizeAccepted
 
   !> @brief Run Advance step (Specialized via model_label_Advance)
   !>
@@ -503,6 +1137,13 @@ contains
     character(len=700) :: wmsg
     integer(c_int) :: complete_c
     integer(c_int) :: c_rc
+    integer :: i
+    type(ESMF_State) :: importState
+    type(ESMF_Field) :: import_field
+    real(c_double), pointer :: fptr(:, :)
+    integer :: al(2), au(2)
+    integer :: fnx, fny
+    type(c_ptr) :: farray_ptr
 
     rc = ESMF_SUCCESS
 
@@ -538,6 +1179,10 @@ contains
     call ESMF_TimeGet(currTime, timeString=step_start_str, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
+
+    ! Remember the step start for the export stamping specialization that
+    ! the framework invokes at the end of this Run.
+    g_step_start_time = currTime
     call ESMF_TimeGet(nextTime, timeString=step_end_str, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
@@ -545,6 +1190,65 @@ contains
     ! The writer counts steps 1-based (output frequency is checked as
     ! step_index % output_freq), matching the standalone driver's counter.
     g_step_count = g_step_count + 1
+
+    ! Copy each connected host-provided import into the simulation before the
+    ! step, so this step's compute reads the delivered values. The Connector
+    ! has already written the provider's data into the field's own storage on
+    ! the transferred grid; the cap only hands that borrowed pointer and the
+    ! field's per-PET extents to the facade, which resolves the configured
+    ! input name to the import-state key and copies it in.
+    if (allocated(g_import_names)) then
+      if (size(g_import_names) > 0) then
+        call NUOPC_ModelGet(comp, importState=importState, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+
+        do i = 1, size(g_import_names)
+          call ESMF_StateGet(importState, trim(g_import_names(i)), &
+                             import_field, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+            line=__LINE__, file=__FILE__)) return  ! bail out
+
+          nullify(fptr)
+          call ESMF_FieldGet(import_field, farrayPtr=fptr, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+            line=__LINE__, file=__FILE__)) return  ! bail out
+
+          al = lbound(fptr)
+          au = ubound(fptr)
+          fnx = au(1) - al(1) + 1
+          fny = au(2) - al(2) + 1
+
+          ! A PET that owns no rows has an empty local slab; there is nothing
+          ! to copy. The facade still needs the shape, so skip the call rather
+          ! than hand it a zero-extent or null pointer.
+          if (fnx <= 0 .or. fny <= 0 .or. .not. associated(fptr)) then
+            write(wmsg, '(A,A,A,I0,A,I0,A)') '[Cap] Import field "', &
+              trim(g_import_names(i)), '" empty on this PET (', &
+              fnx, 'x', fny, '); copy skipped'
+            call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+            cycle
+          end if
+
+          farray_ptr = C_LOC(fptr)
+          call cece_sim_set_import_field(g_sim_ptr, &
+              g_import_names(i)//c_null_char, &
+              int(len_trim(g_import_names(i)), c_int), farray_ptr, &
+              int(fnx, c_int), int(fny, c_int), c_rc)
+          if (c_rc /= 0) then
+            write(wmsg, '(A,A,A,I0)') '[Cap] Failed to copy import field "', &
+              trim(g_import_names(i)), '" into simulation rc=', int(c_rc)
+            call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+              line=__LINE__, file=__FILE__, rcToReturn=rc)
+            return  ! bail out
+          end if
+
+          write(wmsg, '(A,A,A,I0,A,I0,A)') "[Cap] Copied import field '", &
+            trim(g_import_names(i)), "' (", fnx, 'x', fny, ') into simulation'
+          call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+        end do
+      end if
+    end if
 
     call cece_sim_step(g_sim_ptr, trim(step_start_str)//c_null_char, &
                        int(len_trim(step_start_str), c_int), &
@@ -564,6 +1268,36 @@ contains
         ESMF_LOGMSG_INFO)
     end if
   end subroutine Run
+
+  !> @brief Stamp export fields at the step-start instant (Specialized via
+  !> label_TimestampExport, replacing the framework default).
+  !>
+  !> The framework invokes this after the model's internal step loop, at which
+  !> point the default would stamp with the clock's step-end time. Coupled
+  !> consumers compare import timestamps against their clock currTime, which
+  !> during a driver sweep equals the step start; with reference-shared fields
+  !> the consumer sees the provider's live stamp directly, so the step-end
+  !> default is always one step ahead of the check and fails it. Stamping the
+  !> step start aligns the shared export with every consumer sweep, and the
+  !> value semantically covers the interval beginning at that instant.
+  subroutine StampExports(comp, rc)
+    type(ESMF_GridComp) :: comp
+    integer, intent(out) :: rc
+
+    type(ESMF_State) :: exportState
+
+    rc = ESMF_SUCCESS
+
+    call NUOPC_ModelGet(comp, exportState=exportState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    ! Unconnected fields were pruned from the export state at realization,
+    ! so only coupled exports are stamped here.
+    call NUOPC_SetTimestamp(exportState, g_step_start_time, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+  end subroutine StampExports
 
   !> @brief Finalize and cleanup resources (Specialized via model_label_Finalize)
   subroutine Finalize(comp, rc)

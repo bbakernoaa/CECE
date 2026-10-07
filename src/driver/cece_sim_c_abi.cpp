@@ -149,7 +149,7 @@ void cece_sim_step(CeceSimulation* sim, const char* step_start_iso, int step_sta
     const std::string end = cstr_to_string(step_end_iso, step_end_len);
 
     cece::CeceSimulation& cpp_sim = *reinterpret_cast<cece::CeceSimulation*>(sim);
-    const cece::StepResult result = cpp_sim.Step(start, end, step_index);
+    const cece::StepOutcome result = cpp_sim.Step(start, end, step_index);
 
     if (complete_out != nullptr) {
         *complete_out = result.complete ? 1 : 0;
@@ -394,6 +394,38 @@ void cece_sim_create_from_esmf(const char* config_path, int path_len, int nx, in
             *out_sim = nullptr;
         }
     }
+}
+
+void cece_sim_bind_export_field(CeceSimulation* sim, const char* species, int species_len, double* data_ptr, int nx, int ny_local, int nz, int* rc) {
+    if (rc != nullptr) {
+        *rc = 0;
+    }
+    if (sim == nullptr || species == nullptr || rc == nullptr) {
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return;
+    }
+
+    cece::CeceSimulation& cpp_sim = *reinterpret_cast<cece::CeceSimulation*>(sim);
+    const std::string name = cstr_to_string(species, species_len);
+    cpp_sim.BindExportField(name, data_ptr, nx, ny_local, nz, rc);
+}
+
+void cece_sim_set_import_field(CeceSimulation* sim, const char* field, int field_len, const double* data_ptr, int nx, int ny_local, int* rc) {
+    if (rc != nullptr) {
+        *rc = 0;
+    }
+    if (sim == nullptr || field == nullptr || rc == nullptr) {
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return;
+    }
+
+    cece::CeceSimulation& cpp_sim = *reinterpret_cast<cece::CeceSimulation*>(sim);
+    const std::string name = cstr_to_string(field, field_len);
+    cpp_sim.SetImportField(name, data_ptr, nx, ny_local, rc);
 }
 
 void cece_sim_clock_info(const char* config_path, int path_len, int* timestep_seconds_out, int* step_count_out, int* rc) {

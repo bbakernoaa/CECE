@@ -8,6 +8,7 @@ program mainApp
 
   use ESMF
   use NUOPC
+  use NUOPC_FieldDictionaryAPI, only: NUOPC_FieldDictionarySetup
   use mpi
   use driver, only: driver_SS => SetServices, set_cece_config_file
 
@@ -15,7 +16,10 @@ program mainApp
 
   integer :: rc, userRc, mpierr
   type(ESMF_GridComp) :: drvComp
-  character(len=512) :: second_arg, cece_yaml_file
+  character(len=512) :: cece_yaml_file
+  character(len=512) :: arg, nextarg, dict_file
+  character(len=512) :: positional(2)
+  integer :: nargs, i, npos
 
   ! Initialize ESMF with minimal logging to avoid string conversion issues
   call ESMF_Initialize(defaultCalKind=ESMF_CALKIND_GREGORIAN, &
@@ -31,19 +35,39 @@ program mainApp
     file=__FILE__)) &
     call ESMF_Finalize(endflag=ESMF_END_ABORT)
 
-  ! Check if we have 1 or 2 arguments
-  call get_command_argument(1, cece_yaml_file)
-  call get_command_argument(2, second_arg)
+  ! Parse the command line. The CECE YAML is supplied positionally (the last
+  ! positional argument), exactly as before: one positional is the config; the
+  ! legacy two-argument form (ignored.cfg config.yaml) takes the second. An
+  ! optional --field-dictionary <path> flag may appear anywhere and makes this
+  ! host install a field dictionary before any component advertises; without
+  ! it the preloaded ESMF dictionary is used, so behavior is unchanged.
+  dict_file = ""
+  npos = 0
+  nargs = command_argument_count()
+  i = 1
+  do while (i <= nargs)
+    call get_command_argument(i, arg)
+    if (trim(arg) == "--field-dictionary") then
+      call get_command_argument(i + 1, nextarg)
+      dict_file = trim(nextarg)
+      i = i + 2
+    else
+      if (npos < 2) then
+        npos = npos + 1
+        positional(npos) = trim(arg)
+      end if
+      i = i + 1
+    end if
+  end do
 
-  ! Legacy two-argument form (ignored.cfg config.yaml): the YAML is the
-  ! second positional argument and the first is a driver config file that
-  ! the standalone path never reads. Accept and ignore it so documented
-  ! invocations keep working.
-  if (len_trim(second_arg) > 0) then
-    call get_command_argument(2, cece_yaml_file)
+  ! Last positional wins (legacy two-argument form), matching the prior logic.
+  if (npos >= 1) then
+    cece_yaml_file = positional(npos)
+  else
+    cece_yaml_file = ""
   end if
 
-  ! Fallback if no arguments
+  ! Fallback if no config argument was supplied
   if (len_trim(cece_yaml_file) == 0) then
     call get_environment_variable("CECE_CONFIG", cece_yaml_file)
     if (len_trim(cece_yaml_file) == 0) then
@@ -55,6 +79,18 @@ program mainApp
   call set_cece_config_file(trim(cece_yaml_file))
 
   write(*,'(A,A)') "INFO: [mainApp] CECE config file:   ", trim(cece_yaml_file)
+
+  ! When the host provides a field dictionary, install it before creating any
+  ! component so Advertise can resolve standard names absent from the preloaded
+  ! ESMF dictionary (e.g. emission names). Absent the flag, skip this entirely
+  ! and keep the preloaded-dictionary behavior.
+  if (len_trim(dict_file) > 0) then
+    call NUOPC_FieldDictionarySetup(trim(dict_file), rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) &
+      call ESMF_Finalize(endflag=ESMF_END_ABORT)
+    write(*,'(A,A)') "INFO: [mainApp] field dictionary:   ", trim(dict_file)
+  end if
 
   ! Create driver component
   drvComp = ESMF_GridCompCreate(name="driver", rc=rc)

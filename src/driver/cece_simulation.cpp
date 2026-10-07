@@ -29,6 +29,7 @@
 #include "cece/cece_config.hpp"
 #include "cece/cece_driver_facade.hpp"
 #include "cece/cece_fatal.hpp"
+#include "cece/cece_internal.hpp"
 #include "cece/cece_logger.hpp"
 
 // CECE Core C-linkage lifecycle functions (framework-free C ABI, declared
@@ -206,12 +207,12 @@ std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config
     }
 }
 
-StepResult CeceSimulation::Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index) {
-    StepResult result;
+StepOutcome CeceSimulation::Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index) {
+    StepOutcome result;
     int rc = 0;
 
     // The whole sequence is exception-guarded: Step backs the C ABI
-    // cece_sim_step and reports failures through StepResult instead.
+    // cece_sim_step and reports failures through StepOutcome instead.
     try {
         // A. Ingest at the STEP-START instant: offline AMIO reading and AXIS
         //    regridding for the time the step represents.
@@ -264,6 +265,166 @@ StepResult CeceSimulation::Step(const std::string& step_start_iso, const std::st
         LogFatal(std::string{"[SIM FATAL] Step threw: "} + e.what());
         return result;
     }
+}
+
+bool CeceSimulation::BindExportField(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc) {
+    if (rc != nullptr) {
+        *rc = 0;
+    }
+
+    auto fail = [&](const std::string& msg) {
+        CECE_LOG_ERROR("[SIM] cece_sim_bind_export_field: " + msg);
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return false;
+    };
+
+    if (core_data_ptr_ == nullptr) {
+        return fail("simulation has no core data (not created, or already finalized)");
+    }
+    if (data_ptr == nullptr) {
+        return fail("null data pointer for species '" + species + "'");
+    }
+    if (nx <= 0 || ny_local <= 0 || nz <= 0) {
+        return fail("invalid extents (" + std::to_string(nx) + ", " + std::to_string(ny_local) + ", " + std::to_string(nz) + ") for species '" +
+                    species + "'");
+    }
+
+    auto* data = static_cast<cece::CeceInternalData*>(core_data_ptr_);
+
+    // The species must already exist in the export state: fields are created
+    // at config realization, and the managed DualView there is what the
+    // stacking engine computes into every step. This binder only redirects
+    // where the synced host copy lands — it must never replace the managed
+    // view itself (doing so would dangle the device view the engine holds).
+    auto field_it = data->export_state.fields.find(species);
+    if (field_it == data->export_state.fields.end()) {
+        return fail("unknown export species '" + species + "' (not present in export_state.fields)");
+    }
+
+    // Shape contract: the ESMF field's per-PET extents must match BOTH the
+    // managed view the write-back deep-copies from (otherwise the per-step
+    // copy would be a size mismatch) and this rank's band geometry owned by
+    // the facade. The facade — not the cap — knows the decomposition, so a
+    // mismatch between the ESMF decomposition and the band fails here,
+    // loudly, instead of writing back out of bounds.
+    const auto& host_view = field_it->second.view_host();
+    const int view_nx = static_cast<int>(host_view.extent(0));
+    const int view_ny = static_cast<int>(host_view.extent(1));
+    const int view_nz = static_cast<int>(host_view.extent(2));
+    if (view_nx != nx || view_ny != ny_local || view_nz != nz) {
+        return fail("extent mismatch for species '" + species + "': field (" + std::to_string(nx) + ", " + std::to_string(ny_local) + ", " +
+                    std::to_string(nz) + ") != managed view (" + std::to_string(view_nx) + ", " + std::to_string(view_ny) + ", " +
+                    std::to_string(view_nz) + ")");
+    }
+    if (nx != data->nx || nz != data->nz) {
+        return fail("extent mismatch for species '" + species + "': field (" + std::to_string(nx) + ", " + std::to_string(ny_local) + ", " +
+                    std::to_string(nz) + ") != core grid (" + std::to_string(data->nx) + ", *, " + std::to_string(data->nz) + ")");
+    }
+    if (ny_local != band_.ny_local) {
+        return fail("band mismatch for species '" + species + "': field ny_local=" + std::to_string(ny_local) +
+                    " != facade band ny_local=" + std::to_string(band_.ny_local));
+    }
+
+    // Pointer-map update only. ESMF owns the memory; the core never frees or
+    // reallocates it, and each step SyncAndCopyState deep-copies the managed
+    // host view into whatever this map points at.
+    data->persistent_export_ptrs[species] = data_ptr;
+    CECE_LOG_INFO("[SIM] Bound export field '" + species + "' to coupled storage (" + std::to_string(nx) + "x" + std::to_string(ny_local) + "x" +
+                  std::to_string(nz) + ")");
+    return true;
+}
+
+bool CeceSimulation::SetImportField(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc) {
+    if (rc != nullptr) {
+        *rc = 0;
+    }
+
+    auto fail = [&](const std::string& msg) {
+        CECE_LOG_ERROR("[SIM] cece_sim_set_import_field: " + msg);
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return false;
+    };
+
+    if (core_data_ptr_ == nullptr) {
+        return fail("simulation has no core data (not created, or already finalized)");
+    }
+    if (data_ptr == nullptr) {
+        return fail("null data pointer for import field '" + field + "'");
+    }
+    if (nx <= 0 || ny_local <= 0) {
+        return fail("invalid extents (" + std::to_string(nx) + ", " + std::to_string(ny_local) + ") for import field '" + field + "'");
+    }
+
+    auto* data = static_cast<cece::CeceInternalData*>(core_data_ptr_);
+
+    // The cap passes the configured internal input name (a key of the
+    // meteorology/scale-factor/mask mappings). Resolve it to the import-state
+    // key the compute-side resolver reads under, using the same mapping order
+    // (CeceStateResolver::ResolveName): meteorology, then scale factor, then
+    // mask, else the name itself. A name that maps to nothing is still a valid
+    // import target under its own key, so resolution never fails here; the
+    // config parser already rejected unknown import keys.
+    std::string key = field;
+    if (auto it = data->config.met_mapping.find(field); it != data->config.met_mapping.end()) {
+        key = it->second;
+    } else if (auto it = data->config.scale_factor_mapping.find(field); it != data->config.scale_factor_mapping.end()) {
+        key = it->second;
+    } else if (auto it = data->config.mask_mapping.find(field); it != data->config.mask_mapping.end()) {
+        key = it->second;
+    }
+
+    // Shape contract: the ESMF field's per-PET extents must match this rank's
+    // band. The facade — not the cap — owns the decomposition, so a mismatch
+    // between the ESMF grid decomposition and the band fails here, loudly,
+    // instead of copying out of bounds. Longitude and layer count are the core
+    // grid's; a met import is a 2-D surface field stored with one layer.
+    if (nx != data->nx) {
+        return fail("extent mismatch for import field '" + field + "': field nx=" + std::to_string(nx) +
+                    " != core grid nx=" + std::to_string(data->nx));
+    }
+    if (ny_local != band_.ny_local) {
+        return fail("band mismatch for import field '" + field + "': field ny_local=" + std::to_string(ny_local) +
+                    " != facade band ny_local=" + std::to_string(band_.ny_local));
+    }
+
+    // Create the managed DualView on first use (a host-only field with no file
+    // stream). Same single-layer shape the resolver reads a 2-D surface field
+    // in: (nx, ny_local, 1).
+    auto field_it = data->import_state.fields.find(key);
+    if (field_it == data->import_state.fields.end()) {
+        DualView3D new_field(key, static_cast<size_t>(nx), static_cast<size_t>(ny_local), 1);
+        field_it = data->import_state.fields.emplace(key, std::move(new_field)).first;
+    }
+
+    auto& dual_view = field_it->second;
+    auto host_view = dual_view.view_host();
+
+    // The view may already exist from file ingest at a different vertical
+    // extent; a coupled import supplies one surface layer, so require the
+    // horizontal shape to match the band and reject an incompatible view
+    // rather than silently mis-copying.
+    if (static_cast<int>(host_view.extent(0)) != nx || static_cast<int>(host_view.extent(1)) != ny_local) {
+        return fail("shape mismatch for import field '" + field + "' (key '" + key + "'): managed view (" + std::to_string(host_view.extent(0)) +
+                    ", " + std::to_string(host_view.extent(1)) + ", " + std::to_string(host_view.extent(2)) + ") != field (" + std::to_string(nx) +
+                    ", " + std::to_string(ny_local) + ", 1)");
+    }
+
+    // Wrap the borrowed ESMF storage as an unmanaged LayoutLeft host view and
+    // copy into the managed host mirror, then sync to device so this step's
+    // compute reads the host values. The layer count of the borrowed field is
+    // one; the unmanaged view spans the same (nx, ny_local, 1) shape.
+    UnmanagedHostView3D src(const_cast<double*>(data_ptr), static_cast<size_t>(nx), static_cast<size_t>(ny_local), 1);
+    Kokkos::deep_copy(host_view, src);
+    dual_view.modify_host();
+    dual_view.sync_device();
+
+    CECE_LOG_INFO("[SIM] Set import field '" + field + "' (key '" + key + "') from coupled storage (" + std::to_string(nx) + "x" +
+                  std::to_string(ny_local) + "x1)");
+    return true;
 }
 
 void CeceSimulation::Finalize(int* rc_out) {

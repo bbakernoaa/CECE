@@ -467,7 +467,6 @@ set(
   src/core/cece_diagnostic_manager.cpp
   src/core/cece_io.cpp
   src/core/cece_core_driver_config.cpp
-  src/core/cece_core_advertise.cpp
   src/core/cece_core_realize.cpp
   src/core/cece_core_realize_wrapper.cpp
   src/core/cece_core_initialize_p1.cpp

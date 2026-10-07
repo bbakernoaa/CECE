@@ -130,6 +130,9 @@ set(RAPIDCHECK rapidcheck rapidcheck_gtest)
 
 # --- Driver / configuration --------------------------------------------------
 cece_add_gtest(test_driver_configuration)
+# NUOPC field-coupling config section (`nuopc:`) parsing and the path-based
+# C queries the Fortran cap uses during Advertise.
+cece_add_gtest(test_coupling_config)
 # Time-convention unit test for the shared simulation core (CeceSimulation).
 # Exercises the REAL Step() sequence with link-time-interposed spies for the
 # three C entry points it calls (see the file header for why interposition is
@@ -688,6 +691,13 @@ if(ESMF_FOUND)
         LABELS np1
         PROCESSORS 1
     )
+  endif()
+
+  # NUOPC field-coupling integration harness (CECE cap + sink peer + connector).
+  # Fortran-only; the executable links the production cap library, so it is
+  # gated on the Fortran language being enabled like the cap itself.
+  if(CECE_HAS_FORTRAN)
+    add_subdirectory(nuopc_coupling)
   endif()
 endif()
 

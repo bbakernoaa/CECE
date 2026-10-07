@@ -97,13 +97,17 @@ struct GridSpec {
 /**
  * @brief Result of one CeceSimulation::Step.
  *
+ * Named StepOutcome (not StepResult) because cece::StepResult is already
+ * taken by CeceClock::Advance's due-component schedule; both headers are
+ * included transitively in the simulation implementation.
+ *
  * Mirrors cece_core_run's rc semantics: complete is true when the core clock
  * reached the configured end time (rc == 1); error is true on failure
  * (rc < 0). Hosts MUST stop stepping once complete is set — this is the
  * single completion signal both drivers honor, guaranteeing equal step
  * counts.
  */
-struct StepResult {
+struct StepOutcome {
     int rc = 0;
     bool complete = false;
     bool error = false;
@@ -137,7 +141,7 @@ class CeceSimulation {
     /// Advance one timestep: ingest at step_start_iso, run the compute core,
     /// write the output record stamped with elapsed time derived from
     /// step_end_iso. step_index is the monotonic 0-based output counter.
-    StepResult Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index);
+    StepOutcome Step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index);
 
     /// Tear down: driver orchestrator destroy, then core finalize. Sets
     /// *rc_out to the teardown status (non-zero is a warning: output was
@@ -155,6 +159,51 @@ class CeceSimulation {
     const std::string& config_path() const {
         return config_path_;
     }
+
+    /// Bind a realized export field's ESMF-owned memory as the persistent
+    /// write-back target for `species`. The coupling contract: each step the
+    /// core deep-copies the managed host view into whatever
+    /// `persistent_export_ptrs` points at, so rebinding this map is the only
+    /// change needed to redirect write-back into ESMF field storage.
+    ///
+    /// The species MUST already exist in `export_state.fields` (created at
+    /// config realization), and (nx, ny_local, nz) MUST equal this rank's
+    /// band geometry — the facade owns the decomposition and verifies it,
+    /// so a mismatch between the ESMF field extents and the core band fails
+    /// loudly instead of writing back out of bounds.
+    ///
+    /// MUST NOT touch `export_state.fields`: the managed DualView there is
+    /// the one the stacking engine bound its device view to at compile time,
+    /// and replacing it would dangle that view. `data_ptr` is borrowed —
+    /// ESMF owns the memory and the core never frees or reallocates it.
+    ///
+    /// @return true on success; false with *rc < 0 and a logged diagnostic
+    ///         on unknown species, null/invalid extents, or a mismatch.
+    bool BindExportField(const std::string& species, double* data_ptr, int nx, int ny_local, int nz, int* rc);
+
+    /// Copy a connected import field's ESMF-owned host memory into the core's
+    /// import state for the current step (the NUOPC import binder). The
+    /// configured input name is resolved through the meteorology/scale-factor/
+    /// mask mappings to the import-state key, exactly as the compute-side
+    /// resolver does, so the host value lands under the name the schemes read.
+    ///
+    /// The target managed DualView is created on first use when absent (a
+    /// host-only field with no file stream); otherwise the values are copied
+    /// into the existing view rather than replacing it, keeping the device
+    /// buffer the schemes sync to stable across steps. The copy is host-side
+    /// and then synced to device so the step's compute sees the host values.
+    ///
+    /// A 2-D surface field arrives as (nx, ny_local); it is stored with a
+    /// single vertical layer, which the resolver reads in a 3-D context.
+    /// (nx, ny_local) MUST equal this rank's band geometry — the facade owns
+    /// the decomposition and verifies it, so a mismatch fails loudly instead
+    /// of copying out of bounds. `data_ptr` is borrowed: ESMF owns the memory
+    /// and the core never frees or reallocates it.
+    ///
+    /// @return true on success; false with *rc < 0 and a logged diagnostic on
+    ///         a name that resolves to no configured input, null/invalid
+    ///         extents, or a band mismatch.
+    bool SetImportField(const std::string& field, const double* data_ptr, int nx, int ny_local, int* rc);
 
     /// Read the configured vertical layer count (driver.grid.nz, default 1)
     /// from a CECE YAML. Exposed so the C-ABI facade's ESMF entry can supply

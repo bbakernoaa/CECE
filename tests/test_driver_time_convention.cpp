@@ -14,7 +14,7 @@
  *   * The output record is stamped at the STEP-END elapsed time: Step passes
  *     (step_end - configured start) seconds to write_step.
  *   * The completion signal is the core clock's rc == 1, surfaced as
- *     StepResult.complete; rc < 0 is an error.
+ *     StepOutcome.complete; rc < 0 is an error.
  *
  * Method: the three C entry points Step calls are provided as spy
  * definitions in this test binary. Because the real ones live in shared
@@ -177,7 +177,7 @@ class TimeConventionTest : public ::testing::Test {
 TEST_F(TimeConventionTest, IngestsAtStepStart) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
 
-    const cece::StepResult result = sim->Step("2023-02-01T00:00:00", "2023-03-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->Step("2023-02-01T00:00:00", "2023-03-02T00:00:00", /*step_index=*/1);
 
     ASSERT_EQ(g_advance_calls.size(), 1u);
     EXPECT_EQ(g_advance_calls[0].iso, "2023-02-01T00:00:00");  // step START, not end
@@ -226,7 +226,7 @@ TEST_F(TimeConventionTest, CompletionSignalFromCoreRc) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_core_run_rc = 1;  // core clock reached the end time
 
-    const cece::StepResult result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.complete);
     EXPECT_FALSE(result.error);
@@ -239,7 +239,7 @@ TEST_F(TimeConventionTest, CoreErrorShortCircuits) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_core_run_rc = -5;
 
-    const cece::StepResult result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.error);
     EXPECT_EQ(result.rc, -5);
@@ -252,7 +252,7 @@ TEST_F(TimeConventionTest, IngestErrorShortCircuits) {
     auto sim = cece::CeceSimulationTestAccess::Make("2023-01-01T00:00:00");
     g_advance_rc = -3;
 
-    const cece::StepResult result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
+    const cece::StepOutcome result = sim->Step("2023-01-01T00:00:00", "2023-01-02T00:00:00", /*step_index=*/1);
 
     EXPECT_TRUE(result.error);
     EXPECT_EQ(result.rc, -3);
