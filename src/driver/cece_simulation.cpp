@@ -46,6 +46,8 @@ void cece_core_writer_initialize_with_coords(void* data_ptr, int nx, int ny, int
                                              int lat_len, const char* start_time_iso8601, int start_time_len, int mpi_comm_f, int* rc);
 void cece_core_write_step(void* data_ptr, double time_seconds, int step_index, int* rc);
 void cece_core_set_export_field(void* data_ptr, const char* name, int name_len, const double* field_data, int nx, int ny, int nz, int* rc);
+void cece_core_local_time_init(void* data_ptr, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords, int lat_len,
+                               int mpi_comm_f, int* rc);
 }
 
 namespace cece {
@@ -189,6 +191,16 @@ std::unique_ptr<CeceSimulation> CeceSimulation::Create(const std::string& config
                                                 static_cast<int>(start_time_str.length()), mpi_comm_f, &rc);
         if (rc < 0) {
             return fail(rc, "standalone writer initialization failed with rc=" + std::to_string(rc));
+        }
+
+        // 7b. Local-time service: decode the UTC-offset grid once and attach it
+        //     to the core (no-op when local_time.enabled is false, so the
+        //     default path stays byte-identical). Lives in the shared facade so
+        //     the standalone driver and the NUOPC cap behave identically.
+        cece_core_local_time_init(sim->core_data_ptr_, nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
+                                  grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f, &rc);
+        if (rc < 0) {
+            return fail(rc, "local-time initialization failed with rc=" + std::to_string(rc));
         }
 
         // 8. Driver-side clock anchors for the output stamp: elapsed seconds are

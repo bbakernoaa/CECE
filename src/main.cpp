@@ -137,6 +137,10 @@ int main(int argc, char* argv[]) {
             return rc < 0 ? rc : -1;
         }
 
+        // The local-time service is initialized inside the shared facade
+        // (CeceSimulation::Create), so it applies identically here and in the
+        // NUOPC cap path.
+
         if (my_rank == 0) {
             CECE_LOG_INFO("[DRIVER] Initialization completed on " + std::to_string(grid_spec.nx) + "x" + std::to_string(grid_spec.ny) + "x" +
                           std::to_string(grid_spec.nz) + " grid. Entering run loop...");
