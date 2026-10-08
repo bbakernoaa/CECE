@@ -66,7 +66,7 @@ nuopc:
       units: "K"
 
 diagnostics:
-  output_interval_seconds: 2592000
+  output_interval: 2592000
   variables: ["oc"]
 
 output:

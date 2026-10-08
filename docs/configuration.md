@@ -1118,6 +1118,12 @@ the section is absent (or empty) the cap advertises no fields at all — the
 standalone behavior of the cap is then byte-for-byte unchanged.
 
 ```yaml
+species:                  # the export key 'oc' must be a species here
+  oc:
+    - field: OC_ANTHRO
+      operation: add
+meteorology:              # the import key 'temperature' must be an input here
+  temperature: air_temperature
 nuopc:
   export_fields:          # optional; keys must be species in `species:`
     oc:
