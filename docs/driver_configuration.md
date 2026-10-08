@@ -64,7 +64,7 @@ species:
       scale: 1.0
 
 physics_schemes:
-  - name: NativeExample
+  - name: native_example
     language: cpp
 ```
 
@@ -324,7 +324,7 @@ species:
       scale: 1.0
 
 physics_schemes:
-  - name: NativeExample
+  - name: native_example
     language: cpp
 ```
 
@@ -352,7 +352,7 @@ species:
       scale: 1.0
 
 physics_schemes:
-  - name: NativeExample
+  - name: native_example
     language: cpp
 ```
 
@@ -378,7 +378,7 @@ species:
       scale: 1.0
 
 physics_schemes:
-  - name: NativeExample
+  - name: native_example
     language: cpp
 ```
 

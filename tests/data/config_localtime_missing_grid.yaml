@@ -69,7 +69,7 @@ cece_data:
           model: "OC_ENE"
 
 diagnostics:
-  output_interval_seconds: 3600
+  output_interval: 3600
   variables: ["oc"]
 
 output:

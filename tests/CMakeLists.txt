@@ -900,6 +900,12 @@ if(Python3_Interpreter_FOUND)
 
   cece_add_pytest(test_hemco_to_cece_python test_converters.py "${PROJECT_SOURCE_DIR}/scripts")
   cece_add_pytest(test_scripts_python test_scripts.py "${PROJECT_SOURCE_DIR}/scripts")
+  cece_add_pytest(test_config_schema_python test_config_schema.py "${PROJECT_SOURCE_DIR}/scripts")
+  cece_add_pytest(
+    test_validate_cece_config_python
+    test_validate_cece_config.py
+    "${PROJECT_SOURCE_DIR}/scripts"
+  )
   cece_add_pytest(test_megan_global_source_conformance_python test_megan_global_parity.py "")
 
   if(BUILD_PYTHON_BINDINGS)
