@@ -27,6 +27,13 @@ extern "C" {
  * unchanged; this facade sequences them.
  */
 
+// This header is a C/C++ polyglot ABI boundary: it is included by plain C
+// translation units (the NetCDF test helpers) as well as C++ and via
+// bind(C) from Fortran. `typedef` is mandatory here — a C++ `using` alias
+// for a struct/enum elaborated type specifier is not valid C, so the
+// modernize-use-using check is a false positive across this block.
+// NOLINTBEGIN(modernize-use-using)
+
 /// Opaque simulation handle. Produced by cece_sim_create, consumed by
 /// cece_sim_step / cece_sim_finalize. Not dereferenced by callers.
 typedef struct CeceSimulation CeceSimulation;
@@ -62,6 +69,8 @@ typedef struct CeceGridSpec {
     const char* gridspec_file;  ///< Optional path, may be NULL or empty.
     int gridspec_file_len;      ///< Length of gridspec_file (0 if NULL).
 } CeceGridSpec;
+
+// NOLINTEND(modernize-use-using)
 
 /**
  * @brief Build the simulation: initialize the core, realize config, bind the

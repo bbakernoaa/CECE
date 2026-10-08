@@ -245,8 +245,13 @@ void cece_sim_describe_yaml_grid(const char* config_path, int path_len, char* bu
         conf::Config config = conf::Config::from_file(path);
         const std::string desc = cece::GridSpec::from_yaml(path, config).describe();
         *buf_len_out = static_cast<int>(desc.size());
-        if (buf != nullptr && buf_max >= static_cast<int>(desc.size())) {
+        // Mirror the sibling nuopc_copy_str contract: the buffer holds the
+        // description plus its NUL terminator, so a caller that treats buf as a
+        // C string reads a valid value. buf_len_out reports the length excluding
+        // the NUL. Only written when there is room for the terminator.
+        if (buf != nullptr && static_cast<int>(desc.size()) < buf_max) {
             std::memcpy(buf, desc.data(), desc.size());
+            buf[desc.size()] = '\0';
         }
     } catch (const std::exception& e) {
         cece::LogFatal(std::string("[SIM] cece_sim_describe_yaml_grid failed: ") + e.what());
