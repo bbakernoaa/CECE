@@ -507,14 +507,6 @@ if(CECE_HAS_FORTRAN)
     src/core/physics/lightning_kernel.F90
     src/core/physics/cece_soil_nox_fortran_bridge.cpp
     src/core/physics/soil_nox_kernel.F90
-    src/core/physics/cece_dust_fortran_bridge.cpp
-    src/core/physics/dust_kernel.F90
-    src/core/physics/cece_fengsha_fortran_bridge.cpp
-    src/core/physics/fengsha_kernel.F90
-    src/core/physics/cece_ginoux_fortran_bridge.cpp
-    src/core/physics/ginoux_kernel.F90
-    src/core/physics/cece_k14_fortran_bridge.cpp
-    src/core/physics/k14_kernel.F90
     src/core/physics/cece_volcano_fortran_bridge.cpp
     src/core/physics/volcano_kernel.F90
     src/core/physics/cece_bdsnp_fortran_bridge.cpp
