@@ -92,20 +92,6 @@ double fengsha_moisture_correction_fecan(double slc, double sand, double clay, d
     return Kokkos::sqrt(1.0 + 1.21 * Kokkos::pow(excess, 0.68));
 }
 
-/// @brief Compute Fécan soil moisture correction factor.
-/// @param slc Liquid water content, volumetric fraction [1]
-/// @param sand Fractional sand content [1]
-/// @param clay Fractional clay content [1]
-/// @param b Drylimit factor [1]
-/// @return Soil moisture correction factor [1]
-KOKKOS_INLINE_FUNCTION
-double fengsha_moisture_correction_fecan(double slc, double sand, double clay, double b) {
-    double grvsoilm = fengsha_soil_moisture_vol2grav(slc, sand);
-    double drylimit = b * clay * (14.0 * clay + 17.0);
-    double excess = Kokkos::max(0.0, grvsoilm - drylimit);
-    return Kokkos::sqrt(1.0 + 1.21 * Kokkos::pow(excess, 0.68));
-}
-
 /// @brief Compute vertical-to-horizontal dust flux ratio (MB95).
 /// @param clay Fractional clay content [1]
 /// @param kvhmax Maximum flux ratio [1]
@@ -218,7 +204,7 @@ void FengshaScheme::Run(CeceImportState& import_state, CeceExportState& export_s
             double clay_val = clay(i, j, 0);
             double sand_val = sand(i, j, 0);
             double rdrag_val = rdrag(i, j, 0);
-            if (clay_val < 0.0 || sand_val < 0.0 || rdrag_val < 0.0 || uthrs <= 0.0) return;
+            if (clay_val < 0.0 || sand_val < 0.0 || rdrag_val < 0.0 || uthrs(i, j, 0) <= 0.0) return;
 
             double fracland = Kokkos::max(0.0, 1.0 - fraclake(i, j, 0) - fracsnow(i, j, 0));
 
@@ -244,25 +230,22 @@ void FengshaScheme::Run(CeceImportState& import_state, CeceExportState& export_s
             // }
 
             // Adjusted threshold
-            double u_thresh = uthrs(i, j, 0) * h / rdrag;
-            double u_sum = rustar + u_thresh;
+            double u_thresh = uthrs(i, j, 0) * h / rdrag_val;
 
             // Horizontal saltation flux (Webb et al. 2020, Eq. 9)
-            double q = Kokkos::max(0.0, (Kokkos::pow(rustar,3) * ( 1 - Kokkos::pow(u_thres,2) / Kokkos::pow(ustar,2))* ( 1 + u_thresh / ustar));
+            double q = Kokkos::max(
+                0.0, Kokkos::pow(rustar, 3) * (1.0 - Kokkos::pow(u_thresh, 2) / Kokkos::pow(ustar(i, j, 0), 2)) * (1.0 + u_thresh / ustar(i, j, 0)));
 
             // Distribute to bins using pre-computed Kok distribution
             int bins_to_use = has_custom ? nbins : (nbins < dist_size ? nbins : dist_size);
             for (int n = 0; n < bins_to_use; ++n) {
-            emissions(i, j, n) += bin_dist(n) * alpha_rho_g_fracland * kvh * q;
+                emissions(i, j, n) += bin_dist(n) * alpha_rho_g_fracland * kvh * q;
 
-            // Brittle impaction option
-            // double q = alpha_rho_g_fracland * clay_val * u_thresh ( (Kokkos::pow(ustar, 2) - Kokkos::pow(u_thresh, 2)) / Kokkos::pow(u_thresh, 2) )
-            // Distribute to bins using pre-computed Kok distribution
-            // int bins_to_use = has_custom ? nbins : (nbins < dist_size ? nbins : dist_size);
-            // for (int n = 0; n < bins_to_use; ++n) {
-            // emissions(i, j, n) += bin_dist(n) * q;
-
-
+                // Brittle impaction option
+                // double qval = alpha_rho_g_fracland * clay_val * u_thresh ( (Kokkos::pow(ustar, 2) - Kokkos::pow(u_thresh, 2)) /
+                // Kokkos::pow(u_thresh, 2) ) double q = Kokkos::max(0.0, qval) Distribute to bins using pre-computed Kok distribution int bins_to_use
+                // = has_custom ? nbins : (nbins < dist_size ? nbins : dist_size); for (int n = 0; n < bins_to_use; ++n) { emissions(i, j, n) +=
+                // bin_dist(n) * q;
             }
         });
 
