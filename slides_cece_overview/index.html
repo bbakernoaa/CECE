@@ -1,0 +1,1327 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Community Emissions Computing Engine">
+      
+      
+        <meta name="author" content="CECE Team">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.73">
+    
+    
+      
+        <title>CECE: Community Emissions Computing Engine - CECE Documentation</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../assets/stylesheets/modern/main.4ab2de0c.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="./.." title="CECE Documentation" class="md-header__button md-logo" aria-label="CECE Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CECE Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CECE: Community Emissions Computing Engine
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="./.." title="CECE Documentation" class="md-nav__button md-logo" aria-label="CECE Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    CECE Documentation
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Introduction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Core Concepts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  User's Guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Tutorial
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Scripts & Utilities
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Migration Examples
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  API Reference
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#presentation-slides" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Presentation Slides
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-1-what-is-cece" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 1: What is CECE?
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-2-why-replace-hemconexus" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 2: Why Replace HEMCO/NEXUS?
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-3-architecture-key-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 3: Architecture &amp; Key Improvements
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slide 3: Architecture &amp; Key Improvements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-improvements-over-hemco" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Key Improvements Over HEMCO
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-4-the-stacking-engine-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 4: The Stacking Engine — Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-5-stacking-engine-hierarchy-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 5: Stacking Engine — Hierarchy System
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-6-stacking-engine-layer-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 6: Stacking Engine — Layer Operations
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-7-stacking-engine-temporal-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 7: Stacking Engine — Temporal Scaling
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-8-stacking-engine-vertical-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 8: Stacking Engine — Vertical Distribution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-9-stacking-engine-kernel-fusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 9: Stacking Engine — Kernel Fusion
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slide 9: Stacking Engine — Kernel Fusion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#benefits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Benefits:
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Performance Results:
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-10-provenance-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 10: Provenance Tracking
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-11-configuration-hemco-vs-cece" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 11: Configuration — HEMCO vs CECE
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slide 11: Configuration — HEMCO vs CECE">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#before-hemco_configrc" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Before (HEMCO_Config.rc):
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-cece_configyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        After (cece_config.yaml):
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-12-physics-schemes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 12: Physics Schemes
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slide 12: Physics Schemes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#independent-refresh-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent Refresh Intervals:
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-13-additional-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 13: Additional Capabilities
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Slide 13: Additional Capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Python Bindings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speciation-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Speciation Support
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clock-refresh-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Clock Refresh Intervals
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slide-14-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Slide 14: Summary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+
+<h1 id="cece-community-emissions-computing-engine">CECE: Community Emissions Computing Engine<a class="headerlink" href="#cece-community-emissions-computing-engine" title="Permanent link">&para;</a></h1>
+<h2 id="presentation-slides">Presentation Slides<a class="headerlink" href="#presentation-slides" title="Permanent link">&para;</a></h2>
+<hr />
+<h2 id="slide-1-what-is-cece">Slide 1: What is CECE?<a class="headerlink" href="#slide-1-what-is-cece" title="Permanent link">&para;</a></h2>
+<p><strong>Community Emissions Computing Engine</strong></p>
+<ul>
+<li>High-performance C++20 emissions compute component for Earth System Models</li>
+<li>Built on <strong>Kokkos</strong> for performance portability (CPUs and GPUs)</li>
+<li>Integrates with <strong>ESMF/NUOPC</strong> as a standard grid component</li>
+<li>Single YAML configuration file replaces multiple legacy config formats</li>
+<li>Modular physics engine with native C++ and Fortran plugin support</li>
+</ul>
+<blockquote>
+<p>CECE is the next-generation replacement for HEMCO and NEXUS emission processing systems.</p>
+</blockquote>
+<hr />
+<h2 id="slide-2-why-replace-hemconexus">Slide 2: Why Replace HEMCO/NEXUS?<a class="headerlink" href="#slide-2-why-replace-hemconexus" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Challenge</th>
+<th>HEMCO/NEXUS</th>
+<th>CECE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hardware</td>
+<td>CPU only</td>
+<td>CPU + GPU via Kokkos</td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td>Custom text format (<code>HEMCO_Config.rc</code>)</td>
+<td>Standard YAML</td>
+</tr>
+<tr>
+<td>Diagnostics</td>
+<td>Separate <code>HEMCO_Diagn.rc</code> file</td>
+<td>Integrated <code>diagnostics:</code> block</td>
+</tr>
+<tr>
+<td>Temporal profiles</td>
+<td>Inline slash-separated values</td>
+<td>Named <code>temporal_profiles:</code> block</td>
+</tr>
+<tr>
+<td>Vertical distribution</td>
+<td>Column-13 keyword</td>
+<td>Explicit <code>vdist:</code> block per layer</td>
+</tr>
+<tr>
+<td>Scale factors</td>
+<td>Separate section with numeric IDs</td>
+<td>Named <code>scale_fields:</code> list per layer</td>
+</tr>
+<tr>
+<td>Provenance</td>
+<td>None</td>
+<td>Built-in provenance tracking</td>
+</tr>
+<tr>
+<td>Species registration</td>
+<td>Recompile required</td>
+<td>Runtime <code>AddSpecies()</code> API</td>
+</tr>
+<tr>
+<td>Performance model</td>
+<td>Sequential layer processing</td>
+<td>Kernel fusion (single kernel per species)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="slide-3-architecture-key-improvements">Slide 3: Architecture &amp; Key Improvements<a class="headerlink" href="#slide-3-architecture-key-improvements" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─────────────────────────────────────────────────────┐
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│                   ESMF / NUOPC                       │
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│  ┌───────────┐   ┌──────────────┐   ┌───────────┐  │
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  │  Import   │   │     CECE     │   │  Export   │  │
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  │  State    │──▶│  Component   │──▶│  State    │  │
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│  │ (meteo)   │   │              │   │ (emis)    │  │
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  └───────────┘   └──────┬───────┘   └───────────┘  │
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└──────────────────────────┼──────────────────────────┘
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                           │
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>              ┌────────────┼────────────┐
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>              ▼            ▼            ▼
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>     ┌──────────────┐ ┌────────┐ ┌──────────────┐
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>     │   Stacking   │ │ Physics│ │  Diagnostics │
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>     │   Engine     │ │Schemes │ │   Manager    │
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>     └──────┬───────┘ └────┬───┘ └──────────────┘
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>            │               │
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>            ▼               ▼
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>     ┌──────────────┐ ┌────────────────┐
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>     │ AMIO (Data   │ │ MEGAN, SeaSalt │
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>     │  Ingestion)  │ │ Dust, Lightning│
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>     └──────────────┘ └────────────────┘
+</span></code></pre></div>
+<p><strong>Lifecycle</strong>: Initialize → Run (ingest → stack → physics → diagnostics → sync) → Finalize</p>
+<h3 id="key-improvements-over-hemco">Key Improvements Over HEMCO<a class="headerlink" href="#key-improvements-over-hemco" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Kernel fusion</strong> — Single optimized kernel per species → 4x speedup on GPU</li>
+<li><strong>GPU acceleration</strong> — Same code on NVIDIA/AMD GPUs without modification</li>
+<li><strong>YAML configuration</strong> — Human-readable, version-control friendly, automated migration tool</li>
+<li><strong>Named references</strong> — Scale factors and masks by name, not numeric IDs</li>
+<li><strong>Provenance tracking</strong> — Full record of layers, scales, and masks per calculation</li>
+<li><strong>Dynamic species</strong> — Add species at runtime without recompilation</li>
+</ul>
+<hr />
+<h2 id="slide-4-the-stacking-engine-overview">Slide 4: The Stacking Engine — Overview<a class="headerlink" href="#slide-4-the-stacking-engine-overview" title="Permanent link">&para;</a></h2>
+<p>The <strong>Stacking Engine</strong> is the computational core of CECE.</p>
+<p><strong>Purpose</strong>: Combine multiple emission data layers into final emission fields for each species.</p>
+<p><strong>Processing Phases</strong>:</p>
+<ol>
+<li><strong>Configuration Analysis</strong> — Parse and validate emission layer configuration</li>
+<li><strong>Field Binding</strong> — Connect to data sources (AMIO streams, import fields)</li>
+<li><strong>Hierarchy Processing</strong> — Apply priority-based layer combination rules</li>
+<li><strong>Kernel Fusion</strong> — Generate optimized compute kernels</li>
+<li><strong>Temporal Scaling</strong> — Apply time-dependent scaling factors</li>
+<li><strong>Vertical Distribution</strong> — Map 2D emissions to 3D atmospheric grids</li>
+<li><strong>Provenance Tracking</strong> — Record complete calculation history</li>
+</ol>
+<hr />
+<h2 id="slide-5-stacking-engine-hierarchy-system">Slide 5: Stacking Engine — Hierarchy System<a class="headerlink" href="#slide-5-stacking-engine-hierarchy-system" title="Permanent link">&para;</a></h2>
+<p>Layers are organized by a <strong>two-level hierarchy</strong>:</p>
+<ol>
+<li><strong>Categories</strong> — Logical groupings (anthropogenic, biogenic, biomass_burning, etc.)</li>
+<li><strong>Hierarchy Levels</strong> — Numerical priorities within categories (higher = takes precedence)</li>
+</ol>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">species</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">co</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="s">"global_co_inventory"</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="s">"anthropogenic"</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="nt">hierarchy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">              </span><span class="c1"># Base layer</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="s">"add"</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="s">"regional_co_override"</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="s">"anthropogenic"</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">hierarchy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">             </span><span class="c1"># Higher priority — replaces base</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="s">"replace"</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">mask</span><span class="p">:</span><span class="w"> </span><span class="s">"europe_mask"</span>
+</span></code></pre></div>
+<p><strong>Result</strong>: Regional inventory overrides global in masked region, preserving global elsewhere.</p>
+<hr />
+<h2 id="slide-6-stacking-engine-layer-operations">Slide 6: Stacking Engine — Layer Operations<a class="headerlink" href="#slide-6-stacking-engine-layer-operations" title="Permanent link">&para;</a></h2>
+<p>Four fundamental operations for combining emission layers:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>add</code></td>
+<td>Accumulates layer emissions onto current value</td>
+</tr>
+<tr>
+<td><code>replace</code></td>
+<td>Overrides accumulated value with layer emissions (in masked region)</td>
+</tr>
+</tbody>
+</table>
+<p>Multiplicative scaling is achieved through <code>scale_fields</code> rather than a standalone operation.</p>
+<p>Each layer can also apply:
+- <strong>Base scale factor</strong> — Simple numerical multiplier
+- <strong>Scale fields</strong> — Dynamic field-based scaling (temperature, LAI, PAR)
+- <strong>Geographical masks</strong> — 2D/3D fields restricting spatial extent
+- <strong>Temporal profiles</strong> — Diurnal, weekly, and seasonal cycles</p>
+<hr />
+<h2 id="slide-7-stacking-engine-temporal-scaling">Slide 7: Stacking Engine — Temporal Scaling<a class="headerlink" href="#slide-7-stacking-engine-temporal-scaling" title="Permanent link">&para;</a></h2>
+<p>Three cycle types applied as a product:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>effective_scale = base_scale × diurnal × weekly × seasonal
+</span></code></pre></div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">temporal_profiles</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">traffic_diurnal</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.5</span><span class="p p-Indicator">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">                    </span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.5</span><span class="p p-Indicator">,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">                    </span><span class="nv">1.8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.6</span><span class="p p-Indicator">]</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">weekday_pattern</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.7</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Sun-Sat</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nt">species</span><span class="p">:</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">co</span><span class="p">:</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="s">"traffic_co"</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="nt">diurnal_cycle</span><span class="p">:</span><span class="w"> </span><span class="s">"traffic_diurnal"</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="nt">weekly_cycle</span><span class="p">:</span><span class="w"> </span><span class="s">"weekday_pattern"</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">      </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="s">"add"</span>
+</span></code></pre></div>
+<hr />
+<h2 id="slide-8-stacking-engine-vertical-distribution">Slide 8: Stacking Engine — Vertical Distribution<a class="headerlink" href="#slide-8-stacking-engine-vertical-distribution" title="Permanent link">&para;</a></h2>
+<p>Five methods for distributing 2D surface emissions into 3D volumes:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SINGLE</code></td>
+<td>All emissions in one level</td>
+<td>Point sources</td>
+</tr>
+<tr>
+<td><code>RANGE</code></td>
+<td>Even distribution over layer range</td>
+<td>Industrial stacks</td>
+</tr>
+<tr>
+<td><code>PRESSURE</code></td>
+<td>Distribution by pressure bounds</td>
+<td>Free troposphere</td>
+</tr>
+<tr>
+<td><code>HEIGHT</code></td>
+<td>Distribution by altitude bounds</td>
+<td>Topography-dependent</td>
+</tr>
+<tr>
+<td><code>PBL</code></td>
+<td>Distribution within boundary layer</td>
+<td>Surface anthropogenic</td>
+</tr>
+</tbody>
+</table>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">species</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">nox</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="s">"aircraft_nox"</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">vdist</span><span class="p">:</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">        </span><span class="nt">method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">height</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">        </span><span class="nt">h_start</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8000.0</span><span class="w">    </span><span class="c1"># 8 km</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">        </span><span class="nt">h_end</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12000.0</span><span class="w">     </span><span class="c1"># 12 km</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">      </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="s">"add"</span>
+</span></code></pre></div>
+<p>All methods guarantee strict mass conservation: <code>∑(emissions_3d[i,j,:]) = emissions_2d[i,j]</code></p>
+<hr />
+<h2 id="slide-9-stacking-engine-kernel-fusion">Slide 9: Stacking Engine — Kernel Fusion<a class="headerlink" href="#slide-9-stacking-engine-kernel-fusion" title="Permanent link">&para;</a></h2>
+<p><strong>Traditional approach</strong> (HEMCO): Process each layer sequentially → multiple kernel launches, poor cache utilization.</p>
+<p><strong>CECE approach</strong>: Fuse all layers for a species into a <strong>single optimized kernel</strong>.</p>
+<h3 id="benefits">Benefits:<a class="headerlink" href="#benefits" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Reduced memory bandwidth</strong> — Minimizes data movement between memory and compute units</li>
+<li><strong>Lower kernel launch overhead</strong> — One launch per species instead of N launches per layer</li>
+<li><strong>Better cache utilization</strong> — Maximizes data reuse within kernels</li>
+<li><strong>Improved parallelization</strong> — Better load balancing across GPU threads</li>
+</ul>
+<h3 id="performance-results">Performance Results:<a class="headerlink" href="#performance-results" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Grid Size</th>
+<th>Hardware</th>
+<th>Throughput</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1440×721×72</td>
+<td>40-core Intel Xeon</td>
+<td>~50 species/sec</td>
+</tr>
+<tr>
+<td>1440×721×72</td>
+<td>NVIDIA V100</td>
+<td>~200 species/sec</td>
+</tr>
+<tr>
+<td>3600×1801×72</td>
+<td>NVIDIA A100</td>
+<td>~150 species/sec</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="slide-10-provenance-tracking">Slide 10: Provenance Tracking<a class="headerlink" href="#slide-10-provenance-tracking" title="Permanent link">&para;</a></h2>
+<p>CECE records the complete scientific history of every emission calculation:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Provenance report excerpt</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">species</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CO</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">time_context</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hour=14 day_of_week=2 month=7</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nt">contributing_layers</span><span class="p">:</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">global_co_base</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">hierarchy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropogenic</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">effective_scale</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.25</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">masks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">land_mask</span><span class="p p-Indicator">]</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">regional_co_override</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replace</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">hierarchy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">effective_scale</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.85</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="nt">geographic_bounds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">lon</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="nv">-125 to -65</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lat</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="nv">25 to 50</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p><strong>Tracked</strong>: Layer contributions, hierarchy application order, all scaling factors, operation history, data sources.</p>
+<hr />
+<h2 id="slide-11-configuration-hemco-vs-cece">Slide 11: Configuration — HEMCO vs CECE<a class="headerlink" href="#slide-11-configuration-hemco-vs-cece" title="Permanent link">&para;</a></h2>
+<h3 id="before-hemco_configrc">Before (HEMCO_Config.rc):<a class="headerlink" href="#before-hemco_configrc" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a># ExtNr Name       File            Var  Time CRE Dim Unit  Species ScalIDs Cat Hier
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>0       MACCITY_CO data/MACCity.nc CO   2000 1   2   kg/m2 CO      1/2     1   1
+</span></code></pre></div>
+<h3 id="after-cece_configyaml">After (cece_config.yaml):<a class="headerlink" href="#after-cece_configyaml" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">species</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">co</span><span class="p">:</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MACCITY_CO</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="nt">operation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="nt">hierarchy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropogenic</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">      </span><span class="nt">scale</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">      </span><span class="nt">scale_fields</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">hourly_scalfact</span><span class="p p-Indicator">]</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nt">cece_data</span><span class="p">:</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">  </span><span class="nt">streams</span><span class="p">:</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MACCITY_CO</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="nt">file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">data/MACCity.nc</span>
+</span></code></pre></div>
+<p><strong>Migration tool</strong>: <code>python3 scripts/hemco_to_cece.py HEMCO_Config.rc -o cece_config.yaml</code></p>
+<hr />
+<h2 id="slide-12-physics-schemes">Slide 12: Physics Schemes<a class="headerlink" href="#slide-12-physics-schemes" title="Permanent link">&para;</a></h2>
+<p>CECE supports modular physics schemes in both C++ and Fortran:</p>
+<table>
+<thead>
+<tr>
+<th>Scheme</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MEGAN</td>
+<td>Biogenic</td>
+<td>Biogenic VOC emissions (isoprene, terpenes)</td>
+</tr>
+<tr>
+<td>Sea Salt</td>
+<td>Natural</td>
+<td>Wind-driven sea spray aerosol</td>
+</tr>
+<tr>
+<td>Dust (Ginoux/FENGSHA)</td>
+<td>Natural</td>
+<td>Wind-blown mineral dust</td>
+</tr>
+<tr>
+<td>Lightning NOx</td>
+<td>Natural</td>
+<td>NOx from lightning flashes</td>
+</tr>
+<tr>
+<td>Soil NOx (BDSNP)</td>
+<td>Natural</td>
+<td>Soil microbial NOx</td>
+</tr>
+<tr>
+<td>DMS</td>
+<td>Natural</td>
+<td>Dimethyl sulfide from ocean</td>
+</tr>
+<tr>
+<td>Volcano</td>
+<td>Natural</td>
+<td>Volcanic SO2 emissions</td>
+</tr>
+</tbody>
+</table>
+<h3 id="independent-refresh-intervals">Independent Refresh Intervals:<a class="headerlink" href="#independent-refresh-intervals" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">physics_schemes</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"megan"</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">refresh_interval_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span><span class="w">     </span><span class="c1"># Every 5 min (fast-responding)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"sea_salt"</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">refresh_interval_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">    </span><span class="c1"># Every 30 min</span>
+</span></code></pre></div>
+<hr />
+<h2 id="slide-13-additional-capabilities">Slide 13: Additional Capabilities<a class="headerlink" href="#slide-13-additional-capabilities" title="Permanent link">&para;</a></h2>
+<h3 id="python-bindings">Python Bindings<a class="headerlink" href="#python-bindings" title="Permanent link">&para;</a></h3>
+<ul>
+<li>High-level API via pybind11</li>
+<li>Zero-copy NumPy data transfer</li>
+<li>Automatic GIL release during computation</li>
+</ul>
+<h3 id="speciation-support">Speciation Support<a class="headerlink" href="#speciation-support" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Multiple chemical mechanisms: CB6, CRACMM, RACM2, SAPRC07</li>
+<li>YAML-based speciation mapping files</li>
+</ul>
+<h3 id="clock-refresh-intervals">Clock Refresh Intervals<a class="headerlink" href="#clock-refresh-intervals" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Independent timing for each component</li>
+<li>Fast schemes (biogenics) run every few minutes</li>
+<li>Slow data streams ingest hourly</li>
+<li>Reduces unnecessary computation</li>
+</ul>
+<h3 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Integrated NetCDF output</li>
+<li>Configurable output intervals</li>
+<li>Intermediate and final variable capture</li>
+</ul>
+<hr />
+<h2 id="slide-14-summary">Slide 14: Summary<a class="headerlink" href="#slide-14-summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>What CECE Delivers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Performance</strong></td>
+<td>4x speedup via kernel fusion + GPU acceleration</td>
+</tr>
+<tr>
+<td><strong>Portability</strong></td>
+<td>Same code on CPUs, NVIDIA GPUs, AMD GPUs</td>
+</tr>
+<tr>
+<td><strong>Usability</strong></td>
+<td>Clean YAML config, automated HEMCO migration tool</td>
+</tr>
+<tr>
+<td><strong>Extensibility</strong></td>
+<td>Runtime species registration, modular physics plugins</td>
+</tr>
+<tr>
+<td><strong>Traceability</strong></td>
+<td>Built-in provenance tracking for every calculation</td>
+</tr>
+<tr>
+<td><strong>Integration</strong></td>
+<td>ESMF/NUOPC compliant, AMIO data ingestion</td>
+</tr>
+<tr>
+<td><strong>Flexibility</strong></td>
+<td>Independent refresh intervals, multiple vertical distribution methods</td>
+</tr>
+</tbody>
+</table>
+<p><strong>CECE modernizes atmospheric emission processing for the exascale era.</strong></p>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 CECE Authors
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["content.code.annotate","content.code.copy","navigation.footer","navigation.path","navigation.sections","navigation.top","search.highlight"],"redirect":null,"search":"../assets/javascripts/workers/search.c47bb847.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.77dd0ce9.min.js"></script>
+      
+    
+  </body>
+</html>
