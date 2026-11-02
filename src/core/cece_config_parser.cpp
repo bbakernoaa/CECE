@@ -12,11 +12,8 @@
 
 namespace cece {
 
-CeceConfig ParseConfig(const std::string& filename) {
-    struct stat buffer;
-    if (stat(filename.c_str(), &buffer) != 0) throw std::runtime_error("File not found: " + filename);
-    conf::Config parsed = conf::Config::from_file(filename);
-    conf::Value root = parsed.root();
+namespace {
+CeceConfig ParseConfigRoot(const conf::Value& root) {
     CeceConfig config;
 
     auto string_or = [](const conf::Value& node, const std::string& key, const std::string& fallback = std::string{}) {
@@ -411,6 +408,18 @@ CeceConfig ParseConfig(const std::string& filename) {
 
     config.output_config.fields.SetTimeUnits(config.driver_config.start_time);
     return config;
+}
+
+}  // namespace
+
+CeceConfig ParseConfig(const std::string& filename) {
+    auto parsed = conf::Config::from_file(filename);
+    return ParseConfigRoot(parsed.root());
+}
+
+CeceConfig ParseConfigText(const std::string& yaml) {
+    auto parsed = conf::Config::from_string(yaml);
+    return ParseConfigRoot(parsed.root());
 }
 
 void AddSpecies(CeceConfig& config, const std::string& species_name, std::vector<EmissionLayer> layers) {
