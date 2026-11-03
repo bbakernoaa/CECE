@@ -5,6 +5,7 @@
 #include <limits>
 #include <stdexcept>
 
+#include "cece/cece_dust_bins.hpp"
 #include "cece/physics/cece_speciation_config.hpp"
 
 namespace cece {
@@ -12,6 +13,20 @@ namespace {
 SchemeFieldSpec field(const std::string& name, const std::string& units, bool required = true, int extent = 1, const std::string& axis = "surface",
                       bool output = false) {
     return {name, units, axis, extent, required, output};
+}
+
+/// Number of dust size bins for a column contract. In a driver run the bin count
+/// follows the emission field, but here the contract is what defines that field,
+/// so the size dimension must be fixed by configuration (particle_radii or
+/// bin_weights).
+int column_dust_bin_extent(const conf::Value& options, const std::string& scheme_name) {
+    const auto bins = dustbins::Resolve(options, scheme_name);
+    const auto count = !bins.radii.empty() ? bins.radii.size() : bins.weights.size();
+    if (count == 0 || count > 1000)
+        throw std::invalid_argument(scheme_name + ": column execution needs a fixed size-bin count - configure"
+                                    " 'particle_radii' or 'bin_weights' (the unconfigured equal-weights fallback follows"
+                                    " the emission field, which here is defined by this contract)");
+    return static_cast<int>(count);
 }
 std::unique_lock<std::mutex> exclusive(std::mutex& mutex) {
     std::unique_lock<std::mutex> lock(mutex, std::try_to_lock);
@@ -80,6 +95,28 @@ SchemeDescriptor DescribeScheme(const SchemeRequest& request, int nlev) {
         } else
             throw std::invalid_argument("Unknown BDSNP soil_no_method: " + mode);
         f.push_back(field("soil_nox_emissions", "kg m-2 s-1", true, 1, "surface", true));
+    } else if (request.name == "fengsha") {
+        const int nbin = column_dust_bin_extent(options, "fengsha");
+        f = {field("friction_velocity", "m s-1"), field("threshold_velocity", "m s-1"), field("soil_moisture", "1"), field("clay_fraction", "1"),
+             field("sand_fraction", "1"), field("silt_fraction", "1"), field("erodibility", "1"), field("drag_partition", "1"),
+             field("air_density", "kg m-3"), field("lake_fraction", "1"), field("snow_fraction", "1"), field("land_mask", "1"),
+             field("soil_temperature", "K", false), field("leaf_area_index", "1", false), field("stem_area_index", "1", false),
+             field("obukhov_length", "m", false), field("pbl_height", "m", false),
+             field("fengsha_dust_emissions", "kg m-2 s-1", true, nbin, "size", true)};
+    } else if (request.name == "ginoux") {
+        const int nbin = column_dust_bin_extent(options, "ginoux");
+        const auto bins = dustbins::Resolve(options, "ginoux");
+        f = {field("u10m", "m s-1"), field("v10m", "m s-1"), field("surface_soil_wetness", "1"), field("land_mask", "1"), field("lake_fraction", "1"),
+             field("dust_source", "1"), field("particle_radius", "m", bins.radii.empty(), nbin, "size"),
+             field("ginoux_dust_emissions", "kg m-2 s-1", true, nbin, "size", true)};
+    } else if (request.name == "k14") {
+        const int nbin = column_dust_bin_extent(options, "k14");
+        f = {field("friction_velocity", "m s-1"), field("soil_temperature", "K"), field("volumetric_soil_moisture", "1"),
+             field("air_density", "kg m-3"), field("roughness_length", "m"), field("height", "m"), field("u_wind", "m s-1"),
+             field("v_wind", "m s-1"), field("land_fraction", "1"), field("snow_fraction", "1"), field("dust_source", "1"),
+             field("sand_fraction", "1"), field("silt_fraction", "1"), field("clay_fraction", "1"), field("soil_texture", "index"),
+             field("vegetation_type", "index"), field("vegetation_fraction", "1"),
+             field("k14_dust_emissions", "kg m-2 s-1", true, nbin, "size", true)};
     } else
         throw std::invalid_argument("Scheme has no reviewed column contract: " + request.name);
     return result;
