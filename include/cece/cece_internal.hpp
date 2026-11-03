@@ -10,6 +10,7 @@
 #include "cece/cece_config.hpp"
 #include "cece/cece_data_ingestor.hpp"
 #include "cece/cece_diagnostics.hpp"
+#include "cece/cece_local_time.hpp"
 #include "cece/cece_provenance.hpp"
 #include "cece/cece_stacking_engine.hpp"
 #include "cece/cece_state.hpp"
@@ -37,8 +38,14 @@ struct CeceInternalData {
     std::string start_time_iso8601;    ///< Start time in ISO 8601 format for output.
     std::unique_ptr<CeceClock> clock;  ///< Clock for per-component refresh interval scheduling.
 
+    /// Local-time service. Null when local_time is disabled —
+    /// temporal scaling then takes the exact pre-feature UTC scalar path.
+    std::unique_ptr<LocalTimeService> local_time;
+
     // Cached metadata
-    int nx = 0, ny = 0, nz = 0;                     ///< Cached grid dimensions.
+    int nx = 0, ny = 0, nz = 0;                     ///< Cached grid dimensions (ny is the GLOBAL latitude count).
+    int ny_local = 0;                               ///< This rank's owned latitude band height (== ny on a single rank).
+    int j0 = 0;                                     ///< Global latitude index of the first row this rank owns (band start).
     std::vector<std::string> esmf_fields;           ///< Internal names of fields to ingest from ESMF.
     std::vector<std::string> external_esmf_fields;  ///< External names of fields to ingest.
     std::vector<std::string> realized_fields;       ///< Fields already added to export state (for multi-cycle support).

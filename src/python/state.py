@@ -18,7 +18,7 @@ cece.compute : Execute computation using state fields.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from collections.abc import Callable, Iterator, KeysView, Mapping
 
 import numpy as np
 
@@ -53,7 +53,7 @@ class CeceField:
         self.name = name
         self.array = array
         self.layout = layout
-        self._kokkos_view: Optional[object] = None
+        self._kokkos_view: object | None = None
 
     @property
     def shape(self) -> tuple:
@@ -65,7 +65,7 @@ class CeceField:
         """numpy.dtype : Array data type."""
         return self.array.dtype
 
-    def to_kokkos_view(self) -> Optional[object]:
+    def to_kokkos_view(self) -> object | None:
         """
         Get the Kokkos View associated with this field.
 
@@ -80,7 +80,7 @@ class CeceField:
         return self._kokkos_view
 
 
-class FieldDict:
+class FieldDict(Mapping[str, np.ndarray]):
     """
     Dictionary-like access to a collection of ``CeceField`` objects.
 
@@ -95,8 +95,11 @@ class FieldDict:
         shared with the owning ``CeceState`` and mutated in place.
     """
 
-    def __init__(self, fields_dict: Dict[str, CeceField]) -> None:
+    def __init__(
+        self, fields_dict: dict[str, CeceField], setter: Callable | None = None
+    ) -> None:
         self._fields = fields_dict
+        self._setter = setter
 
     def __getitem__(self, name: str) -> np.ndarray:
         """
@@ -141,7 +144,10 @@ class FieldDict:
         """
         if not isinstance(value, np.ndarray):
             raise TypeError("Field value must be a numpy array")
-        self._fields[name] = CeceField(name, value)
+        if self._setter is not None:
+            self._setter(name, value)
+        else:
+            self._fields[name] = CeceField(name, value)
 
     def __contains__(self, name: object) -> bool:
         """
@@ -159,6 +165,10 @@ class FieldDict:
         """
         return name in self._fields
 
+    def __len__(self) -> int:
+        """Number of stored fields, consistent with dictionary-like access."""
+        return len(self._fields)
+
     def __iter__(self) -> Iterator[str]:
         """
         Iterate over field names.
@@ -170,7 +180,7 @@ class FieldDict:
         """
         return iter(self._fields)
 
-    def keys(self) -> Any:
+    def keys(self) -> KeysView[str]:
         """
         Get all field names.
 
@@ -181,7 +191,7 @@ class FieldDict:
         """
         return self._fields.keys()
 
-    def values(self) -> List[np.ndarray]:
+    def values(self) -> list[np.ndarray]:
         """
         Get all field arrays.
 
@@ -192,7 +202,7 @@ class FieldDict:
         """
         return [f.array for f in self._fields.values()]
 
-    def items(self) -> List[Tuple[str, np.ndarray]]:
+    def items(self) -> list[tuple[str, np.ndarray]]:
         """
         Get ``(name, array)`` pairs for all fields.
 
@@ -203,7 +213,7 @@ class FieldDict:
         """
         return [(name, f.array) for name, f in self._fields.items()]
 
-    def get(self, name: str, default: Any = None) -> Any:
+    def get(self, name: str, default: np.ndarray | None = None) -> np.ndarray | None:
         """
         Get a field's array with a default fallback.
 
@@ -270,14 +280,14 @@ class CeceState:
         self.nx: int = nx
         self.ny: int = ny
         self.nz: int = nz
-        self._import_fields: Dict[str, CeceField] = {}
-        self._export_fields: Dict[str, CeceField] = {}
-        self._import_fields_dict: FieldDict = FieldDict(self._import_fields)
+        self._import_fields: dict[str, CeceField] = {}
+        self._export_fields: dict[str, CeceField] = {}
+        self._import_fields_dict: FieldDict = FieldDict(
+            self._import_fields, self.add_import_field
+        )
         self._export_fields_dict: FieldDict = FieldDict(self._export_fields)
 
-    def add_import_field(
-        self, name: str, array: Union[np.ndarray, list, tuple]
-    ) -> None:
+    def add_import_field(self, name: str, array: np.ndarray | list | tuple) -> None:
         """
         Add an import field to the state.
 
@@ -298,7 +308,7 @@ class CeceState:
             If ``array`` is not a NumPy array, list, or tuple.
         ValueError
             If array dimensions do not match ``(nx, ny, nz)`` or the array
-            is not contiguous.
+            has an incompatible shape.
         """
         # Convert to numpy array if needed
         if isinstance(array, (list, tuple)):
@@ -318,18 +328,9 @@ class CeceState:
                 f"Array dimensions {array.shape} don't match state dimensions ({self.nx}, {self.ny}, {self.nz})"
             )
 
-        # Determine layout
-        if array.flags["F_CONTIGUOUS"]:
-            layout = "fortran"
-        elif array.flags["C_CONTIGUOUS"]:
-            layout = "c"
-            # Convert C-order to Fortran-order
-            array = np.asfortranarray(array)
-            layout = "fortran"
-        else:
-            raise ValueError("Array must be C-contiguous or Fortran-contiguous")
-
-        self._import_fields[name] = CeceField(name, array, layout)
+        # Normalize storage without changing the semantic axis order.
+        array = np.asfortranarray(array, dtype=np.float64)
+        self._import_fields[name] = CeceField(name, array, "fortran")
 
     def get_import_field(self, name: str) -> np.ndarray:
         """
@@ -392,6 +393,6 @@ class CeceState:
         return self._export_fields_dict
 
     @property
-    def dimensions(self) -> Tuple[int, int, int]:
+    def dimensions(self) -> tuple[int, int, int]:
         """tuple : Grid dimensions ``(nx, ny, nz)``."""
         return (self.nx, self.ny, self.nz)

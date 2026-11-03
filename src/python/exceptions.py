@@ -19,8 +19,6 @@ cece.compute : May raise ``CeceComputationError`` or ``CeceStateError``.
 
 from __future__ import annotations
 
-from typing import Optional, List
-
 # Error codes from C binding layer
 CECE_SUCCESS = 0
 CECE_ERROR_INVALID_CONFIG = 1
@@ -119,10 +117,17 @@ class CeceException(Exception):
     def __init__(
         self,
         message: str,
-        error_code: Optional[int] = None,
-        recovery_suggestions: Optional[List[str]] = None,
-        c_call_site: Optional[str] = None,
+        error_code: int | None = None,
+        recovery_suggestions: list[str] | None = None,
+        c_call_site: str | None = None,
     ):
+        if recovery_suggestions is None:
+            suggestion_code = (
+                error_code
+                if error_code is not None
+                else getattr(self, "_default_error_code", None)
+            )
+            recovery_suggestions = list(RECOVERY_SUGGESTIONS.get(suggestion_code, []))
         self.message = message
         self.error_code = error_code
         self.recovery_suggestions = recovery_suggestions or []
@@ -187,18 +192,7 @@ class CeceConfigError(CeceException):
         C++ source location. Default is ``None``.
     """
 
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[int] = None,
-        recovery_suggestions: Optional[List[str]] = None,
-        c_call_site: Optional[str] = None,
-    ):
-        if recovery_suggestions is None:
-            recovery_suggestions = RECOVERY_SUGGESTIONS.get(
-                error_code, RECOVERY_SUGGESTIONS.get(CECE_ERROR_INVALID_CONFIG)
-            )
-        super().__init__(message, error_code, recovery_suggestions, c_call_site)
+    _default_error_code = CECE_ERROR_INVALID_CONFIG
 
 
 class CeceComputationError(CeceException):
@@ -221,18 +215,7 @@ class CeceComputationError(CeceException):
         C++ source location. Default is ``None``.
     """
 
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[int] = None,
-        recovery_suggestions: Optional[List[str]] = None,
-        c_call_site: Optional[str] = None,
-    ):
-        if recovery_suggestions is None:
-            recovery_suggestions = RECOVERY_SUGGESTIONS.get(
-                error_code, RECOVERY_SUGGESTIONS.get(CECE_ERROR_COMPUTATION_FAILED)
-            )
-        super().__init__(message, error_code, recovery_suggestions, c_call_site)
+    _default_error_code = CECE_ERROR_COMPUTATION_FAILED
 
 
 class CeceStateError(CeceException):
@@ -255,18 +238,7 @@ class CeceStateError(CeceException):
         C++ source location. Default is ``None``.
     """
 
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[int] = None,
-        recovery_suggestions: Optional[List[str]] = None,
-        c_call_site: Optional[str] = None,
-    ):
-        if recovery_suggestions is None:
-            recovery_suggestions = RECOVERY_SUGGESTIONS.get(
-                error_code, RECOVERY_SUGGESTIONS.get(CECE_ERROR_INVALID_STATE)
-            )
-        super().__init__(message, error_code, recovery_suggestions, c_call_site)
+    _default_error_code = CECE_ERROR_INVALID_STATE
 
 
 class CeceExecutionSpaceError(CeceException):
@@ -289,25 +261,14 @@ class CeceExecutionSpaceError(CeceException):
         C++ source location. Default is ``None``.
     """
 
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[int] = None,
-        recovery_suggestions: Optional[List[str]] = None,
-        c_call_site: Optional[str] = None,
-    ):
-        if recovery_suggestions is None:
-            recovery_suggestions = RECOVERY_SUGGESTIONS.get(
-                error_code, RECOVERY_SUGGESTIONS.get(CECE_ERROR_INVALID_EXECUTION_SPACE)
-            )
-        super().__init__(message, error_code, recovery_suggestions, c_call_site)
+    _default_error_code = CECE_ERROR_INVALID_EXECUTION_SPACE
 
 
 def error_code_to_exception(
     error_code: int,
     message: str,
-    c_call_site: Optional[str] = None,
-) -> Optional[CeceException]:
+    c_call_site: str | None = None,
+) -> CeceException | None:
     """
     Convert a C error code to the appropriate Python exception.
 
@@ -370,9 +331,10 @@ def error_code_to_exception(
             suggestions,
             c_call_site,
         )
-    elif error_code == CECE_ERROR_FIELD_NOT_FOUND:
-        return CeceStateError(message, error_code, suggestions, c_call_site)
-    elif error_code == CECE_ERROR_DIMENSION_MISMATCH:
+    elif (
+        error_code == CECE_ERROR_FIELD_NOT_FOUND
+        or error_code == CECE_ERROR_DIMENSION_MISMATCH
+    ):
         return CeceStateError(message, error_code, suggestions, c_call_site)
     else:
         return CeceException(

@@ -28,6 +28,7 @@ Every physics scheme in CECE follows a three-phase lifecycle:
 ### 1. Initialize Phase
 
 Called once during model initialization. Use this phase to:
+
 - Read configuration parameters from YAML
 - Validate parameters and check for errors
 - Pre-compute lookup tables or coefficients
@@ -35,6 +36,7 @@ Called once during model initialization. Use this phase to:
 - Allocate any internal data structures
 
 **Key Points:**
+
 - Called before the first Run phase
 - Configuration is immutable after Initialize
 - Errors should be reported with descriptive messages
@@ -43,12 +45,14 @@ Called once during model initialization. Use this phase to:
 ### 2. Run Phase
 
 Called once per time step. Use this phase to:
+
 - Resolve input fields from meteorology
 - Resolve output fields to be computed or modified
 - Execute Kokkos kernels for physics computation
 - Mark modified fields for device-to-host synchronization
 
 **Key Points:**
+
 - Must be efficient (called many times)
 - All computation should use Kokkos for performance portability
 - Avoid I/O or blocking operations
@@ -57,11 +61,13 @@ Called once per time step. Use this phase to:
 ### 3. Finalize Phase
 
 Called once during model shutdown. Use this phase to:
+
 - Release allocated resources
 - Flush any pending I/O operations
 - Clean up temporary data structures
 
 **Key Points:**
+
 - Called after the last Run phase
 - Should be quick (model is shutting down)
 - BasePhysicsScheme provides a default no-op implementation
@@ -73,6 +79,7 @@ Called once during model shutdown. Use this phase to:
 ### Prerequisites
 
 Before developing a physics scheme, ensure you have:
+
 - CECE source code checked out
 - JCSDA Docker environment set up (see AGENTS.md)
 - Python 3.6+ with jinja2 and pyyaml installed
@@ -150,6 +157,7 @@ The CECE scheme generator automates the creation of physics scheme scaffolding f
 
 Create a YAML file describing your scheme (e.g., `my_scheme_config.yaml`):
 
+<!-- cece-validate: skip -->
 ```yaml
 scheme:
   name: MyEmissionScheme
@@ -203,6 +211,7 @@ diagnostics:
 ```
 
 This generates:
+
 - `include/cece/physics/cece_my_emission_scheme.hpp`
 - `src/physics/cece_my_emission_scheme.cpp`
 - `src/physics/my_emission_scheme_kernel.F90` (if language=fortran)
@@ -225,6 +234,7 @@ target_link_libraries(cece_core PUBLIC cece_physics_my_emission_scheme)
 
 Add the scheme to your CECE configuration file:
 
+<!-- cece-validate: context physics_schemes -->
 ```yaml
 physics_schemes:
   - name: my_emission_scheme
@@ -270,6 +280,7 @@ Kokkos::fence();  // Ensure all threads complete
 #### 1. Execution Spaces
 
 Kokkos::DefaultExecutionSpace automatically selects the appropriate backend:
+
 - Serial (debugging)
 - OpenMP (CPU parallelism)
 - CUDA (NVIDIA GPU)
@@ -339,7 +350,7 @@ Kokkos::parallel_for(
 Use Horner's method for polynomial evaluation:
 
 ```cpp
-// Bad: 4 multiplications
+// Bad: 5 multiplications
 double result = a*x*x*x + b*x*x + c*x + d;
 
 // Good: 3 multiplications (Horner's method)
@@ -512,6 +523,7 @@ void MyScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* diag_
 
 ### YAML Configuration Example
 
+<!-- cece-validate: context physics_schemes -->
 ```yaml
 physics_schemes:
   - name: my_scheme
@@ -593,14 +605,16 @@ auto base_emissions = ResolveInput("emissions", import_state, export_state);
 
 Map internal names to external field names via YAML:
 
+<!-- cece-validate: context physics_schemes -->
 ```yaml
 physics_schemes:
   - name: my_scheme
-    input_mapping:
-      temp: temperature
-      solar: solar_radiation
-    output_mapping:
-      emis: emissions
+    options:
+      input_mapping:
+        temp: temperature
+        solar: solar_radiation
+      output_mapping:
+        emis: emissions
 ```
 
 Then use internal names in code:
@@ -648,11 +662,10 @@ void MyScheme::Run(CeceImportState& import_state, CeceExportState& export_state)
 
 ### Diagnostic Output
 
-Diagnostic fields are automatically written to NetCDF output if enabled in configuration:
+To include a diagnostic field in NetCDF output, list it explicitly under `output.fields`:
 
 ```yaml
 output:
-  diagnostics: true
   fields:
     - emissions
     - temperature_factor
@@ -797,6 +810,7 @@ ncdump -h cece_output.nc
 **Cause:** Accessing invalid memory (out-of-bounds array access)
 
 **Solution:**
+
 - Check array dimensions match grid size
 - Verify field handles are not null before use
 - Use bounds checking in debug builds
@@ -812,6 +826,7 @@ if (temperature.data() == nullptr) {
 **Cause:** Logic error or incorrect field resolution
 
 **Solution:**
+
 - Add diagnostic fields to inspect intermediate values
 - Compare with reference implementation
 - Check parameter values in YAML config
@@ -821,6 +836,7 @@ if (temperature.data() == nullptr) {
 **Cause:** Inefficient kernel implementation
 
 **Solution:**
+
 - Profile with Kokkos profiling tools
 - Check memory access patterns
 - Fuse multiple kernels
@@ -831,6 +847,7 @@ if (temperature.data() == nullptr) {
 **Cause:** Forgetting to call MarkModified()
 
 **Solution:**
+
 - Always call MarkModified() after modifying export fields
 - Ensure Kokkos::fence() is called before CPU access
 
@@ -945,16 +962,19 @@ Kokkos::parallel_for(
 See the following example schemes in the CECE repository:
 
 1. **ExampleEmissionGeneration** (`include/cece/physics/cece_example_emission_generation.hpp`)
+
    - Demonstrates emission generation pattern
    - Shows Q10 temperature parameterization
    - Includes diagnostic field output
 
 2. **ExampleEmissionModification** (`include/cece/physics/cece_example_emission_modification.hpp`)
+
    - Demonstrates emission modification pattern
    - Shows diurnal cycle application
    - Shows in-place field modification
 
 3. **ExampleDiagnosticComputation** (`include/cece/physics/cece_example_diagnostic_computation.hpp`)
+
    - Demonstrates diagnostic field computation
    - Shows validation and quality flagging
    - Shows reading from export state

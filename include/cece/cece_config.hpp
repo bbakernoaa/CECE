@@ -6,10 +6,9 @@
  * @brief Configuration structures and parser for CECE.
  */
 
-#include <yaml-cpp/yaml.h>
-
 #include <algorithm>
 #include <array>
+#include <conf/value.hpp>
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
@@ -24,14 +23,46 @@
 namespace cece {
 
 /**
+ * @enum SchemeLanguage
+ * @brief Implementation language for a physics scheme.
+ */
+enum class SchemeLanguage : std::uint8_t {
+    CPP,      ///< C++ implementation
+    FORTRAN,  ///< Fortran implementation
+    PYTHON,   ///< Python implementation
+    UNKNOWN   ///< Unspecified / unknown language
+};
+
+inline SchemeLanguage StringToSchemeLanguage(std::string_view lang) {
+    if (lang == "cpp" || lang == "c++" || lang == "cxx" || lang.empty()) return SchemeLanguage::CPP;
+    if (lang == "fortran" || lang == "f90" || lang == "f") return SchemeLanguage::FORTRAN;
+    if (lang == "python" || lang == "py") return SchemeLanguage::PYTHON;
+    return SchemeLanguage::UNKNOWN;
+}
+
+inline std::string_view SchemeLanguageToString(SchemeLanguage lang) {
+    switch (lang) {
+        case SchemeLanguage::CPP:
+            return "cpp";
+        case SchemeLanguage::FORTRAN:
+            return "fortran";
+        case SchemeLanguage::PYTHON:
+            return "python";
+        default:
+            return "unknown";
+    }
+}
+
+/**
  * @struct PhysicsSchemeConfig
  * @brief Configuration for a physics scheme.
  */
 struct PhysicsSchemeConfig {
-    std::string name;                  ///< Name of the physics scheme.
-    std::string language;              ///< Implementation language (e.g., "cpp", "fortran").
-    YAML::Node options;                ///< Scheme-specific options.
-    int refresh_interval_seconds = 0;  ///< Refresh interval in seconds (0 means use base timestep).
+    std::string name;                                      ///< Name of the physics scheme.
+    std::string language = "cpp";                          ///< Implementation language string (e.g., "cpp", "fortran").
+    SchemeLanguage language_type = SchemeLanguage::CPP;    ///< Implementation language enum.
+    conf::Value options = conf::Value::from_raw(nullptr);  ///< Scheme-specific options.
+    int refresh_interval_seconds = 0;                      ///< Refresh interval in seconds (0 means use base timestep).
 };
 
 /**
@@ -86,6 +117,8 @@ struct EmissionLayer {
     std::string diurnal_cycle;              ///< Name of the diurnal cycle to apply (24 factors).
     std::string weekly_cycle;               ///< Name of the weekly cycle to apply (7 factors).
     std::string seasonal_cycle;             ///< Name of the seasonal cycle to apply (12 factors).
+    bool use_local_time = false;            ///< Evaluate this layer's temporal cycles at local
+                                            ///< time (requires local_time.enabled; default UTC).
 
     // Vertical distribution
     VerticalDistributionMethod vdist_method = VerticalDistributionMethod::SINGLE;  ///< Method for vertical distribution.
@@ -123,20 +156,20 @@ struct CeceDataStreamConfig {
     std::vector<std::string> file_paths;            ///< Paths to the NetCDF files.
     std::vector<CeceDataVariableConfig> variables;  ///< Variables to read from this stream.
     std::string taxmode = "cycle";                  ///< Time axis mode (cycle, extend, etc.).
-    std::string tintalgo = "linear";                ///< Time interpolation algorithm.
-    std::string mapalgo =
-        "bilinear";            ///< Spatial mapping algorithm: bilinear, consd, consf, nn, redist, passthrough (skip regridding, same-grid data).
-    int dtlimit = 1500000000;  ///< Delta time limit in seconds.
-    int yearFirst = 1;         ///< First year in data.
-    int yearLast = 1;          ///< Last year in data.
-    int yearAlign = 1;         ///< Year to align with model time.
-    int offset = 0;            ///< Time offset in seconds.
-    std::string meshfile;      ///< Path to source mesh file.
+    std::string tintalgo = "nearest";               ///< Time interpolation algorithm.
+    std::string mapalgo = "consd";  ///< Spatial mapping algorithm: bilinear, consd, consf, nn, redist, passthrough (skip regridding, same-grid data).
+    int dtlimit = 1500000000;       ///< Delta time limit in seconds.
+    int yearFirst = 0;              ///< First year in data; zero selects climatological indexing.
+    int yearLast = 0;               ///< Last year in data; zero selects climatological indexing.
+    int yearAlign = 0;              ///< Year to align with model time; zero applies no year shift.
+    int offset = 0;                 ///< Time offset in seconds.
+    std::string meshfile;           ///< Path to source mesh file.
     std::string lev_dimname = "lev";   ///< Name of vertical dimension.
     std::string time_var = "time";     ///< Name of time coordinate variable.
     std::string lon_var = "lon";       ///< Name of longitude coordinate variable.
     std::string lat_var = "lat";       ///< Name of latitude coordinate variable.
     int refresh_interval_seconds = 0;  ///< Refresh interval in seconds (0 means use base timestep).
+    bool use_local_time = false;       ///< Select weekly profile records by each cell's local weekday (requires local_time.enabled).
 };
 
 /**
@@ -216,10 +249,10 @@ struct CeceOutputField {
 /// CeceOutputFieldCollection. time's units attribute is runtime-derived
 /// ("seconds since <start>") and patched by the writer at manifest time.
 inline const std::vector<CeceOutputField> kCoordinateFields{
-    {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}},
-    {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}}},
-    {"lev", {{"units", "level"}, {"long_name", "vertical level"}}},
-    {"time", {{"long_name", "time"}}},
+    {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}, {"standard_name", "longitude"}, {"coverage_content_type", "coordinate"}}},
+    {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}, {"standard_name", "latitude"}, {"coverage_content_type", "coordinate"}}},
+    {"lev", {{"units", "1"}, {"long_name", "vertical level"}, {"standard_name", "model_level_number"}, {"coverage_content_type", "coordinate"}}},
+    {"time", {{"long_name", "time"}, {"standard_name", "time"}, {"coverage_content_type", "coordinate"}}},
 };
 
 /**
@@ -351,11 +384,14 @@ struct CeceOutputConfig {
     std::string directory = ".";                                                  ///< Output directory (created if absent).
     std::string filename_pattern = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc";  ///< Filename pattern with time tokens.
     int frequency_steps = 1;                                                      ///< Write every N time steps.
-    CeceOutputFieldCollection fields;  ///< Coordinate variables + configured data fields; no data fields means write all export fields.
-    bool include_diagnostics = false;  ///< Also write diagnostic fields when true.
-    bool enabled = false;              ///< True when an output block is present in the YAML.
-    int amio_worker_threads = -1;      ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
-    std::unordered_map<std::string, std::string> global_attributes;  ///< Custom global attributes to write verbatim on the output file.
+    CeceOutputFieldCollection fields;   ///< Coordinate variables + configured data fields; no data fields means write all export fields.
+    bool include_diagnostics = false;   ///< Also write diagnostic fields when true.
+    bool enabled = false;               ///< True when an output block is present in the YAML.
+    int amio_worker_threads = -1;       ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
+    int amio_staging_buffer_count = 2;  ///< Number of output staging buffers.
+    int amio_staging_buffer_capacity_bytes = 67108864;               ///< Minimum bytes per output staging buffer (64 MiB).
+    int amio_staging_timeout_ms = 60000;                             ///< Output staging acquisition/write wait timeout.
+    std::unordered_map<std::string, std::string> global_attributes;  ///< Global attributes passed to AMIO's recognized-key manifest parser.
 };
 
 /**
@@ -399,6 +435,60 @@ struct DriverConfig {
     DriverGridConfig grid;  ///< Grid configuration for generated Gaussian grid.
     int stacking_refresh_interval_seconds = 0;  ///< Stacking engine refresh interval in seconds (0 means use base timestep).
     int amio_worker_threads = 1;                ///< Number of AMIO background I/O worker threads (default: 1).
+    int amio_staging_buffer_count = 8;          ///< Number of AMIO input staging buffers (default: 8).
+    /// Per-buffer capacity in bytes for AMIO input staging pools (default: 32 MiB).
+    /// AMIO commits buffer storage lazily and grows a buffer on demand when an
+    /// acquire exceeds this nominal size, so this is a steady-state hint rather
+    /// than a hard limit: resident memory is bounded by buffers-in-use x slab
+    /// size, not count x capacity. Lowering it is the primary lever on per-rank
+    /// IO memory (the historical 256 MiB default cost 8 x 256 MiB = 2 GiB per
+    /// input file per rank on the pre-lazy pool).
+    int amio_staging_buffer_capacity_bytes = 33554432;
+    int amio_prefetch_depth = 2;  ///< AMIO read look-ahead depth (default: 2). Lower = fewer in-flight slabs.
+};
+
+/**
+ * @struct NuopcFieldSpec
+ * @brief One field CECE advertises to a NUOPC host component.
+ *
+ * Carries only what a config author can legitimately choose: the coupling
+ * framework's standard name, optional units (when omitted the framework's
+ * canonical units are used), and an optional state-item name (when omitted the
+ * species or input key itself names the field). Rank, vertical extent, and the
+ * geometry transfer offer are derived from the field's role, never configured.
+ */
+struct NuopcFieldSpec {
+    std::string standard_name;  ///< Coupling-framework standard name (required; must not contain '/').
+    std::string units;          ///< Units string; empty means "use the dictionary canonical units".
+    std::string name;           ///< State item name; empty means "use the species/input key".
+};
+
+/**
+ * @struct NuopcConfig
+ * @brief Parsed contents of the optional top-level `nuopc:` config section.
+ *
+ * Both lists are kept sorted alphabetically by key so every rank advertises
+ * fields in the identical order regardless of YAML document order. An absent
+ * or empty section leaves both lists empty, which means zero advertised
+ * fields and unchanged standalone behavior.
+ */
+struct NuopcConfig {
+    /// Export fields: (species key, spec) pairs sorted by species key.
+    std::vector<std::pair<std::string, NuopcFieldSpec>> export_fields;
+    /// Import fields: (input name, spec) pairs sorted by input name.
+    std::vector<std::pair<std::string, NuopcFieldSpec>> import_fields;
+};
+
+/**
+ * @struct LocalTimeConfig
+ * @brief Configuration for the local-time service.
+ *
+ * Opt-in: when disabled (default) no grid file is opened, no allocation
+ * happens, and temporal scaling behaves exactly as the pre-feature UTC path.
+ */
+struct LocalTimeConfig {
+    bool enabled = false;   ///< Master switch for local-time temporal scaling.
+    std::string grid_file;  ///< Path to the RLE UTC-offset grid; empty => "data/utc_grid_720r.rle".
 };
 
 /**
@@ -431,17 +521,26 @@ struct CeceConfig {
     CeceOutputConfig output_config;
     /// Configuration for the standalone NUOPC driver (optional).
     DriverConfig driver_config;
+    /// Configuration for the local-time service.
+    LocalTimeConfig local_time;
     /// Registry of meteorology variable internal names to their external aliases.
     std::unordered_map<std::string, std::vector<std::string>> met_registry;
+    /// Fields advertised to a NUOPC host (from the optional `nuopc:` section).
+    /// Empty when the section is absent: CECE then advertises nothing and runs
+    /// exactly as before coupling support.
+    NuopcConfig nuopc;
 };
 
 /**
  * @brief Parses the CECE configuration from a YAML file.
  * @param filename Path to the YAML configuration file.
  * @return CeceConfig object containing the parsed species and schemes.
- * @throws YAML::Exception if the file is invalid or missing.
+ * @throws std::exception if the file is invalid or missing.
  */
 CeceConfig ParseConfig(const std::string& filename);
+
+/// Parse an in-memory document using the same interpretation as ParseConfig.
+CeceConfig ParseConfigText(const std::string& yaml);
 
 /**
  * @brief Adds a new emission species with its layers to an existing config at runtime.

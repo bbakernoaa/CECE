@@ -10,7 +10,12 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
+
+#include "cece/cece_amio_utils.hpp"
+#include "cece/cece_logger.hpp"
 
 namespace cece::io {
 
@@ -40,13 +45,35 @@ static std::vector<double> read_coordinate_array(amio_dataset_handle dataset, co
     }
     num_elements = total_pts;
 
-    std::vector<double> values(total_pts);
-    bool is_float = (size == static_cast<size_t>(total_pts) * 4);
-    const float* float_data = static_cast<const float*>(data);
-    const double* double_data = static_cast<const double*>(data);
+    // Read through the view's declared element type: the payload size alone
+    // cannot tell an integer coordinate from a float one.
+    amio_dtype_t dtype = AMIO_DTYPE_F64;
+    if (amio_view_dtype(view, &dtype) != AMIO_OK) {
+        amio_release_view(view);
+        throw std::runtime_error("Failed to retrieve element type for coordinate variable: " + name);
+    }
+    const std::size_t elem_size = cece::detail::amio_dtype_size(dtype);
+    if (elem_size == 0 || size < static_cast<std::size_t>(total_pts) * elem_size) {
+        amio_release_view(view);
+        throw std::runtime_error("Unsupported or truncated payload for coordinate variable: " + name);
+    }
+
+    double scale = 1.0;
+    double offset = 0.0;
+    {
+        double attr = 0.0;
+        if (amio_get_var_attribute_double(dataset, name.c_str(), "scale_factor", &attr) == AMIO_OK) scale = attr;
+        if (amio_get_var_attribute_double(dataset, name.c_str(), "add_offset", &attr) == AMIO_OK) offset = attr;
+    }
+
+    std::vector<double> values;
+    if (!cece::detail::widen_amio_elements(data, dtype, static_cast<std::size_t>(total_pts), scale, offset, values)) {
+        amio_release_view(view);
+        throw std::runtime_error("Could not widen element type of coordinate variable: " + name);
+    }
 
     for (int i = 0; i < total_pts; ++i) {
-        double val = is_float ? static_cast<double>(float_data[i]) : double_data[i];
+        double val = values[i];
         if (is_radian) {
             val *= 180.0 / M_PI;
         }
@@ -63,41 +90,168 @@ static std::vector<double> read_coordinate_array(amio_dataset_handle dataset, co
     return values;
 }
 
-static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(int ni, const std::string& gridspec_file) {
-    int rank = 0;
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    if (mpi_initialized) {
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+// Decide whether a dataset is an FV3/UFS native supergrid rather than some other
+// file that merely happens to define horizontal coordinates named "x" and "y"
+// (a projected-grid CF file, for instance, names its cartesian coordinates x/y
+// too). A native supergrid stores cell-corner longitude/latitude on a
+// double-resolution logically-rectangular lattice whose extents are odd
+// (2*n + 1), with CF metadata identifying the arrays as geographic degrees.
+// Requiring all of these keeps the heuristic from misfiring on projected grids,
+// whose coordinates carry metre units and projection standard names.
+static bool looks_like_fv3_supergrid(amio_dataset_handle dataset, int nx, int nband, int j0) {
+    amio_shape_t x_shape{};
+    amio_shape_t y_shape{};
+    int64_t timesteps = 0;
+    if (amio_describe(dataset, "x", &x_shape, &timesteps) != AMIO_OK || amio_describe(dataset, "y", &y_shape, &timesteps) != AMIO_OK) {
+        return false;
     }
-    std::string manifest_path = "amio_GS_mesh_manifest_rank" + std::to_string(rank) + ".yaml";
-    std::ofstream m_file(manifest_path);
-    m_file << "backend: netcdf4\n"
-           << "path: " << gridspec_file << "\n"
-           << "data_model: enhanced\n"
-           << "staging_pool:\n"
-           << "  buffer_count: 16\n"
-           << "  buffer_capacity_bytes: 104857600\n"
-           << "worker_pool:\n"
-           << "  threads: 1\n";
-    m_file.close();
+    if (x_shape.rank != 2 || y_shape.rank != 2) {
+        return false;
+    }
+    if (x_shape.extents[0] != y_shape.extents[0] || x_shape.extents[1] != y_shape.extents[1]) {
+        return false;
+    }
+    // Corner lattice must be the double-resolution (2*n + 1) grid, so both extents
+    // are odd and the x extent is exactly 2*nx + 1 (e.g. 193 corners for nx = 96).
+    const int64_t nx_corners = 2 * static_cast<int64_t>(nx) + 1;
+    const int64_t min_j_corners = 2 * static_cast<int64_t>(j0 + nband) + 1;
+    if (x_shape.extents[1] != nx_corners || x_shape.extents[0] < min_j_corners) {
+        return false;
+    }
+    if (x_shape.extents[0] % 2 == 0 || x_shape.extents[1] % 2 == 0) {
+        return false;
+    }
+
+    // Finally, confirm the CF metadata describes geographic degrees.
+    auto read_attr = [&](const char* var, const char* attr, char* buf, size_t cap) {
+        size_t len = 0;
+        buf[0] = '\0';
+        return amio_get_var_attribute_text(dataset, var, attr, buf, cap, &len) == AMIO_OK;
+    };
+    constexpr size_t kAttrCap = 64;
+    char units[kAttrCap];
+    const bool units_are_degrees =
+        read_attr("x", "units", units, kAttrCap) && (std::string(units) == "degree_east" || std::string(units) == "degrees_east") &&
+        read_attr("y", "units", units, kAttrCap) && (std::string(units) == "degree_north" || std::string(units) == "degrees_north");
+    if (units_are_degrees) {
+        return true;
+    }
+    char std_name[kAttrCap];
+    return read_attr("x", "standard_name", std_name, kAttrCap) && std::string(std_name) == "geographic_longitude" &&
+           read_attr("y", "standard_name", std_name, kAttrCap) && std::string(std_name) == "geographic_latitude";
+}
+
+// Read a CF rectilinear axis and its explicitly named cell bounds. Do not infer
+// polar edges from centres or wrap longitudes: either operation changes the
+// supplied grid. Unsupported/malformed bounds must fail, not silently regrid.
+static std::vector<double> read_rectilinear_bounds(amio_dataset_handle dataset, const char* axis_name, int count, bool latitude) {
+    auto text_attribute = [&](const char* attribute) {
+        char value[1024]{};
+        size_t length = 0;
+        if (amio_get_var_attribute_text(dataset, axis_name, attribute, value, sizeof(value), &length) != AMIO_OK || length == 0 ||
+            length >= sizeof(value)) {
+            throw std::runtime_error(std::string("CF rectilinear axis lacks valid ") + attribute + ": " + axis_name);
+        }
+        return std::string(value);
+    };
+    const auto units = text_attribute("units");
+    if (latitude ? (units != "degrees_north" && units != "degree_north") : (units != "degrees_east" && units != "degree_east")) {
+        throw std::runtime_error(std::string("CF rectilinear axis must use geographic degree units: ") + axis_name);
+    }
+    const auto bounds_name = text_attribute("bounds");
+    amio_shape_t shape{};
+    int64_t timesteps = 0;
+    if (amio_describe(dataset, bounds_name.c_str(), &shape, &timesteps) != AMIO_OK || shape.rank != 2 || shape.extents[0] != count ||
+        shape.extents[1] != 2) {
+        throw std::runtime_error("CF rectilinear bounds must have shape [axis, 2]: " + bounds_name);
+    }
+    int points = 0;
+    const auto centres = read_coordinate_array(dataset, axis_name, false, false, points);
+    if (points != count) throw std::runtime_error("CF rectilinear centre count mismatch");
+    const auto bounds = read_coordinate_array(dataset, bounds_name, false, false, points);
+    if (static_cast<size_t>(points) != 2 * static_cast<size_t>(count)) throw std::runtime_error("CF rectilinear bounds count mismatch");
+    for (int i = 0; i < count; ++i) {
+        const size_t offset = 2 * static_cast<size_t>(i);
+        const double lo = bounds[offset], hi = bounds[offset + 1], centre = centres[i];
+        if (!std::isfinite(lo) || !std::isfinite(hi) || !std::isfinite(centre) || !(lo < hi) || centre < lo || centre > hi ||
+            (latitude ? (lo < -90.0 || hi > 90.0) : (hi - lo > 180.0))) {
+            throw std::runtime_error("Invalid CF rectilinear cell bounds: " + bounds_name);
+        }
+        if (i > 0 && (centres[i] == centres[i - 1] || (i > 1 && ((centres[i] > centres[i - 1]) != (centres[1] > centres[0]))))) {
+            throw std::runtime_error(std::string("Nonmonotonic CF rectilinear axis: ") + axis_name);
+        }
+    }
+    return bounds;
+}
+
+static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_rectilinear_mesh(amio_dataset_handle dataset, int nx, int nband, int j0) {
+    amio_shape_t lon_shape{}, lat_shape{};
+    int64_t timesteps = 0;
+    if (nx <= 0 || nband < 0 || j0 < 0 || amio_describe(dataset, "lon", &lon_shape, &timesteps) != AMIO_OK ||
+        amio_describe(dataset, "lat", &lat_shape, &timesteps) != AMIO_OK || lon_shape.rank != 1 || lat_shape.rank != 1 ||
+        lon_shape.extents[0] != nx || nx > std::numeric_limits<int>::max() / 2 || lat_shape.extents[0] <= 0 ||
+        lat_shape.extents[0] > std::numeric_limits<int>::max() / 2 || static_cast<int64_t>(j0) + nband > lat_shape.extents[0]) {
+        throw std::runtime_error("CF rectilinear gridspec dimensions do not match the requested band");
+    }
+    const auto lon_bounds = read_rectilinear_bounds(dataset, "lon", nx, false);
+    const auto lat_bounds = read_rectilinear_bounds(dataset, "lat", static_cast<int>(lat_shape.extents[0]), true);
+    const size_t cells = static_cast<size_t>(nx) * nband;
+    if (cells > static_cast<size_t>(std::numeric_limits<axis::index_t>::max()) / 4) throw std::runtime_error("CF rectilinear mesh too large");
+    Kokkos::View<double**, Kokkos::LayoutLeft, Kokkos::HostSpace> nodes("cf_rectilinear_nodes", cells * 4, 2);
+    Kokkos::View<axis::index_t*, Kokkos::HostSpace> offsets("cf_rectilinear_offsets", cells + 1);
+    Kokkos::View<axis::index_t*, Kokkos::HostSpace> indices("cf_rectilinear_indices", cells * 4);
+    for (int j = 0; j < nband; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            const size_t cell = static_cast<size_t>(j) * nx + i, first = cell * 4;
+            const size_t longitude_offset = 2 * static_cast<size_t>(i);
+            const size_t latitude_offset = 2 * (static_cast<size_t>(j0) + static_cast<size_t>(j));
+            const double west = lon_bounds[longitude_offset], east = lon_bounds[longitude_offset + 1];
+            const double south = lat_bounds[latitude_offset], north = lat_bounds[latitude_offset + 1];
+            nodes(first, 0) = west;
+            nodes(first, 1) = south;
+            nodes(first + 1, 0) = east;
+            nodes(first + 1, 1) = south;
+            nodes(first + 2, 0) = east;
+            nodes(first + 2, 1) = north;
+            nodes(first + 3, 0) = west;
+            nodes(first + 3, 1) = north;
+            offsets(cell) = static_cast<axis::index_t>(first);
+            for (size_t v = 0; v < 4; ++v) indices(first + v) = static_cast<axis::index_t>(first + v);
+        }
+    }
+    offsets(cells) = static_cast<axis::index_t>(cells * 4);
+    return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(nodes, offsets, indices, axis::topology::CoordinateSystem::SphericalDeg);
+}
+
+static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(int nx, int nband, int j0, const std::string& gridspec_file) {
+    // Build the gridspec manifest in memory and pass it directly to AMIO. Writing a
+    // per-rank manifest file to a shared-disk workdir (e.g. Lustre) is unnecessary and
+    // leaves stray files behind; the in-memory API avoids both the I/O and any race.
+    std::ostringstream manifest;
+    manifest << "backend: netcdf4\n"
+             << "path: " << gridspec_file << "\n"
+             << "data_model: enhanced\n"
+             << "staging_pool:\n"
+             << "  buffer_count: 16\n"
+             << "  buffer_capacity_bytes: 33554432\n"
+             << "worker_pool:\n"
+             << "  threads: 1\n";
+    const std::string manifest_content = manifest.str();
 
     amio_core_handle core = nullptr;
     amio_dataset_handle dataset = nullptr;
     amio_view_handle edges_on_cell_view = nullptr;
     amio_view_handle vertices_on_cell_view = nullptr;
 
-    amio_status_t amio_rc = amio_init(manifest_path.c_str(), &core);
+    amio_status_t amio_rc = amio_init_from_string(manifest_content.c_str(), "yaml", &core);
     if (amio_rc != AMIO_OK) {
-        std::remove(manifest_path.c_str());
-        throw std::runtime_error("amio_init failed");
+        throw std::runtime_error("amio_init_from_string failed");
     }
 
-    amio_rc = amio_open_dataset(core, manifest_path.c_str(), AMIO_MODE_READ, &dataset);
+    amio_rc = amio_open_dataset_from_string(core, manifest_content.c_str(), "yaml", AMIO_MODE_READ, &dataset);
     if (amio_rc != AMIO_OK) {
         amio_finalize(core);
-        std::remove(manifest_path.c_str());
-        throw std::runtime_error("amio_open_dataset failed");
+        throw std::runtime_error("amio_open_dataset_from_string failed");
     }
 
     // A. Try SCRIP-conventions coordinates first
@@ -125,7 +279,6 @@ static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(i
 
             amio_close(dataset);
             amio_finalize(core);
-            std::remove(manifest_path.c_str());
 
             size_t n_vertices = scrip_lons.size();
             size_t n_cells = grid_size;
@@ -140,19 +293,18 @@ static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(i
             Kokkos::View<axis::index_t*, Kokkos::HostSpace> conn_indices("conn_indices", n_vertices);
 
             for (size_t i = 0; i < n_cells; ++i) {
-                conn_offsets(i) = i * grid_corners;
+                conn_offsets(i) = static_cast<axis::index_t>(i * grid_corners);
                 for (int v = 0; v < grid_corners; ++v) {
-                    conn_indices(i * grid_corners + v) = i * grid_corners + v;
+                    conn_indices(i * grid_corners + v) = static_cast<axis::index_t>(i * grid_corners + v);
                 }
             }
-            conn_offsets(n_cells) = n_vertices;
+            conn_offsets(n_cells) = static_cast<axis::index_t>(n_vertices);
 
             return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(node_coords, conn_offsets, conn_indices,
                                                                        axis::topology::CoordinateSystem::SphericalDeg);
         } catch (const std::exception& e) {
             amio_close(dataset);
             amio_finalize(core);
-            std::remove(manifest_path.c_str());
             throw;
         }
     }
@@ -170,7 +322,7 @@ static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(i
 
             std::vector<int> n_edges_on_cell;
             std::vector<int> vertices_on_cell;
-            int n_cells = ni;
+            int n_cells = nx;
             int max_edges = 0;
 
             if (amio_read(dataset, "nEdgesOnCell", 0, nullptr, &edges_on_cell_view) != AMIO_OK) {
@@ -210,7 +362,6 @@ static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(i
 
             amio_close(dataset);
             amio_finalize(core);
-            std::remove(manifest_path.c_str());
 
             size_t n_vertices = lat_vertices.size();
 
@@ -230,50 +381,204 @@ static axis::topology::UnstructuredMesh<Kokkos::HostSpace> load_mesh_from_file(i
 
             size_t offset = 0;
             for (int i = 0; i < n_cells; ++i) {
-                conn_offsets(i) = offset;
+                conn_offsets(i) = static_cast<axis::index_t>(offset);
                 int n_edges = n_edges_on_cell[i];
                 for (int v = 0; v < n_edges; ++v) {
                     int v_idx = vertices_on_cell[i * max_edges + v];
                     if (v_idx > 0 && v_idx <= static_cast<int>(n_vertices)) {
-                        conn_indices(offset + v) = v_idx - 1;
+                        conn_indices(offset + v) = static_cast<axis::index_t>(v_idx - 1);
                     } else {
                         conn_indices(offset + v) = 0;
                     }
                 }
                 offset += n_edges;
             }
-            conn_offsets(n_cells) = offset;
+            conn_offsets(n_cells) = static_cast<axis::index_t>(offset);
 
             return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(node_coords, conn_offsets, conn_indices,
                                                                        axis::topology::CoordinateSystem::SphericalDeg);
         } catch (const std::exception& e) {
             amio_close(dataset);
             amio_finalize(core);
-            std::remove(manifest_path.c_str());
             throw;
         }
     }
 
-    amio_close(dataset);
-    amio_finalize(core);
-    std::remove(manifest_path.c_str());
-    throw std::runtime_error("Unsupported gridspec mesh topology convention (neither SCRIP nor MPAS/UGRID found)");
-}
-
-axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int nj, const std::vector<double>& lons, const std::vector<double>& lats,
-                                                                    const std::string& gridspec_file) {
-    if (nj == 1 && !gridspec_file.empty() && gridspec_file != "none" && gridspec_file != "NONE") {
+    // C. Try UFS/FV3 grid_spec convention (grid_lon, grid_lat 2D corner arrays)
+    amio_view_handle fv3_spec_peek = nullptr;
+    if (amio_read(dataset, "grid_lon", 0, nullptr, &fv3_spec_peek) == AMIO_OK) {
+        amio_release_view(fv3_spec_peek);
         try {
-            return load_mesh_from_file(ni, gridspec_file);
+            int total_lon_pts = 0, total_lat_pts = 0;
+            std::vector<double> corner_lons = read_coordinate_array(dataset, "grid_lon", false, true, total_lon_pts);
+            std::vector<double> corner_lats = read_coordinate_array(dataset, "grid_lat", false, false, total_lat_pts);
+
+            int nx_b = nx + 1;  // FV3 spec bounds are nx + 1
+            size_t min_required = static_cast<size_t>(j0 + nband + 1) * nx_b;
+
+            if (total_lon_pts != total_lat_pts || static_cast<size_t>(total_lon_pts) < min_required) {
+                throw std::runtime_error("FV3 grid_spec dimension mismatch in '" + gridspec_file + "': required at least " +
+                                         std::to_string(min_required) + " points for nx=" + std::to_string(nx) + ", nband=" + std::to_string(nband) +
+                                         ", j0=" + std::to_string(j0) + " but found " + std::to_string(total_lon_pts));
+            }
+
+            size_t n_cells = static_cast<size_t>(nband) * nx;
+            size_t n_vertices = n_cells * 4;
+
+            Kokkos::View<double**, Kokkos::LayoutLeft, Kokkos::HostSpace> node_coords("node_coords", n_vertices, 2);
+            Kokkos::View<axis::index_t*, Kokkos::HostSpace> conn_offsets("conn_offsets", n_cells + 1);
+            Kokkos::View<axis::index_t*, Kokkos::HostSpace> conn_indices("conn_indices", n_vertices);
+
+            size_t v_idx = 0;
+            for (int j = 0; j < nband; ++j) {
+                int global_j = j0 + j;  // MPI j0 offset
+                for (int i = 0; i < nx; ++i) {
+                    size_t cell_idx = static_cast<size_t>(j) * nx + i;
+
+                    int bl = global_j * nx_b + i;
+                    int br = global_j * nx_b + (i + 1);
+                    int tr = (global_j + 1) * nx_b + (i + 1);
+                    int tl = (global_j + 1) * nx_b + i;
+
+                    node_coords(v_idx, 0) = corner_lons[bl];
+                    node_coords(v_idx, 1) = corner_lats[bl];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[br];
+                    node_coords(v_idx, 1) = corner_lats[br];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[tr];
+                    node_coords(v_idx, 1) = corner_lats[tr];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[tl];
+                    node_coords(v_idx, 1) = corner_lats[tl];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+
+                    conn_offsets(cell_idx) = static_cast<axis::index_t>(cell_idx * 4);
+                }
+            }
+            conn_offsets(n_cells) = static_cast<axis::index_t>(n_vertices);
+
+            amio_close(dataset);
+            amio_finalize(core);
+            return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(node_coords, conn_offsets, conn_indices,
+                                                                       axis::topology::CoordinateSystem::SphericalDeg);
         } catch (const std::exception& e) {
-            std::cerr << "WARNING: build_axis_mesh failed to load from gridspec_file '" << gridspec_file << "': " << e.what()
-                      << ". Falling back to dynamic fallback grid." << std::endl;
+            amio_close(dataset);
+            amio_finalize(core);
+            throw;
         }
     }
 
-    if (nj == 1) {
-        // Build unstructured mesh of ni quadrilaterals dynamically to support nj = 1 in standalone driver
-        size_t n_cells = static_cast<size_t>(ni);
+    // D. Try UFS/FV3 direct grid convention (x, y on double-resolution supergrid).
+    // This convention is keyed on the bare coordinate names "x"/"y", which other
+    // grid descriptions also use, so it is deliberately tried last -- after SCRIP,
+    // MPAS, and grid_spec -- and additionally gated on the supergrid-specific
+    // shape and CF metadata so a projected-grid file with cartesian x/y is not
+    // mistaken for one.
+    if (looks_like_fv3_supergrid(dataset, nx, nband, j0)) {
+        try {
+            int total_x_pts = 0, total_y_pts = 0;
+            std::vector<double> corner_lons = read_coordinate_array(dataset, "x", false, true, total_x_pts);
+            std::vector<double> corner_lats = read_coordinate_array(dataset, "y", false, false, total_y_pts);
+
+            // In native supergrid file, nxp/nyp are 2 * nx + 1 (e.g. 193 for nx = 96)
+            int nx_b = (nx * 2) + 1;
+            size_t min_required = static_cast<size_t>(2 * (j0 + nband) + 1) * nx_b;
+
+            if (total_x_pts != total_y_pts || static_cast<size_t>(total_x_pts) < min_required) {
+                throw std::runtime_error("FV3 supergrid dimension mismatch in '" + gridspec_file + "': required at least " +
+                                         std::to_string(min_required) + " points for nx=" + std::to_string(nx) + ", nband=" + std::to_string(nband) +
+                                         ", j0=" + std::to_string(j0) + " but found " + std::to_string(total_x_pts));
+            }
+
+            size_t n_cells = static_cast<size_t>(nband) * nx;
+            size_t n_vertices = n_cells * 4;
+
+            Kokkos::View<double**, Kokkos::LayoutLeft, Kokkos::HostSpace> node_coords("node_coords", n_vertices, 2);
+            Kokkos::View<axis::index_t*, Kokkos::HostSpace> conn_offsets("conn_offsets", n_cells + 1);
+            Kokkos::View<axis::index_t*, Kokkos::HostSpace> conn_indices("conn_indices", n_vertices);
+
+            size_t v_idx = 0;
+            for (int j = 0; j < nband; ++j) {
+                int global_j = (j0 + j) * 2;  // Stride by 2 for the supergrid
+                for (int i = 0; i < nx; ++i) {
+                    size_t cell_idx = static_cast<size_t>(j) * nx + i;
+                    int i_super = i * 2;
+
+                    int bl = global_j * nx_b + i_super;
+                    int br = global_j * nx_b + (i_super + 2);
+                    int tr = (global_j + 2) * nx_b + (i_super + 2);
+                    int tl = (global_j + 2) * nx_b + i_super;
+
+                    node_coords(v_idx, 0) = corner_lons[bl];
+                    node_coords(v_idx, 1) = corner_lats[bl];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[br];
+                    node_coords(v_idx, 1) = corner_lats[br];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[tr];
+                    node_coords(v_idx, 1) = corner_lats[tr];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+                    node_coords(v_idx, 0) = corner_lons[tl];
+                    node_coords(v_idx, 1) = corner_lats[tl];
+                    conn_indices(v_idx) = static_cast<axis::index_t>(v_idx);
+                    v_idx++;
+
+                    conn_offsets(cell_idx) = static_cast<axis::index_t>(cell_idx * 4);
+                }
+            }
+            conn_offsets(n_cells) = static_cast<axis::index_t>(n_vertices);
+
+            amio_close(dataset);
+            amio_finalize(core);
+            return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(node_coords, conn_offsets, conn_indices,
+                                                                       axis::topology::CoordinateSystem::SphericalDeg);
+        } catch (const std::exception& e) {
+            amio_close(dataset);
+            amio_finalize(core);
+            throw;
+        }
+    }
+
+    // E. CF rectilinear grids with explicit bounds, including HEMCO polar caps.
+    amio_shape_t cf_lon{}, cf_lat{};
+    int64_t cf_times = 0;
+    if (amio_describe(dataset, "lon", &cf_lon, &cf_times) == AMIO_OK && amio_describe(dataset, "lat", &cf_lat, &cf_times) == AMIO_OK &&
+        cf_lon.rank == 1 && cf_lat.rank == 1) {
+        try {
+            auto mesh = load_rectilinear_mesh(dataset, nx, nband, j0);
+            amio_close(dataset);
+            amio_finalize(core);
+            return mesh;
+        } catch (...) {
+            amio_close(dataset);
+            amio_finalize(core);
+            throw;
+        }
+    }
+    amio_close(dataset);
+    amio_finalize(core);
+    throw std::runtime_error("Unsupported gridspec mesh topology convention in '" + gridspec_file +
+                             "' (expected SCRIP [grid_corner_lon], MPAS [latVertex], UFS/FV3 grid_spec [grid_lon/grid_lat], UFS/FV3 supergrid [x/y], "
+                             "or CF rectilinear [lon/lat with explicit bounds])");
+}
+
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int nx, int nband, int j0, const std::vector<double>& lons,
+                                                                    const std::vector<double>& lats, const std::string& gridspec_file) {
+    if (!gridspec_file.empty() && gridspec_file != "none" && gridspec_file != "NONE") {
+        return load_mesh_from_file(nx, nband, j0, gridspec_file);
+    }
+
+    if (nband == 1) {
+        // Build unstructured mesh of nx quadrilaterals dynamically to support nband = 1 in standalone driver
+        size_t n_cells = static_cast<size_t>(nx);
         size_t n_nodes = 4 * n_cells;
 
         Kokkos::View<double**, Kokkos::LayoutLeft, Kokkos::HostSpace> node_coords("node_coords", n_nodes, 2);
@@ -322,28 +627,28 @@ axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int 
             node_coords(4 * i + 3, 0) = x0;
             node_coords(4 * i + 3, 1) = y1;
 
-            conn_offsets(i) = 4 * i;
+            conn_offsets(i) = static_cast<axis::index_t>(4 * i);
 
-            conn_indices(4 * i + 0) = 4 * i + 0;
-            conn_indices(4 * i + 1) = 4 * i + 1;
-            conn_indices(4 * i + 2) = 4 * i + 2;
-            conn_indices(4 * i + 3) = 4 * i + 3;
+            conn_indices(4 * i + 0) = static_cast<axis::index_t>(4 * i + 0);
+            conn_indices(4 * i + 1) = static_cast<axis::index_t>(4 * i + 1);
+            conn_indices(4 * i + 2) = static_cast<axis::index_t>(4 * i + 2);
+            conn_indices(4 * i + 3) = static_cast<axis::index_t>(4 * i + 3);
         }
-        conn_offsets(n_cells) = 4 * n_cells;
+        conn_offsets(n_cells) = static_cast<axis::index_t>(4 * n_cells);
 
         return axis::topology::UnstructuredMesh<Kokkos::HostSpace>(node_coords, conn_offsets, conn_indices,
                                                                    axis::topology::CoordinateSystem::SphericalDeg);
     }
 
-    size_t n_cells = static_cast<size_t>(ni) * nj;
+    size_t n_cells = static_cast<size_t>(nx) * nband;
     Kokkos::View<double*, Kokkos::HostSpace> center_lon("center_lon", n_cells);
     Kokkos::View<double*, Kokkos::HostSpace> center_lat("center_lat", n_cells);
 
     bool curvilinear = (lons.size() == n_cells && lats.size() == n_cells);
 
-    for (int j = 0; j < nj; ++j) {
-        for (int i = 0; i < ni; ++i) {
-            size_t idx = static_cast<size_t>(j) * ni + i;
+    for (int j = 0; j < nband; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            size_t idx = static_cast<size_t>(j) * nx + i;
             if (curvilinear) {
                 center_lon(idx) = lons[idx];
                 center_lat(idx) = lats[idx];
@@ -354,9 +659,164 @@ axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int 
         }
     }
 
-    axis::topology::StructuredGrid<Kokkos::HostSpace> grid(ni, nj, center_lon, center_lat, axis::topology::CoordinateSystem::SphericalDeg);
+    axis::topology::StructuredGrid<Kokkos::HostSpace> grid(nx, nband, center_lon, center_lat, axis::topology::CoordinateSystem::SphericalDeg);
 
     return grid.to_unstructured();
+}
+
+// Build the destination sub-mesh for the rectilinear band [j0, j1) with
+// GLOBALLY-CONSISTENT corners. StructuredGrid::synthesize_corners would
+// extrapolate the band's outer latitude edges from band-local centers only,
+// which is correct on a uniform grid but WRONG on a non-uniform latitude grid
+// (the true band-boundary edge is the midpoint to the neighbour row owned by an
+// adjacent rank). Rather than reimplement the edge geometry here (which can
+// drift from AXIS), this expands the rectilinear centers to the FULL global
+// nx x ny grid and delegates to AXIS's single shared corner-synthesis kernel
+// (axis::topology::synthesize_band_corners) — the SAME 2x2 midpoint / periodic-
+// wrap / one-sided-boundary logic the global mesh uses — restricted to the
+// band's corner rows [j0, j1]. The result is provably identical to rows
+// [j0, j1] of the global mesh's synthesized corners, so the band conservative
+// regrid matches the corresponding global rows at the seams and a whole-grid
+// (single-rank) band is byte-for-byte the global mesh.
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_band_mesh_with_global_corners(int nx, int j0, int j1, const std::vector<double>& full_lons,
+                                                                                        const std::vector<double>& full_lats) {
+    const int nband = j1 - j0;
+    const std::size_t ny_global = full_lats.size();
+
+    // Band-local cell centers (row-major, band rows [j0, j1)) — the StructuredGrid
+    // extent for the band.
+    Kokkos::View<double*, Kokkos::HostSpace> band_center_lon("band_center_lon", static_cast<size_t>(nx) * nband);
+    Kokkos::View<double*, Kokkos::HostSpace> band_center_lat("band_center_lat", static_cast<size_t>(nx) * nband);
+    for (int jr = 0; jr < nband; ++jr) {
+        for (int i = 0; i < nx; ++i) {
+            const size_t idx = static_cast<size_t>(jr) * nx + i;
+            band_center_lon(idx) = full_lons[i];
+            band_center_lat(idx) = full_lats[static_cast<size_t>(j0) + jr];
+        }
+    }
+
+    // FULL global center arrays (column-major, index i + j*nx) that the shared
+    // AXIS kernel synthesizes corners from, so the band's boundary edges see the
+    // neighbour rows owned by adjacent ranks.
+    Kokkos::View<double*, Kokkos::HostSpace> global_center_lon("global_center_lon", static_cast<size_t>(nx) * ny_global);
+    Kokkos::View<double*, Kokkos::HostSpace> global_center_lat("global_center_lat", static_cast<size_t>(nx) * ny_global);
+    for (std::size_t j = 0; j < ny_global; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            const size_t idx = j * static_cast<size_t>(nx) + i;
+            global_center_lon(idx) = full_lons[i];
+            global_center_lat(idx) = full_lats[j];
+        }
+    }
+
+    Kokkos::View<double*, Kokkos::HostSpace> corner_lon, corner_lat;
+    axis::topology::synthesize_band_corners<Kokkos::HostSpace>(nx, ny_global, global_center_lon, global_center_lat, static_cast<std::size_t>(j0),
+                                                               static_cast<std::size_t>(j1), corner_lon, corner_lat);
+
+    axis::topology::StructuredGrid<Kokkos::HostSpace> grid(nx, nband, band_center_lon, band_center_lat,
+                                                           axis::topology::CoordinateSystem::SphericalDeg);
+    grid.set_corners(std::move(corner_lon), std::move(corner_lat));
+    return grid.to_unstructured();
+}
+
+// Build the destination sub-mesh for a CURVILINEAR latitude band [j0, j1) with
+// GLOBALLY-CONSISTENT 2-D corners. A curvilinear boundary corner depends on the
+// neighbour centers in BOTH longitude and latitude, so — like the rectilinear
+// case — it must be derived from the FULL global center arrays, not a band-local
+// slice. This delegates to the same AXIS shared kernel
+// (axis::topology::synthesize_band_corners) used for the rectilinear band, so
+// both grid types share one corner-geometry implementation (periodic-longitude
+// wrap, one-sided domain-boundary convention, 2x2 averaging) and cannot drift
+// from the global mesh. `full_center_lon`/`full_center_lat` are the flattened
+// global curvilinear centers of length nx * ny_global (index i + j*nx);
+// `band_center_lon`/`band_center_lat` are the band's nx * (j1-j0) centers.
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_band_mesh_curvilinear_with_global_corners(int nx, int j0, int j1,
+                                                                                                    const std::vector<double>& full_center_lon,
+                                                                                                    const std::vector<double>& full_center_lat,
+                                                                                                    const std::vector<double>& band_center_lon,
+                                                                                                    const std::vector<double>& band_center_lat) {
+    const int nband = j1 - j0;
+    const std::size_t ny_global = full_center_lon.size() / static_cast<std::size_t>(nx);
+
+    Kokkos::View<double*, Kokkos::HostSpace> global_clon("global_clon", full_center_lon.size());
+    Kokkos::View<double*, Kokkos::HostSpace> global_clat("global_clat", full_center_lat.size());
+    for (std::size_t k = 0; k < full_center_lon.size(); ++k) {
+        global_clon(k) = full_center_lon[k];
+        global_clat(k) = full_center_lat[k];
+    }
+
+    Kokkos::View<double*, Kokkos::HostSpace> band_clon("band_clon", static_cast<std::size_t>(nx) * nband);
+    Kokkos::View<double*, Kokkos::HostSpace> band_clat("band_clat", static_cast<std::size_t>(nx) * nband);
+    for (std::size_t k = 0; k < band_clon.extent(0); ++k) {
+        band_clon(k) = band_center_lon[k];
+        band_clat(k) = band_center_lat[k];
+    }
+
+    Kokkos::View<double*, Kokkos::HostSpace> corner_lon, corner_lat;
+    axis::topology::synthesize_band_corners<Kokkos::HostSpace>(nx, ny_global, global_clon, global_clat, static_cast<std::size_t>(j0),
+                                                               static_cast<std::size_t>(j1), corner_lon, corner_lat);
+
+    axis::topology::StructuredGrid<Kokkos::HostSpace> grid(nx, nband, band_clon, band_clat, axis::topology::CoordinateSystem::SphericalDeg);
+    grid.set_corners(std::move(corner_lon), std::move(corner_lat));
+    return grid.to_unstructured();
+}
+
+namespace {
+
+bool coordinate_at(const std::vector<double>& values, int nx, int ny, int i, int j, bool longitude, double& value) {
+    const size_t ncell = static_cast<size_t>(nx) * ny;
+    if (values.size() == ncell) {
+        value = values[static_cast<size_t>(j) * nx + i];
+        return true;
+    }
+    if (longitude && values.size() == static_cast<size_t>(nx)) {
+        value = values[i];
+        return true;
+    }
+    if (!longitude && values.size() == static_cast<size_t>(ny)) {
+        value = values[j];
+        return true;
+    }
+    return false;
+}
+
+bool coordinates_equal(double source, double target, bool longitude, double tolerance) {
+    if (!std::isfinite(source) || !std::isfinite(target)) {
+        return false;
+    }
+    double difference = source - target;
+    if (longitude) {
+        difference = std::fmod(difference, 360.0);
+        if (difference > 180.0) {
+            difference -= 360.0;
+        } else if (difference < -180.0) {
+            difference += 360.0;
+        }
+    }
+    return std::abs(difference) <= tolerance;
+}
+
+}  // namespace
+
+bool same_spherical_grid_coordinates(int nx, int ny, const std::vector<double>& source_lons, const std::vector<double>& source_lats,
+                                     const std::vector<double>& target_lons, const std::vector<double>& target_lats, double tolerance) {
+    if (nx <= 0 || ny <= 0 || tolerance < 0.0) {
+        return false;
+    }
+
+    for (int j = 0; j < ny; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            double source_lon = 0.0;
+            double source_lat = 0.0;
+            double target_lon = 0.0;
+            double target_lat = 0.0;
+            if (!coordinate_at(source_lons, nx, ny, i, j, true, source_lon) || !coordinate_at(source_lats, nx, ny, i, j, false, source_lat) ||
+                !coordinate_at(target_lons, nx, ny, i, j, true, target_lon) || !coordinate_at(target_lats, nx, ny, i, j, false, target_lat) ||
+                !coordinates_equal(source_lon, target_lon, true, tolerance) || !coordinates_equal(source_lat, target_lat, false, tolerance)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const std::vector<double>& target_lons,
@@ -401,18 +861,30 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
                     }
 
                     if (slice_len > 0) {
-                        out.resize(slice_len);
-                        bool is_float = (size == static_cast<size_t>(len) * 4);
-                        for (int i = 0; i < slice_len; ++i) {
-                            double val = is_float ? static_cast<double>(static_cast<const float*>(data)[i]) : static_cast<const double*>(data)[i];
-                            if (wrap_lon) {
-                                if (val >= 180.0) {
-                                    val -= 360.0;
-                                } else if (val < -180.0) {
-                                    val += 360.0;
+                        amio_dtype_t dtype = AMIO_DTYPE_F64;
+                        const std::size_t elem_size =
+                            (amio_view_dtype(view, &dtype) == AMIO_OK) ? cece::detail::amio_dtype_size(dtype) : static_cast<std::size_t>(0);
+                        double scale = 1.0;
+                        double offset = 0.0;
+                        double attr = 0.0;
+                        if (amio_get_var_attribute_double(read_dataset, name.c_str(), "scale_factor", &attr) == AMIO_OK) scale = attr;
+                        if (amio_get_var_attribute_double(read_dataset, name.c_str(), "add_offset", &attr) == AMIO_OK) offset = attr;
+
+                        std::vector<double> widened;
+                        if (elem_size > 0 && size >= static_cast<std::size_t>(slice_len) * elem_size &&
+                            cece::detail::widen_amio_elements(data, dtype, static_cast<std::size_t>(slice_len), scale, offset, widened)) {
+                            out.resize(slice_len);
+                            for (int i = 0; i < slice_len; ++i) {
+                                double val = widened[i];
+                                if (wrap_lon) {
+                                    if (val >= 180.0) {
+                                        val -= 360.0;
+                                    } else if (val < -180.0) {
+                                        val += 360.0;
+                                    }
                                 }
+                                out[i] = val;
                             }
-                            out[i] = val;
                         }
                     }
                 }
@@ -446,9 +918,11 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
     read_coord(kLatNames, src_lats, lat_nx, lat_ny, false);
 
     if (src_lons.empty() || src_lats.empty()) {
-        std::cerr << "[DRIVER ERROR] build_regrid_plan: could not read source coordinates. Tried longitude names {"
-                  << "lon, longitude, x, geolon, grid_xt, grid_lont, lon_rho, nav_lon, lonCell, mesh_node_x, ...} and matching "
-                  << "latitude names. src_lons=" << src_lons.size() << ", src_lats=" << src_lats.size() << std::endl;
+        CECE_LOG_ERROR(
+            "[DRIVER ERROR] build_regrid_plan: could not read source coordinates. Tried longitude names {"
+            "lon, longitude, x, geolon, grid_xt, grid_lont, lon_rho, nav_lon, lonCell, mesh_node_x, ...} and matching "
+            "latitude names. src_lons=" +
+            std::to_string(src_lons.size()) + ", src_lats=" + std::to_string(src_lats.size()));
         return false;
     }
 
@@ -476,27 +950,69 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
         plan.file_ny = lat_nx;
     }
 
+    return build_regrid_plan_from_coordinates(plan.file_nx, plan.file_ny, src_lons, src_lats, nx, ny, target_lons, target_lats, map_algo, j0, j1,
+                                              gridspec_file, plan);
+}
+
+bool build_regrid_plan_from_coordinates(int source_nx, int source_ny, const std::vector<double>& src_lons, const std::vector<double>& src_lats,
+                                        int nx, int ny, const std::vector<double>& target_lons, const std::vector<double>& target_lats,
+                                        const std::string& map_algo, int j0, int j1, const std::string& gridspec_file, RegridPlan& plan) {
+    auto valid_grid = [](int width, int height, const std::vector<double>& lons, const std::vector<double>& lats) {
+        if (width <= 0 || height <= 0) return false;
+        const auto total = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+        if ((lons.size() != static_cast<std::size_t>(width) && lons.size() != total) ||
+            (lats.size() != static_cast<std::size_t>(height) && lats.size() != total))
+            return false;
+        if (width > 1 && height > 1 && ((lons.size() == total) != (lats.size() == total))) return false;
+        auto finite = [](double value) { return std::isfinite(value); };
+        return std::all_of(lons.begin(), lons.end(), finite) && std::all_of(lats.begin(), lats.end(), finite);
+    };
+    if (!valid_grid(source_nx, source_ny, src_lons, src_lats) || !valid_grid(nx, ny, target_lons, target_lats) || j0 < 0 || j1 < j0 || j1 > ny ||
+        (map_algo != "passthrough" && source_ny == 1 && source_nx > 1 && src_lats.size() == 1)) {
+        throw std::invalid_argument("Invalid regrid coordinates, dimensions, or target row bounds");
+    }
+    plan.file_nx = source_nx;
+    plan.file_ny = source_ny;
+    plan.identity = false;
+    plan.built = false;
+    plan.src_j0 = 0;
+    plan.src_rows = 0;
+
     {
         double min_lon = *std::min_element(src_lons.begin(), src_lons.end());
         double max_lon = *std::max_element(src_lons.begin(), src_lons.end());
         double min_lat = *std::min_element(src_lats.begin(), src_lats.end());
         double max_lat = *std::max_element(src_lats.begin(), src_lats.end());
-        std::cout << "[DRIVER DEBUG] AMIO retrieved source coordinates successfully! "
-                  << "file_nx=" << plan.file_nx << ", file_ny=" << plan.file_ny << ", "
-                  << "lon_range=[" << min_lon << ", " << max_lon << "], "
-                  << "lat_range=[" << min_lat << ", " << max_lat << "]" << std::endl;
-    }
-
-    if (map_algo == "passthrough") {
-        if (nx != plan.file_nx || ny != plan.file_ny) {
-            std::cerr << "[DRIVER ERROR] passthrough regridding requested but grid dimensions do not match! "
-                      << "Source grid: " << plan.file_nx << "x" << plan.file_ny << ", Target grid: " << nx << "x" << ny << std::endl;
-            throw std::runtime_error("passthrough regridding dimension mismatch");
-        }
+        CECE_LOG_DEBUG("[DRIVER DEBUG] AMIO retrieved source coordinates successfully! file_nx=" + std::to_string(plan.file_nx) +
+                       ", file_ny=" + std::to_string(plan.file_ny) + ", lon_range=[" + std::to_string(min_lon) + ", " + std::to_string(max_lon) +
+                       "], lat_range=[" + std::to_string(min_lat) + ", " + std::to_string(max_lat) + "]");
     }
 
     plan.j0 = j0;
     plan.j1 = j1;
+
+    if (map_algo == "passthrough") {
+        if (nx != plan.file_nx || ny != plan.file_ny) {
+            CECE_LOG_ERROR(
+                "[DRIVER ERROR] passthrough regridding requested but grid dimensions do not match! Source grid: " + std::to_string(plan.file_nx) +
+                "x" + std::to_string(plan.file_ny) + ", Target grid: " + std::to_string(nx) + "x" + std::to_string(ny));
+            throw std::runtime_error("passthrough regridding dimension mismatch");
+        }
+        if (!same_spherical_grid_coordinates(nx, ny, src_lons, src_lats, target_lons, target_lats)) {
+            throw std::runtime_error("passthrough regridding coordinate mismatch");
+        }
+
+        plan.identity = true;
+        plan.built = true;
+        // Identity apply reads source rows [j0, j1) directly (source grid ==
+        // target grid), so the exact window is the band itself.
+        plan.src_j0 = j0;
+        plan.src_rows = j1 - j0;
+        CECE_LOG_INFO(
+            "[DRIVER] passthrough verified identical source and target coordinates; "
+            "skipping AXIS regridding");
+        return true;
+    }
 
     const int nband = j1 - j0;
     if (nband <= 0) {
@@ -506,12 +1022,14 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
     }
 
     // A. Build the (global) source mesh and the rank-local destination sub-mesh.
-    auto src_mesh = build_axis_mesh(plan.file_nx, plan.file_ny, src_lons, src_lats);
+    auto src_mesh = build_axis_mesh(plan.file_nx, plan.file_ny, 0, src_lons, src_lats);
+
+    const bool curvilinear_target = (target_lons.size() == static_cast<size_t>(nx) * ny && ny > 1);
 
     std::vector<double> band_lons;
     std::vector<double> band_lats;
 
-    if (target_lons.size() == static_cast<size_t>(nx) * ny && ny > 1) {
+    if (curvilinear_target) {
         // Curvilinear coordinate arrays: slice [j0 * nx, j1 * nx] for both axes
         band_lons.assign(target_lons.begin() + static_cast<size_t>(j0) * nx, target_lons.begin() + static_cast<size_t>(j1) * nx);
         band_lats.assign(target_lats.begin() + static_cast<size_t>(j0) * nx, target_lats.begin() + static_cast<size_t>(j1) * nx);
@@ -528,23 +1046,54 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
     double src_max_lon = *std::max_element(src_lons.begin(), src_lons.end());
     bool use_360_range = (src_max_lon > 180.0 && src_min_lon >= -1e-5);
 
-    if (use_360_range) {
-        for (auto& lon : band_lons) {
-            if (lon < 0.0)
-                lon += 360.0;
-            else if (lon >= 360.0)
-                lon -= 360.0;
+    // The bounds differ because these source-grid conventions have distinct ranges.
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    auto normalize_lons = [&](std::vector<double>& lons) {
+        if (use_360_range) {
+            for (auto& lon : lons) {
+                if (lon < 0.0)
+                    lon += 360.0;
+                else if (lon >= 360.0)
+                    lon -= 360.0;
+            }
+        } else {
+            for (auto& lon : lons) {
+                if (lon >= 180.0)
+                    lon -= 360.0;
+                else if (lon < -180.0)
+                    lon += 360.0;
+            }
         }
+    };
+
+    // Build the rank-local destination sub-mesh. For a rectilinear target the
+    // band's outer latitude edges MUST be the true GLOBAL cell edges (midpoint
+    // to the neighbour row owned by an adjacent rank), not the one-sided
+    // extrapolation StructuredGrid::synthesize_corners would derive from the
+    // band-local center slice. On a non-uniform latitude grid those differ, and
+    // the extrapolated edge changes the conservative overlap areas of the band's
+    // first/last rows, breaking band==global equivalence and conservation at the
+    // seam (uniform grids are unaffected because the extrapolation coincides).
+    // Both build_band_mesh_*_with_global_corners derive every corner from the
+    // FULL global target coordinate arrays via the shared AXIS kernel
+    // (axis::topology::synthesize_band_corners) and pin them via set_corners, so
+    // the band regrid matches the corresponding rows of the global regrid exactly
+    // — for rectilinear AND curvilinear grids. A gridspec/file target supplies its
+    // own explicit corners and keeps the prior path.
+    std::vector<double> full_center_lon;  // normalized full global centers (curvilinear only)
+    if (curvilinear_target) {
+        full_center_lon = target_lons;
+        normalize_lons(full_center_lon);
+        band_lons.assign(full_center_lon.begin() + static_cast<size_t>(j0) * nx, full_center_lon.begin() + static_cast<size_t>(j1) * nx);
     } else {
-        for (auto& lon : band_lons) {
-            if (lon >= 180.0)
-                lon -= 360.0;
-            else if (lon < -180.0)
-                lon += 360.0;
-        }
+        normalize_lons(band_lons);
     }
 
-    auto dst_mesh = build_axis_mesh(nx, nband, band_lons, band_lats, gridspec_file);
+    axis::topology::UnstructuredMesh<Kokkos::HostSpace> dst_mesh =
+        gridspec_file.empty()
+            ? (curvilinear_target ? build_band_mesh_curvilinear_with_global_corners(nx, j0, j1, full_center_lon, target_lats, band_lons, band_lats)
+                                  : build_band_mesh_with_global_corners(nx, j0, j1, band_lons, target_lats))
+            : build_axis_mesh(nx, nband, j0, band_lons, band_lats, gridspec_file);
 
     // B. Configure weight generation method.
     axis::solver::RegridConfig regrid_cfg;
@@ -566,6 +1115,38 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
     // C. Generate the sparse weight matrix once and convert to CSR for fast apply.
     plan.matrix = axis::solver::WeightGenerator::generate<Kokkos::HostSpace>(src_mesh, dst_mesh, regrid_cfg);
     plan.matrix.to_csr();
+
+    // Source-row window (band-scoped reads): the exact latitude rows of the
+    // SOURCE grid this rank's weight matrix references, derived from the COO
+    // column range (still valid after to_csr). read_slab uses it to fetch
+    // rows [src_j0, src_j0+src_rows) instead of the full record: under MPI
+    // every rank otherwise pulls the whole global field from disk and
+    // discards all but its band (~nranks x replicated IO). Exact for any
+    // mapalgo because it is computed from the actual nonzeros, not guessed
+    // from the destination band. Left at src_rows == 0 ("no window") when the
+    // matrix is empty or geometry is unexpected; callers then read full records.
+    const std::size_t plan_nnz = plan.matrix.nnz();
+    if (plan_nnz > 0 && plan.file_nx > 0 && plan.file_ny > 0) {
+        const axis::index_t* cols = plan.matrix.factor_col().data_handle();
+        axis::index_t min_col = cols[0];
+        axis::index_t max_col = cols[0];
+        for (std::size_t k = 1; k < plan_nnz; ++k) {
+            if (cols[k] < min_col) min_col = cols[k];
+            if (cols[k] > max_col) max_col = cols[k];
+        }
+        const int r0 = static_cast<int>(min_col) / plan.file_nx;
+        const int r1 = static_cast<int>(max_col) / plan.file_nx;
+        if (r0 >= 0 && r1 < plan.file_ny) {
+            plan.src_j0 = r0;
+            plan.src_rows = r1 - r0 + 1;
+        }
+    }
+    if (plan.src_rows > 0) {
+        CECE_LOG_INFO("[DRIVER] band-scoped read window: source rows [" + std::to_string(plan.src_j0) + "," +
+                      std::to_string(plan.src_j0 + plan.src_rows) + ") of " + std::to_string(plan.file_ny) + " (dst band [" + std::to_string(j0) +
+                      "," + std::to_string(j1) + "))");
+    }
+
     plan.built = true;
     return true;
 }
@@ -578,32 +1159,51 @@ bool apply_regrid_plan(const RegridPlan& plan, size_t time_offset, bool is_float
         return true;  // No rows on this rank.
     }
 
-    // D. Prepare the (global) source field view [file_nx * file_ny].
-    Kokkos::View<double*, Kokkos::HostSpace> src_field("src_field", static_cast<size_t>(file_nx) * file_ny);
-    const float* float_data = static_cast<const float*>(view_data);
-    const double* double_data = static_cast<const double*>(view_data);
-    for (int j = 0; j < file_ny; ++j) {
-        for (int i = 0; i < file_nx; ++i) {
-            size_t src_idx = time_offset + static_cast<size_t>(j) * file_nx + i;
-            src_field(static_cast<size_t>(j) * file_nx + i) = is_float ? static_cast<double>(float_data[src_idx]) : double_data[src_idx];
+    if (plan.identity) {
+        if (file_nx != plan.file_nx || file_ny != plan.file_ny || nx != file_nx || plan.j0 < 0 || plan.j1 > file_ny) {
+            CECE_LOG_ERROR("[DRIVER ERROR] identity-plan field dimensions do not match the verified source grid");
+            return false;
         }
+        const float* float_data = static_cast<const float*>(view_data);
+        const double* double_data = static_cast<const double*>(view_data);
+        for (int local_j = 0; local_j < nband; ++local_j) {
+            const int source_j = plan.j0 + local_j;
+            for (int i = 0; i < nx; ++i) {
+                const size_t source_index = time_offset + static_cast<size_t>(source_j) * file_nx + i;
+                const size_t destination_index = static_cast<size_t>(local_j) * nx + i;
+                local_dst[destination_index] = is_float ? static_cast<double>(float_data[source_index]) : double_data[source_index];
+            }
+        }
+        return true;
     }
 
-    // E. Apply cached weights to produce the rank-local destination band [nx * nband].
-    Kokkos::View<double*, Kokkos::HostSpace> dst_field("dst_field", static_cast<size_t>(nx) * nband);
-    axis::field_view<const double, 1> src_view(src_field.data(), static_cast<size_t>(file_nx) * file_ny);
-    axis::field_view<double, 1> dst_view(dst_field.data(), static_cast<size_t>(nx) * nband);
+    // D. Prepare the (global) source field view [file_nx * file_ny].
+    // For double input the file buffer is already a contiguous double array;
+    // wrap it directly (offset by time_offset). For float input we must
+    // materialize a widened double buffer.
+    const size_t src_len = static_cast<size_t>(file_nx) * file_ny;
+    Kokkos::View<double*, Kokkos::HostSpace> src_field;  // only allocated for the float-widening case
+    axis::field_view<const double, 1> src_view;
+    if (is_float) {
+        const float* float_data = static_cast<const float*>(view_data);
+        src_field = Kokkos::View<double*, Kokkos::HostSpace>("src_field", src_len);
+        for (int j = 0; j < file_ny; ++j) {
+            for (int i = 0; i < file_nx; ++i) {
+                size_t src_idx = time_offset + static_cast<size_t>(j) * file_nx + i;
+                src_field(static_cast<size_t>(j) * file_nx + i) = static_cast<double>(float_data[src_idx]);
+            }
+        }
+        src_view = axis::field_view<const double, 1>(src_field.data(), src_len);
+    } else {
+        const double* double_data = static_cast<const double*>(view_data);
+        src_view = axis::field_view<const double, 1>(double_data + time_offset, src_len);
+    }
+
+    // E. Apply cached weights directly into local_dst [nx * nband]; apply
+    // overwrites the destination, so no separate staging buffer is needed.
+    axis::field_view<double, 1> dst_view(local_dst.data(), static_cast<size_t>(nx) * nband);
     axis::solver::apply(plan.matrix, src_view, dst_view);
 
-    double src_sum = 0.0;
-    for (size_t k = 0; k < src_field.extent(0); ++k) src_sum += src_field(k);
-    double dst_sum = 0.0;
-    for (size_t k = 0; k < dst_field.extent(0); ++k) dst_sum += dst_field(k);
-    std::cout << "[DEBUG REGRID] src_sum: " << src_sum << ", dst_sum: " << dst_sum << std::endl;
-
-    for (size_t k = 0; k < static_cast<size_t>(nx) * nband; ++k) {
-        local_dst[k] = dst_field(k);
-    }
     return true;
 }
 

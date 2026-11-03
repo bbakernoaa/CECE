@@ -24,11 +24,36 @@
 #include <Kokkos_Core.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
+#include <stdexcept>
 
+#include "cece/cece_local_time.hpp"
 #include "cece/cece_provenance.hpp"
 
 namespace cece {
+
+namespace {
+
+/// Largest temporal profile the local-time fill supports (24 = diurnal; the
+/// 7-factor weekly and 12-factor seasonal cycles fit inside it).
+constexpr int kMaxLocalProfile = 32;
+
+/**
+ * @brief Per-layer local-time factor pack, captured by value into the fill kernel.
+ * @details Declared at namespace scope (not function scope) so it remains a valid
+ *          device lambda capture across Kokkos backends. Trivially copyable.
+ */
+struct LocalTimeLayerFactors {
+    Kokkos::Array<double, kMaxLocalProfile> diurnal;
+    Kokkos::Array<double, kMaxLocalProfile> weekly;
+    Kokkos::Array<double, kMaxLocalProfile> seasonal;
+    int has_diurnal = 0;
+    int has_weekly = 0;
+    int has_seasonal = 0;
+};
+
+}  // namespace
 
 /**
  * @brief Constructs the StackingEngine and performs initial configuration compilation.
@@ -52,12 +77,23 @@ void StackingEngine::PreCompile() {
         spec.name = species;
         spec.export_name = species;
 
+        // Sort a copy of the raw layers by category first, then hierarchy
+        // This ensures contiguous evaluation of categories in the device kernel.
+        auto sorted_layers = layers;
+        std::stable_sort(sorted_layers.begin(), sorted_layers.end(), [](const auto& a, const auto& b) {
+            if (a.category != b.category) {
+                return a.category < b.category;
+            }
+            return a.hierarchy < b.hierarchy;
+        });
+
         std::vector<LayerContribution> contributions;
 
-        for (auto const& layer : layers) {
+        for (auto const& layer : sorted_layers) {
             spec.layers.push_back({layer.field_name, layer.operation, layer.scale, layer.hierarchy, layer.masks, layer.scale_fields,
                                    layer.diurnal_cycle, layer.weekly_cycle, layer.seasonal_cycle, layer.vdist_method, layer.vdist_layer_start,
-                                   layer.vdist_layer_end, layer.vdist_p_start, layer.vdist_p_end, layer.vdist_h_start, layer.vdist_h_end});
+                                   layer.vdist_layer_end, layer.vdist_p_start, layer.vdist_p_end, layer.vdist_h_start, layer.vdist_h_end,
+                                   /*category_id=*/0, layer.use_local_time});
 
             LayerContribution contrib;
             contrib.field_name = layer.field_name;
@@ -73,13 +109,24 @@ void StackingEngine::PreCompile() {
             contributions.push_back(std::move(contrib));
         }
 
-        std::sort(spec.layers.begin(), spec.layers.end(), [](const CompiledLayer& a, const CompiledLayer& b) { return a.hierarchy < b.hierarchy; });
-        // Keep contributions in the same sorted order
-        std::sort(contributions.begin(), contributions.end(),
-                  [](const LayerContribution& a, const LayerContribution& b) { return a.hierarchy < b.hierarchy; });
-
         spec.device_layers = Kokkos::View<DeviceLayer*, Kokkos::DefaultExecutionSpace>("device_layers_" + species, spec.layers.size());
         spec.host_layers = Kokkos::create_mirror_view(spec.device_layers);
+
+        // Map contiguous string categories into unique integer IDs for the device
+        int current_cat_id = 0;
+        std::string current_cat = "";
+        if (!sorted_layers.empty()) {
+            current_cat = sorted_layers[0].category;
+        }
+
+        for (size_t i = 0; i < sorted_layers.size(); ++i) {
+            if (sorted_layers[i].category != current_cat) {
+                current_cat = sorted_layers[i].category;
+                current_cat_id++;
+            }
+            // record the integer id in the compiled-layer metadata, not directly into the host mirror
+            spec.layers[i].category_id = current_cat_id;
+        }
 
         m_compiled.push_back(std::move(spec));
         m_provenance_tracker.RegisterSpecies(species, std::move(contributions));
@@ -96,12 +143,18 @@ void StackingEngine::PreCompile() {
  * @param ny Y dimension.
  * @param nz Z dimension.
  */
-void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, int nx, int ny, int nz) const {
+void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, int nx, int ny, int nz, const LocalTimeService* local_time) const {
     if (spec.fields_bound) {
         return;
     }
 
     spec.export_field = resolver.ResolveExportDevice(spec.export_name, nx, ny, nz);
+
+    // One engine-owned band-local (nx, ny, 1) factor field per
+    // opted-in layer, registered as an extra scale slot so the fused kernel
+    // multiplies it in unchanged (extent(2)==1 => read at (i,j,0)). The engine
+    // owns this memory so the unmanaged handle stays valid for the kernel life.
+    spec.local_factor_fields.clear();
 
     // Bind vertical coordinate fields if configured
     if (m_config.vertical_config.type != VerticalCoordType::NONE) {
@@ -151,6 +204,29 @@ void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, 
                 dev.masks[dev.num_masks++] = m_view;
             }
         }
+
+        // Register the per-cell local-time factor field for this
+        // layer. Allocate lazily (index == current count) so the storage order
+        // matches the layer order; the value is filled each step in
+        // UpdateTemporalScales. A missing slot is a hard error, never a silent
+        // drop (never mask a real offset).
+        if (layer.use_local_time && local_time != nullptr && !local_time->UtcFallback()) {
+            while (spec.local_factor_fields.size() <= i) {
+                spec.local_factor_fields.emplace_back();  // null placeholder for non-opted layers
+            }
+            spec.local_factor_fields[i] = Kokkos::View<double***, Kokkos::LayoutLeft>("local_factor", nx, ny, 1);
+            if (dev.num_scales >= DeviceLayer::MAX_SCALES) {
+                throw std::runtime_error("StackingEngine: layer '" + layer.field_name + "' has " + std::to_string(dev.num_scales) +
+                                         " scale fields; no slot left for the local-time factor (MAX_SCALES=" +
+                                         std::to_string(DeviceLayer::MAX_SCALES) + "). Reduce scale_fields or disable use_local_time.");
+            }
+            dev.scales[dev.num_scales++] =
+                Kokkos::View<const double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>(
+                    spec.local_factor_fields[i]);
+        }
+
+        // Ensure the category id is set on the host mirror at bind time
+        dev.category_id = spec.layers[i].category_id;
     }
     spec.fields_bound = true;
 }
@@ -162,10 +238,22 @@ void StackingEngine::BindFields(CompiledSpecies& spec, FieldResolver& resolver, 
  * @param hour Current hour.
  * @param day_of_week Current day of week.
  */
-void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int day_of_week, int month) {
+void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int day_of_week, int month, const LocalTimeService* local_time,
+                                          std::int64_t utc_epoch_secs) {
+    const bool use_local = (local_time != nullptr) && !local_time->UtcFallback();
+
     for (size_t i = 0; i < spec.layers.size(); ++i) {
         const auto& layer = spec.layers[i];
         DeviceLayer& dev = spec.host_layers(i);
+
+        // An opted-in layer with a live service evaluates its
+        // temporal cycles per-cell (below); the scalar path is skipped so the
+        // base scale alone carries the magnitude and the factor field carries
+        // the per-cell diurnal/weekly/seasonal product.
+        if (use_local && layer.use_local_time) {
+            dev.scale = layer.base_scale;
+            continue;
+        }
 
         double scale = layer.base_scale;
 
@@ -210,7 +298,98 @@ void StackingEngine::UpdateTemporalScales(CompiledSpecies& spec, int hour, int d
 
         dev.scale = scale;
     }
+
+    if (use_local) {
+        FillLocalTimeFactors(spec, local_time, utc_epoch_secs);
+    }
+
     Kokkos::deep_copy(spec.device_layers, spec.host_layers);
+}
+
+/**
+ * @brief Fill the per-cell local-time factor fields.
+ *
+ * For every layer that opted in (use_local_time) and has a registered factor
+ * field, evaluate the product of the layer's named temporal cycles at each
+ * cell's LOCAL time and write it into the engine-owned (nx, ny, 1) field. The
+ * fused stacking kernel already multiplies every registered scale field, so no
+ * kernel change is needed here.
+ *
+ * All arithmetic is integer-only and device-safe: the 24/7/12 factor arrays
+ * are copied into Kokkos::Array values captured by the lambda, and the local
+ * hour/day-of-week/month come from the service's device-callable accessors.
+ */
+void StackingEngine::FillLocalTimeFactors(CompiledSpecies& spec, const LocalTimeService* local_time, std::int64_t utc_epoch_secs) {
+    // Resolve the host-side factor arrays for each opted-in layer BEFORE the
+    // kernel (map lookups are host-only), then capture plain arrays by value.
+    std::vector<LocalTimeLayerFactors> host_factors(spec.layers.size());
+    const auto lookup = [&](const std::string& name, int expected) -> const std::vector<double>* {
+        if (name.empty()) {
+            return nullptr;
+        }
+        auto it_p = m_config.temporal_profiles.find(name);
+        if (it_p != m_config.temporal_profiles.end() && it_p->second.factors.size() == static_cast<size_t>(expected)) {
+            return &it_p->second.factors;
+        }
+        auto it_c = m_config.temporal_cycles.find(name);
+        if (it_c != m_config.temporal_cycles.end() && it_c->second.factors.size() == static_cast<size_t>(expected)) {
+            return &it_c->second.factors;
+        }
+        return nullptr;
+    };
+    for (size_t i = 0; i < spec.layers.size(); ++i) {
+        const auto& layer = spec.layers[i];
+        if (!layer.use_local_time || i >= spec.local_factor_fields.size() || spec.local_factor_fields[i].data() == nullptr) {
+            continue;
+        }
+        auto copy_into = [](Kokkos::Array<double, kMaxLocalProfile>& dst, const std::vector<double>* src) {
+            for (size_t k = 0; k < src->size() && k < static_cast<size_t>(kMaxLocalProfile); ++k) {
+                dst[k] = (*src)[k];
+            }
+        };
+        if (const auto* f = lookup(layer.diurnal_cycle, 24)) {
+            copy_into(host_factors[i].diurnal, f);
+            host_factors[i].has_diurnal = 1;
+        }
+        if (const auto* f = lookup(layer.weekly_cycle, 7)) {
+            copy_into(host_factors[i].weekly, f);
+            host_factors[i].has_weekly = 1;
+        }
+        if (const auto* f = lookup(layer.seasonal_cycle, 12)) {
+            copy_into(host_factors[i].seasonal, f);
+            host_factors[i].has_seasonal = 1;
+        }
+    }
+
+    auto offsets = local_time->Offsets();
+    const std::int64_t epoch = utc_epoch_secs;
+
+    for (size_t i = 0; i < spec.layers.size(); ++i) {
+        const auto& layer = spec.layers[i];
+        if (!layer.use_local_time || i >= spec.local_factor_fields.size() || spec.local_factor_fields[i].data() == nullptr) {
+            continue;
+        }
+        auto factor = spec.local_factor_fields[i];
+        const LocalTimeLayerFactors lf = host_factors[i];  // captured by value (trivially copyable)
+        Kokkos::parallel_for(
+            "StackingEngine_LocalTimeFactor",
+            Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {static_cast<int>(factor.extent(0)), static_cast<int>(factor.extent(1))}),
+            KOKKOS_LAMBDA(int ii, int jj) {
+                const std::int32_t off = offsets(ii, jj);
+                double f = 1.0;
+                if (lf.has_diurnal) {
+                    f *= lf.diurnal[LocalHourFromSecs(epoch + off)];
+                }
+                if (lf.has_weekly) {
+                    f *= lf.weekly[LocalDayOfWeekFromSecs(epoch + off)];
+                }
+                if (lf.has_seasonal) {
+                    f *= lf.seasonal[LocalMonthFromSecs(epoch + off)];
+                }
+                factor(ii, jj, 0) = f;
+            });
+    }
+    Kokkos::fence();
 }
 
 void StackingEngine::ResetBindings() {
@@ -240,8 +419,16 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
     spec.name = species_name;
     spec.export_name = species_name;
 
+    auto sorted_layers = it->second;
+    std::sort(sorted_layers.begin(), sorted_layers.end(), [](const auto& a, const auto& b) {
+        if (a.category != b.category) {
+            return a.category < b.category;
+        }
+        return a.hierarchy < b.hierarchy;
+    });
+
     std::vector<LayerContribution> contributions;
-    for (const auto& layer : it->second) {
+    for (const auto& layer : sorted_layers) {
         spec.layers.push_back({layer.field_name, layer.operation, layer.scale, layer.hierarchy, layer.masks, layer.scale_fields, layer.diurnal_cycle,
                                layer.weekly_cycle, layer.seasonal_cycle, layer.vdist_method, layer.vdist_layer_start, layer.vdist_layer_end,
                                layer.vdist_p_start, layer.vdist_p_end, layer.vdist_h_start, layer.vdist_h_end});
@@ -260,12 +447,23 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
         contributions.push_back(std::move(contrib));
     }
 
-    std::sort(spec.layers.begin(), spec.layers.end(), [](const CompiledLayer& a, const CompiledLayer& b) { return a.hierarchy < b.hierarchy; });
-    std::sort(contributions.begin(), contributions.end(),
-              [](const LayerContribution& a, const LayerContribution& b) { return a.hierarchy < b.hierarchy; });
-
     spec.device_layers = Kokkos::View<DeviceLayer*, Kokkos::DefaultExecutionSpace>("device_layers_" + species_name, spec.layers.size());
     spec.host_layers = Kokkos::create_mirror_view(spec.device_layers);
+
+    int current_cat_id = 0;
+    std::string current_cat = "";
+    if (!sorted_layers.empty()) {
+        current_cat = sorted_layers[0].category;
+    }
+
+    for (size_t i = 0; i < sorted_layers.size(); ++i) {
+        if (sorted_layers[i].category != current_cat) {
+            current_cat = sorted_layers[i].category;
+            current_cat_id++;
+        }
+        // record the integer id on the compiled layer
+        spec.layers[i].category_id = current_cat_id;
+    }
 
     m_compiled.push_back(std::move(spec));
     m_provenance_tracker.RegisterSpecies(species_name, std::move(contributions));
@@ -275,21 +473,24 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
  * @brief Executes the emission stacking using fused Kokkos kernels.
  * @details Iterates through all species, binds their fields, and dispatches
  * a single fused kernel per species to accumulate or replace emissions based
- * on the pre-compiled hierarchy.
+ * on the pre-compiled hierarchy. Sub-accumulation happens per category.
  *
  * **Optimization Strategy:**
  * - **Pre-computed Temporal Scales**: All temporal scale factors (diurnal, weekly, seasonal)
  *   are computed on the host in UpdateTemporalScales() and transferred to device via deep_copy.
  *   This avoids redundant calculations inside the kernel.
+ * - **Integer Category Mapping**: Expensive string-based categories are converted to contiguous
+ *   integer IDs during the host pre-compilation step. The layers are sorted so the GPU kernel
+ *   only needs to track when this simple integer ID changes to flush category subtotals.
  * - **POD DeviceLayer Structure**: Uses Plain Old Data (POD) structures with Unmanaged Kokkos::View
  *   handles for efficient device transfer. The entire layer metadata is deep_copied once per
  *   timestep, minimizing host-device communication.
  * - **Fused Kernel Design**: Single Kokkos::parallel_for kernel fuses:
- *   - Layer aggregation (loop over layers)
+ *   - Two-level layer aggregation (category subtotaling and grand total accumulation)
  *   - Vertical distribution weight calculation (switch statement for branch prediction)
  *   - Scale factor application (fused multiplication loop)
  *   - Mask application (fused multiplication loop)
- *   - Replace vs add operation handling
+ *   - Category-isolated Replace vs Add operations
  *   This reduces memory bandwidth by eliminating intermediate passes through data.
  * - **Memory Access Patterns**: Uses LayoutLeft for coalesced memory access on GPUs.
  *   Vertical distribution calculations are optimized with switch statements for better
@@ -309,7 +510,7 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
  */
 void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
                              Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace> default_mask, int hour, int day_of_week,
-                             int month, ProvenanceTracker* provenance) {
+                             int month, ProvenanceTracker* provenance, const LocalTimeService* local_time, std::int64_t elapsed_seconds) {
     if (default_mask.data() == nullptr) {
         default_mask = Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace>("default_mask_internal", nx, ny, nz);
         Kokkos::deep_copy(default_mask, 1.0);
@@ -319,15 +520,19 @@ void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
         if (spec.layers.empty()) {
             continue;
         }
-        BindFields(spec, resolver, nx, ny, nz);
+        BindFields(spec, resolver, nx, ny, nz, local_time);
 
         if (spec.export_field.data() == nullptr) {
             continue;
         }
 
-        UpdateTemporalScales(spec, hour, day_of_week, month);
+        const std::int64_t utc_epoch_secs = local_time != nullptr ? local_time->UtcEpochSecs(elapsed_seconds) : 0;
+        UpdateTemporalScales(spec, hour, day_of_week, month, local_time, utc_epoch_secs);
 
-        // Update provenance with effective scales for this timestep
+        // Update provenance with effective scales for this timestep.
+        // For opted-in layers this records the layer's scalar base
+        // scale only — the diurnal/weekly/seasonal product is per-cell (local
+        // time) and has no scalar representation. Provenance stays in UTC.
         {
             std::vector<double> eff_scales(spec.layers.size());
             for (size_t li = 0; li < spec.layers.size(); ++li) {
@@ -354,13 +559,24 @@ void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
 
         Kokkos::parallel_for(
             "StackingEngine_FusedSpeciesKernel", Kokkos::MDRangePolicy<Kokkos::Rank<3>>({0, 0, 0}, {nx, ny, nz}), KOKKOS_LAMBDA(int i, int j, int k) {
-                double accumulated = 0.0;
+                double total_accumulated = 0.0;
+                double current_category_accumulated = 0.0;
+                int current_category = -1;
 
                 // Iterate over all layers
                 for (int l = 0; l < num_layers; ++l) {
                     const auto& layer = layers(l);
                     if (layer.field.data() == nullptr) {
                         continue;
+                    }
+
+                    // Check if we are moving to a new category block
+                    if (layer.category_id != current_category) {
+                        if (current_category != -1) {
+                            total_accumulated += current_category_accumulated;
+                        }
+                        current_category = layer.category_id;
+                        current_category_accumulated = 0.0;
                     }
 
                     // Determine distribution weight
@@ -525,13 +741,19 @@ void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
                     double contribution = val * combined_scale * combined_mask;
 
                     if (layer.replace_flag > 0.5) {
-                        if (combined_mask > 0.0) accumulated = contribution;
+                        // Only replace within the context of the CURRENT category's total
+                        if (combined_mask > 0.0) current_category_accumulated = current_category_accumulated * (1.0 - combined_mask) + contribution;
                     } else {
-                        accumulated += contribution;
+                        current_category_accumulated += contribution;
                     }
                 }
 
-                total_view(i, j, k) = accumulated;
+                // Add the final category's accumulation to the grand total
+                if (current_category != -1) {
+                    total_accumulated += current_category_accumulated;
+                }
+
+                total_view(i, j, k) = total_accumulated;
             });
     }
     Kokkos::fence();

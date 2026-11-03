@@ -21,55 +21,109 @@ Examples
 
 from __future__ import annotations
 
-from typing import Optional, Union
-
 __version__ = "0.1.0"
 __all__ = [
-    "initialize",
-    "finalize",
-    "is_initialized",
-    "compute",
-    "load_config",
-    "set_execution_space",
-    "get_execution_space",
-    "get_available_execution_spaces",
-    "set_log_level",
-    "get_diagnostics",
-    "reset_diagnostics",
-    "get_last_error",
-    "CeceConfig",
-    "CeceState",
-    "CeceField",
-    "EmissionLayer",
-    "VerticalDistributionConfig",
-    "CeceException",
-    "CeceConfigError",
     "CeceComputationError",
-    "CeceStateError",
+    "CeceConfig",
+    "CeceConfigError",
+    "CeceException",
     "CeceExecutionSpaceError",
+    "CeceField",
+    "CeceState",
+    "CeceStateError",
+    "DataStreamConfig",
+    "DataVariableConfig",
+    "DiagnosticsConfig",
+    "DriverConfig",
+    "EarthAccessStreamBridge",
+    "EarthAccessStreamConfig",
+    "EarthAccessStreamResolver",
+    "EmissionLayer",
+    "Grid",
+    "GridConfig",
+    "LocalTimeConfig",
+    "Model",
+    "NuopcConfig",
+    "NuopcFieldSpec",
+    "OutputConfig",
+    "OutputFieldConfig",
+    "PhysicsSchemeConfig",
+    "VerticalDistributionConfig",
+    "VerticalGridConfig",
+    "compute",
+    "finalize",
+    "get_available_execution_spaces",
+    "get_diagnostics",
+    "get_execution_space",
+    "get_last_error",
+    "initialize",
+    "is_initialized",
+    "load_config",
+    "parse_earthaccess_streams",
+    "reset_diagnostics",
+    "set_execution_space",
+    "set_log_level",
+    "validate_short_name",
+    "validate_short_names",
 ]
 
-from .exceptions import (
-    CeceException,
-    CeceConfigError,
-    CeceComputationError,
-    CeceStateError,
-    CeceExecutionSpaceError,
+# Both historical import paths must share one native type registry. The
+# low-level extension may be partially initialized while it imports exceptions.
+import sys as _sys
+
+import numpy as np
+
+if "_cece_core" in _sys.modules:
+    _cece_core = _sys.modules["_cece_core"]
+    _sys.modules[__name__ + "._cece_core"] = _cece_core
+else:
+    from . import _cece_core
+
+    _sys.modules["_cece_core"] = _cece_core
+from .config import (
+    CeceConfig,
+    DataStreamConfig,
+    DataVariableConfig,
+    DiagnosticsConfig,
+    DriverConfig,
+    EmissionLayer,
+    GridConfig,
+    LocalTimeConfig,
+    NuopcConfig,
+    NuopcFieldSpec,
+    OutputConfig,
+    OutputFieldConfig,
+    PhysicsSchemeConfig,
+    VerticalDistributionConfig,
+    VerticalGridConfig,
+    parse_earthaccess_streams,
 )
-from .config import CeceConfig, EmissionLayer, VerticalDistributionConfig
-from .state import CeceState, CeceField
+from .earthaccess_resolver import (
+    EarthAccessStreamConfig,
+    EarthAccessStreamResolver,
+    validate_short_name,
+    validate_short_names,
+)
+from .exceptions import (
+    CeceComputationError,
+    CeceConfigError,
+    CeceException,
+    CeceExecutionSpaceError,
+    CeceStateError,
+)
+from .grid import Grid
+from .model import Model
+from .state import CeceField, CeceState
+from .stream_bridge import EarthAccessStreamBridge
 from .utils import load_config
 
-# Import the pybind11 C++ bindings module
-from . import _cece_core
-
 # Module-level state
-_cpp_config: Optional[object] = None
+_cpp_config: _cece_core.CeceConfig | None = None
 _initialized: bool = False
-_last_error: Optional[str] = None
+_last_error: str | None = None
 
 
-def initialize(config: Union[str, dict, CeceConfig]) -> None:
+def initialize(config: str | dict | CeceConfig) -> None:
     """
     Initialize CECE with a configuration.
 
@@ -104,8 +158,8 @@ def initialize(config: Union[str, dict, CeceConfig]) -> None:
     if _initialized:
         raise RuntimeError("CECE is already initialized. Call finalize() first.")
 
+    from .utils import _config_file_path
     from .utils import load_config as _load_config
-    from pathlib import Path
 
     # Ensure Kokkos is initialized
     if not _cece_core.is_kokkos_initialized():
@@ -120,11 +174,11 @@ def initialize(config: Union[str, dict, CeceConfig]) -> None:
     # Create C++ CeceConfig via pybind11
     # If config is a file path, use ParseConfig directly
     if isinstance(config, str):
-        path = Path(config)
-        if path.exists() and path.is_file():
+        path = _config_file_path(config)
+        if path is not None:
             try:
                 _cpp_config = _cece_core.ParseConfig(str(path))
-            except Exception as e:
+            except (RuntimeError, ValueError) as e:
                 raise CeceConfigError(f"Failed to parse config file: {e}")
         else:
             # YAML string — serialize to temp file or build config from dict
@@ -136,7 +190,7 @@ def initialize(config: Union[str, dict, CeceConfig]) -> None:
     _last_error = None
 
 
-def _build_cpp_config(config_obj: CeceConfig) -> object:
+def _build_cpp_config(config_obj: CeceConfig) -> _cece_core.CeceConfig:
     """
     Build a C++ CeceConfig from a Python CeceConfig object.
 
@@ -154,38 +208,7 @@ def _build_cpp_config(config_obj: CeceConfig) -> object:
     _cece_core.CeceConfig
         C++ configuration object populated from ``config_obj``.
     """
-    cpp_config = _cece_core.CeceConfig()
-
-    # Add species
-    for species_name, layers in config_obj.species.items():
-        cpp_layers = []
-        for layer in layers:
-            cpp_layer = _cece_core.EmissionLayer()
-            cpp_layer.operation = layer.operation
-            cpp_layer.field_name = layer.field_name
-            cpp_layer.scale = layer.scale
-            cpp_layer.vdist_method = _cece_core.VerticalDistributionMethod.SINGLE
-            if hasattr(layer, "vdist") and layer.vdist:
-                method_map = {
-                    "single": _cece_core.VerticalDistributionMethod.SINGLE,
-                    "range": _cece_core.VerticalDistributionMethod.RANGE,
-                    "pressure": _cece_core.VerticalDistributionMethod.PRESSURE,
-                    "height": _cece_core.VerticalDistributionMethod.HEIGHT,
-                    "pbl": _cece_core.VerticalDistributionMethod.PBL,
-                }
-                cpp_layer.vdist_method = method_map.get(
-                    layer.vdist.method, _cece_core.VerticalDistributionMethod.SINGLE
-                )
-                cpp_layer.vdist_layer_start = layer.vdist.layer_start
-                cpp_layer.vdist_layer_end = layer.vdist.layer_end
-                cpp_layer.vdist_p_start = layer.vdist.p_start
-                cpp_layer.vdist_p_end = layer.vdist.p_end
-                cpp_layer.vdist_h_start = layer.vdist.h_start
-                cpp_layer.vdist_h_end = layer.vdist.h_end
-            cpp_layers.append(cpp_layer)
-        _cece_core.AddSpecies(cpp_config, species_name, cpp_layers)
-
-    return cpp_config
+    return _cece_core.ParseConfigText(config_obj.to_yaml())
 
 
 def finalize() -> None:
@@ -228,7 +251,7 @@ def is_initialized() -> bool:
 
 def compute(
     state: CeceState,
-    config: Optional[Union[str, dict, CeceConfig]] = None,
+    config: str | dict | CeceConfig | None = None,
     hour: int = 0,
     day_of_week: int = 0,
     month: int = 0,
@@ -236,7 +259,8 @@ def compute(
     """
     Execute CECE emission computation.
 
-    Runs the CECE stacking engine and physics schemes on the provided state.
+    Runs the CECE stacking engine on the provided state. For physics execution,
+    use Model; this legacy entry point does not run the scheme lifecycle.
     The GIL is released automatically during the C++ computation, allowing
     other Python threads to run concurrently.
 
@@ -274,11 +298,8 @@ def compute(
     >>> cece.compute(state, hour=12, month=7)
     >>> co_emis = state.get_export_field("CO_EMIS")
     """
-    global _last_error
     if not _initialized:
         raise RuntimeError("CECE is not initialized. Call initialize() first.")
-
-    import numpy as np
 
     # Validate state
     if not isinstance(state, CeceState):
@@ -339,12 +360,15 @@ def compute(
             month,
         )
     except Exception as e:
+        global _last_error
         _last_error = str(e)
         raise
 
     # Retrieve export fields back into the Python state
     for field_name in export_state.get_field_names():
-        export_array = export_state.get_field(field_name)
+        export_array = np.array(
+            export_state.get_field(field_name), dtype=np.float64, order="F", copy=True
+        )
         state._export_fields[field_name] = CeceField(field_name, export_array)
 
 
@@ -473,10 +497,9 @@ def reset_diagnostics() -> None:
     Currently a no-op as diagnostics are not yet exposed via pybind11.
     """
     # No-op: diagnostics are not yet exposed via pybind11.
-    pass
 
 
-def get_last_error() -> Optional[str]:
+def get_last_error() -> str | None:
     """
     Get the last error message, if any.
 

@@ -3,7 +3,6 @@
  * @brief Tests for driver configuration parsing and validation.
  *
  * Validates:
- *   - ISO8601 datetime parsing (YYYY-MM-DDTHH:MM:SS format)
  *   - Configuration file parsing for driver section
  *   - Default value fallback
  *   - Validation of start_time < end_time
@@ -20,8 +19,10 @@
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 #include "cece/cece_config.hpp"
+#include "cece/cece_driver_facade.hpp"
 
 using namespace cece;
 
@@ -39,70 +40,25 @@ static void DeleteFile(const std::string& path) {
     std::remove(path.c_str());
 }
 
-// ---------------------------------------------------------------------------
-// Tests for ISO8601 Parsing (Task 1.3, 1.4)
-// ---------------------------------------------------------------------------
-
-class ISO8601ParsingTest : public ::testing::Test {
-   protected:
-    // Helper to parse ISO8601 string (mimics Fortran parse_iso8601)
-    static bool ParseISO8601(const std::string& iso_str, int& yy, int& mm, int& dd, int& hh, int& mn, int& ss) {
-        if (iso_str.length() < 19) return false;  // YYYY-MM-DDTHH:MM:SS
-
-        try {
-            yy = std::stoi(iso_str.substr(0, 4));
-            mm = std::stoi(iso_str.substr(5, 2));
-            dd = std::stoi(iso_str.substr(8, 2));
-
-            if (iso_str[10] != 'T') return false;
-
-            hh = std::stoi(iso_str.substr(11, 2));
-            mn = std::stoi(iso_str.substr(14, 2));
-            ss = std::stoi(iso_str.substr(17, 2));
-
-            return true;
-        } catch (...) {
-            return false;
-        }
+static void ExpectConfigInvalidArgument(const std::string& path, const std::string& content, const std::string& expected_message) {
+    WriteConfigFile(path, content);
+    try {
+        (void)ParseConfig(path);
+        FAIL() << "Expected ParseConfig to reject: " << content;
+    } catch (const std::invalid_argument& error) {
+        EXPECT_EQ(error.what(), expected_message);
     }
-};
-
-// Property 1: ISO8601 Parsing Round Trip
-// For any valid ISO8601 datetime string, parsing and reconstructing should produce equivalent
-// datetime
-TEST_F(ISO8601ParsingTest, ValidISO8601Format) {
-    int yy, mm, dd, hh, mn, ss;
-
-    // Test valid format
-    EXPECT_TRUE(ParseISO8601("2020-01-01T00:00:00", yy, mm, dd, hh, mn, ss));
-    EXPECT_EQ(yy, 2020);
-    EXPECT_EQ(mm, 1);
-    EXPECT_EQ(dd, 1);
-    EXPECT_EQ(hh, 0);
-    EXPECT_EQ(mn, 0);
-    EXPECT_EQ(ss, 0);
 }
 
-TEST_F(ISO8601ParsingTest, ValidISO8601FormatWithTime) {
-    int yy, mm, dd, hh, mn, ss;
-
-    // Test with non-zero time
-    EXPECT_TRUE(ParseISO8601("2020-06-15T14:30:45", yy, mm, dd, hh, mn, ss));
-    EXPECT_EQ(yy, 2020);
-    EXPECT_EQ(mm, 6);
-    EXPECT_EQ(dd, 15);
-    EXPECT_EQ(hh, 14);
-    EXPECT_EQ(mn, 30);
-    EXPECT_EQ(ss, 45);
-}
-
-TEST_F(ISO8601ParsingTest, InvalidISO8601Format) {
-    int yy, mm, dd, hh, mn, ss;
-
-    // Test invalid formats
-    EXPECT_FALSE(ParseISO8601("2020-01-01", yy, mm, dd, hh, mn, ss));       // Missing time
-    EXPECT_FALSE(ParseISO8601("20200101T000000", yy, mm, dd, hh, mn, ss));  // No separators
-    EXPECT_FALSE(ParseISO8601("invalid", yy, mm, dd, hh, mn, ss));          // Completely invalid
+static void ExpectFacadeInvalidArgument(const std::string& path, const std::string& content, const std::string& expected_message) {
+    WriteConfigFile(path, content);
+    constexpr double coordinate = 0.0;
+    try {
+        CeceDriverOrchestrator driver(path, 1, 1, 1, &coordinate, 1, &coordinate, 1, MPI_COMM_NULL);
+        FAIL() << "Expected the direct driver facade to reject: " << content;
+    } catch (const std::invalid_argument& error) {
+        EXPECT_EQ(error.what(), expected_message);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +105,83 @@ physics_schemes:
     EXPECT_TRUE(config.driver_config.gridspec_file.empty());
     EXPECT_EQ(config.driver_config.grid.nx, 4);
     EXPECT_EQ(config.driver_config.grid.ny, 4);
+}
+
+TEST_F(DriverConfigurationTest, MapalgoIsNormalizedToLowercase) {
+    WriteConfigFile(test_config_file, R"(
+cece_data:
+  streams:
+    - name: CO
+      file: emissions.nc
+      mapalgo: BILINEAR
+)");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+
+    ASSERT_EQ(config.cece_data.streams.size(), 1);
+    EXPECT_EQ(config.cece_data.streams.front().mapalgo, "bilinear");
+}
+
+TEST_F(DriverConfigurationTest, StreamDefaultsMatchStandaloneDriver) {
+    WriteConfigFile(test_config_file, R"(
+cece_data:
+  streams:
+    - name: CO
+      file: emissions.nc
+      variables: [CO]
+)");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+
+    ASSERT_EQ(config.cece_data.streams.size(), 1);
+    const auto& stream = config.cece_data.streams.front();
+    EXPECT_EQ(stream.mapalgo, "consd");
+    EXPECT_EQ(stream.tintalgo, "nearest");
+    EXPECT_EQ(stream.yearFirst, 0);
+    EXPECT_EQ(stream.yearLast, 0);
+    EXPECT_EQ(stream.yearAlign, 0);
+}
+
+TEST_F(DriverConfigurationTest, MissingOrEmptyVariablesDefaultToStreamName) {
+    for (const std::string& variables : {std::string{}, std::string("      variables:\n"), std::string("      variables: []\n")}) {
+        WriteConfigFile(test_config_file, "cece_data:\n  streams:\n    - name: CO\n      file: emissions.nc\n" + variables);
+
+        const CeceConfig config = ParseConfig(test_config_file);
+        ASSERT_EQ(config.cece_data.streams.size(), 1);
+        ASSERT_EQ(config.cece_data.streams.front().variables.size(), 1);
+        EXPECT_EQ(config.cece_data.streams.front().variables.front().name_in_file, "CO");
+        EXPECT_EQ(config.cece_data.streams.front().variables.front().name_in_model, "CO");
+    }
+}
+
+TEST_F(DriverConfigurationTest, StreamVariableMappingRequiresModelName) {
+    ExpectConfigInvalidArgument(test_config_file,
+                                "cece_data:\n  streams:\n    - name: CO\n      file: emissions.nc\n      variables:\n        - file: CO_FILE\n",
+                                "cece_data.streams[0].variables[0] requires a non-empty 'model'");
+}
+
+TEST_F(DriverConfigurationTest, StreamVariableMappingDefaultsFileNameToModelName) {
+    WriteConfigFile(test_config_file, R"(
+cece_data:
+  streams:
+    - name: CO
+      file: emissions.nc
+      variables:
+        - model: CO_MODEL
+)");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+
+    ASSERT_EQ(config.cece_data.streams.size(), 1);
+    ASSERT_EQ(config.cece_data.streams.front().variables.size(), 1);
+    EXPECT_EQ(config.cece_data.streams.front().variables.front().name_in_file, "CO_MODEL");
+    EXPECT_EQ(config.cece_data.streams.front().variables.front().name_in_model, "CO_MODEL");
+}
+
+TEST_F(DriverConfigurationTest, StreamInterpolationAliasIsRejected) {
+    ExpectConfigInvalidArgument(
+        test_config_file, "cece_data:\n  streams:\n    - name: CO\n      file: emissions.nc\n      variables: [CO]\n      interpolation: linear\n",
+        "cece_data.streams[0]: unknown key 'interpolation'; use 'tintalgo'");
 }
 
 TEST_F(DriverConfigurationTest, CustomDriverConfiguration) {
@@ -259,7 +292,7 @@ species:
 }
 
 TEST_F(DriverConfigurationTest, ParseAmioWorkerThreads) {
-    // 1. Verify custom positive values are successfully parsed
+    // 1. Verify custom positive values are successfully parsed.
     WriteConfigFile(test_config_file, R"(
 driver:
   start_time: "2010-01-01T00:00:00"
@@ -281,29 +314,7 @@ physics_schemes:
     CeceConfig config = ParseConfig(test_config_file);
     EXPECT_EQ(config.driver_config.amio_worker_threads, 4);
 
-    // 2. Verify invalid (0 or negative) values are clamped to 1
-    WriteConfigFile(test_config_file, R"(
-driver:
-  start_time: "2010-01-01T00:00:00"
-  end_time: "2010-01-01T23:00:00"
-  timestep_seconds: 3600
-  amio_worker_threads: -3
-
-species:
-  CO:
-    - operation: add
-      field: CO_anthro
-      hierarchy: 0
-      scale: 1.0
-
-physics_schemes:
-  - name: NativeExample
-    language: cpp
-)");
-    config = ParseConfig(test_config_file);
-    EXPECT_EQ(config.driver_config.amio_worker_threads, 1);
-
-    // 3. Verify omitted values default to 1
+    // 2. Verify omitted values retain the default of 1.
     WriteConfigFile(test_config_file, R"(
 driver:
   start_time: "2010-01-01T00:00:00"
@@ -325,8 +336,53 @@ physics_schemes:
     EXPECT_EQ(config.driver_config.amio_worker_threads, 1);
 }
 
+TEST_F(DriverConfigurationTest, RejectNonpositiveDriverAmioWorkerThreads) {
+    for (const int threads : {0, -3}) {
+        const std::string yaml = "driver:\n  amio_worker_threads: " + std::to_string(threads) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml, "driver.amio_worker_threads must be >= 1; got " + std::to_string(threads) + ".");
+    }
+}
+
+TEST_F(DriverConfigurationTest, DirectFacadeRejectsNonpositiveAmioWorkerThreads) {
+    for (const int threads : {0, -3}) {
+        const std::string yaml = "driver:\n  amio_worker_threads: " + std::to_string(threads) + "\nphysics_schemes: []\n";
+        ExpectFacadeInvalidArgument(test_config_file, yaml, "driver.amio_worker_threads must be >= 1; got " + std::to_string(threads) + ".");
+    }
+}
+
+TEST_F(DriverConfigurationTest, ParseAmioStagingBufferCount) {
+    WriteConfigFile(test_config_file, R"(
+driver:
+  amio_staging_buffer_count: 16
+physics_schemes: []
+)");
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.driver_config.amio_staging_buffer_count, 16);
+
+    WriteConfigFile(test_config_file, R"(
+driver: {}
+physics_schemes: []
+)");
+    config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.driver_config.amio_staging_buffer_count, 8);
+}
+
+TEST_F(DriverConfigurationTest, RejectNonpositiveAmioStagingBufferCount) {
+    for (const int count : {0, -3}) {
+        const std::string yaml = "driver:\n  amio_staging_buffer_count: " + std::to_string(count) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml, "driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(count) + ".");
+    }
+}
+
+TEST_F(DriverConfigurationTest, DirectFacadeRejectsNonpositiveAmioStagingBufferCount) {
+    for (const int count : {0, -3}) {
+        const std::string yaml = "driver:\n  amio_staging_buffer_count: " + std::to_string(count) + "\nphysics_schemes: []\n";
+        ExpectFacadeInvalidArgument(test_config_file, yaml, "driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(count) + ".");
+    }
+}
+
 TEST_F(DriverConfigurationTest, ParseAmioWorkerThreadsOutput) {
-    // 1. Verify custom positive values parse correctly in output block
+    // 1. Verify custom positive values parse correctly in output block.
     WriteConfigFile(test_config_file, R"(
 output:
   enabled: true
@@ -350,31 +406,7 @@ physics_schemes:
     CeceConfig config = ParseConfig(test_config_file);
     EXPECT_EQ(config.output_config.amio_worker_threads, 3);
 
-    // 2. Verify invalid output values are clamped to 1
-    WriteConfigFile(test_config_file, R"(
-output:
-  enabled: true
-  directory: ./cece_output
-  filename_pattern: "cece_ex1_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
-  frequency_steps: 1
-  fields: [CO]
-  amio_worker_threads: 0
-
-species:
-  CO:
-    - operation: add
-      field: CO_anthro
-      hierarchy: 0
-      scale: 1.0
-
-physics_schemes:
-  - name: NativeExample
-    language: cpp
-)");
-    config = ParseConfig(test_config_file);
-    EXPECT_EQ(config.output_config.amio_worker_threads, 1);
-
-    // 3. Verify omitted output values default to -1 (representing fallback unset)
+    // 2. Verify omitted output values retain -1 (representing fallback unset).
     WriteConfigFile(test_config_file, R"(
 output:
   enabled: true
@@ -396,6 +428,59 @@ physics_schemes:
 )");
     config = ParseConfig(test_config_file);
     EXPECT_EQ(config.output_config.amio_worker_threads, -1);
+}
+
+TEST_F(DriverConfigurationTest, RejectNonpositiveOutputAmioWorkerThreads) {
+    for (const int threads : {0, -3}) {
+        const std::string yaml =
+            "output:\n  enabled: true\n  directory: ./cece_output\n  amio_worker_threads: " + std::to_string(threads) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml, "output.amio_worker_threads must be >= 1; got " + std::to_string(threads) + ".");
+    }
+}
+
+TEST_F(DriverConfigurationTest, ParseOutputAmioStagingSettings) {
+    WriteConfigFile(test_config_file, R"(
+  output:
+    enabled: true
+    amio_worker_threads: 2
+    amio_staging_buffer_count: 3
+    amio_staging_buffer_capacity_bytes: 67108864
+    amio_staging_timeout_ms: 45000
+  physics_schemes: []
+  )");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.output_config.amio_worker_threads, 2);
+    EXPECT_EQ(config.output_config.amio_staging_buffer_count, 3);
+    EXPECT_EQ(config.output_config.amio_staging_buffer_capacity_bytes, 67108864);
+    EXPECT_EQ(config.output_config.amio_staging_timeout_ms, 45000);
+}
+
+TEST_F(DriverConfigurationTest, OutputAmioStagingDefaultsAreHighResolutionSafe) {
+    WriteConfigFile(test_config_file, "output:\n  enabled: true\nphysics_schemes: []\n");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.output_config.amio_staging_buffer_count, 2);
+    EXPECT_EQ(config.output_config.amio_staging_buffer_capacity_bytes, 67108864);
+    EXPECT_EQ(config.output_config.amio_staging_timeout_ms, 60000);
+}
+
+TEST_F(DriverConfigurationTest, RejectInvalidOutputAmioStagingSettings) {
+    for (const int count : {0, 4097}) {
+        const std::string yaml = "output:\n  amio_staging_buffer_count: " + std::to_string(count) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml,
+                                    "output.amio_staging_buffer_count must be in [1, 4096]; got " + std::to_string(count) + ".");
+    }
+    for (const int capacity : {0, 1073741825}) {
+        const std::string yaml = "output:\n  amio_staging_buffer_capacity_bytes: " + std::to_string(capacity) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml,
+                                    "output.amio_staging_buffer_capacity_bytes must be in [1, 1073741824]; got " + std::to_string(capacity) + ".");
+    }
+    for (const int timeout : {0, 60001}) {
+        const std::string yaml = "output:\n  amio_staging_timeout_ms: " + std::to_string(timeout) + "\nphysics_schemes: []\n";
+        ExpectConfigInvalidArgument(test_config_file, yaml,
+                                    "output.amio_staging_timeout_ms must be in [1, 60000]; got " + std::to_string(timeout) + ".");
+    }
 }
 
 TEST_F(DriverConfigurationTest, ParseOutputFieldsWithInlineAttributes) {
@@ -449,6 +534,42 @@ physics_schemes:
 
     // The seeded coordinate variables tag along in every collection.
     EXPECT_EQ(config.output_config.fields.GetCoordinateFields().size(), 4u);
+}
+
+TEST_F(DriverConfigurationTest, ParseOutputGlobalAttributes) {
+    WriteConfigFile(test_config_file, R"(
+output:
+  global_attributes:
+    title: "Example \"quoted\" title"
+    institution: "Example institute"
+)");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+
+    EXPECT_EQ(config.output_config.global_attributes.at("title"), "Example \"quoted\" title");
+    EXPECT_EQ(config.output_config.global_attributes.at("institution"), "Example institute");
+}
+
+TEST_F(DriverConfigurationTest, RejectOutputGlobalAttributeControlCharacters) {
+    ExpectConfigInvalidArgument(test_config_file, "output:\n  global_attributes:\n    title: \"bad\\nvalue\"\n",
+                                "output.global_attributes keys must be non-empty and keys/values must not contain control characters");
+}
+
+TEST_F(DriverConfigurationTest, OutputGlobalAttributesKeepScalarSourceText) {
+    WriteConfigFile(test_config_file, "output:\n  global_attributes:\n    geospatial_lat_min: -90.5\n    id: 42\n    summary: true\n");
+
+    const CeceConfig config = ParseConfig(test_config_file);
+
+    EXPECT_EQ(config.output_config.global_attributes.at("geospatial_lat_min"), "-90.5");
+    EXPECT_EQ(config.output_config.global_attributes.at("id"), "42");
+    EXPECT_EQ(config.output_config.global_attributes.at("summary"), "true");
+}
+
+TEST_F(DriverConfigurationTest, RejectNonScalarOutputGlobalAttributes) {
+    ExpectConfigInvalidArgument(test_config_file, "output:\n  global_attributes:\n    title: [a, b]\n",
+                                "output.global_attributes.title must be a string, number, or boolean");
+    ExpectConfigInvalidArgument(test_config_file, "output:\n  global_attributes:\n    title:\n",
+                                "output.global_attributes.title must be a string, number, or boolean");
 }
 
 TEST_F(DriverConfigurationTest, ParseOutputFieldsScalarShorthandStillWorks) {
@@ -537,19 +658,27 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
     const std::string expected_blocks =
         "  lon:\n"
         "    attributes:\n"
+        "      coverage_content_type: \"coordinate\"\n"
         "      long_name: \"longitude\"\n"
+        "      standard_name: \"longitude\"\n"
         "      units: \"degrees_east\"\n"
         "  lat:\n"
         "    attributes:\n"
+        "      coverage_content_type: \"coordinate\"\n"
         "      long_name: \"latitude\"\n"
+        "      standard_name: \"latitude\"\n"
         "      units: \"degrees_north\"\n"
         "  lev:\n"
         "    attributes:\n"
+        "      coverage_content_type: \"coordinate\"\n"
         "      long_name: \"vertical level\"\n"
-        "      units: \"level\"\n"
+        "      standard_name: \"model_level_number\"\n"
+        "      units: \"1\"\n"
         "  time:\n"
         "    attributes:\n"
+        "      coverage_content_type: \"coordinate\"\n"
         "      long_name: \"time\"\n"
+        "      standard_name: \"time\"\n"
         "      units: \"seconds since 2001-06-01 00:00:00\"\n"
         "  co:\n"
         "    attributes:\n"
@@ -910,23 +1039,6 @@ grid_ny: -1
 // Property-Based Tests
 // ---------------------------------------------------------------------------
 
-// Property 1: ISO8601 Parsing Round Trip
-// For any valid ISO8601 datetime string, parsing should succeed
-TEST_F(ISO8601ParsingTest, Property1_ISO8601RoundTrip) {
-    // Test a range of valid dates
-    std::vector<std::string> valid_dates = {
-        "2000-01-01T00:00:00",
-        "2020-06-15T14:30:45",
-        "2099-12-31T23:59:59",
-        "2020-02-29T12:00:00",  // Leap year
-    };
-
-    int yy, mm, dd, hh, mn, ss;
-    for (const auto& date_str : valid_dates) {
-        EXPECT_TRUE(ParseISO8601(date_str, yy, mm, dd, hh, mn, ss)) << "Failed to parse: " << date_str;
-    }
-}
-
 // Property 20: Default Configuration Correctness
 // For any invocation without explicit driver configuration, defaults must be used
 TEST_F(DriverConfigurationTest, Property20_DefaultConfigurationCorrectness) {
@@ -954,7 +1066,169 @@ physics_schemes:
     EXPECT_EQ(config.driver_config.grid.ny, 4);
 }
 
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+// ---------------------------------------------------------------------------
+// Local-time support: opt-in config parsing.
+// Absent section / enabled:false must leave the defaults untouched so the
+// initialization short-circuit (no file open, no allocation) holds.
+// ---------------------------------------------------------------------------
+
+TEST_F(DriverConfigurationTest, LocalTimeDefaultsDisabledWhenSectionAbsent) {
+    WriteConfigFile(test_config_file, R"(
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_FALSE(config.local_time.enabled);
+    EXPECT_TRUE(config.local_time.grid_file.empty());
+    // Per-layer default: UTC scaling (pre-feature behavior).
+    EXPECT_FALSE(config.species_layers.at("CO").front().use_local_time);
+}
+
+TEST_F(DriverConfigurationTest, LocalTimeDisabledExplicitlyParses) {
+    WriteConfigFile(test_config_file, R"(
+local_time:
+  enabled: false
+  grid_file: "data/utc_grid_720r.rle"
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+      use_local_time: false
+)");
+
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_FALSE(config.local_time.enabled);  // disabled => init short-circuits
+    EXPECT_EQ(config.local_time.grid_file, "data/utc_grid_720r.rle");
+    EXPECT_FALSE(config.species_layers.at("CO").front().use_local_time);
+}
+
+TEST_F(DriverConfigurationTest, LocalTimeEnabledAndLayerOptInParse) {
+    WriteConfigFile(test_config_file, R"(
+local_time:
+  enabled: true
+  grid_file: "data/utc_grid_720r.rle"
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+      use_local_time: true
+    - operation: add
+      field: CO_biomass
+      hierarchy: 1
+      scale: 1.0
+)");
+
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_TRUE(config.local_time.enabled);
+    EXPECT_EQ(config.local_time.grid_file, "data/utc_grid_720r.rle");
+    // Per-layer opt-in is independent: only the flagged layer scales locally.
+    auto& layers = config.species_layers.at("CO");
+    EXPECT_TRUE(layers.front().use_local_time);
+    EXPECT_FALSE(layers.back().use_local_time);
+}
+
+TEST_F(DriverConfigurationTest, LocalTimeNonMapSectionIgnored) {
+    // A malformed (non-map) local_time value must not crash the parser and
+    // must leave the disabled default in place (safe opt-in contract).
+    WriteConfigFile(test_config_file, R"(
+local_time: true
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+)");
+
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_FALSE(config.local_time.enabled);
+    EXPECT_TRUE(config.local_time.grid_file.empty());
+}
+
+TEST_F(DriverConfigurationTest, LocalTimeDisabledWithLayerOptInThrows) {
+    // A layer that opts into local-time scaling while the feature is disabled
+    // would silently stay on the UTC path; the parser must reject it instead.
+    WriteConfigFile(test_config_file, R"(
+local_time:
+  enabled: false
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+      use_local_time: true
+)");
+
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
+}
+
+TEST_F(DriverConfigurationTest, StreamLocalTimeOptInParses) {
+    WriteConfigFile(test_config_file, R"(
+local_time:
+  enabled: true
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+
+cece_data:
+  streams:
+    - name: weekly_factors
+      file: weekly.nc
+      cadence: weekly
+      use_local_time: true
+    - name: utc_factors
+      file: weekly.nc
+      cadence: weekly
+)");
+
+    CeceConfig config = ParseConfig(test_config_file);
+    ASSERT_EQ(config.cece_data.streams.size(), 2u);
+    EXPECT_TRUE(config.cece_data.streams[0].use_local_time);
+    EXPECT_FALSE(config.cece_data.streams[1].use_local_time);
+}
+
+TEST_F(DriverConfigurationTest, StreamLocalTimeRejectsInvalidCombinations) {
+    const auto config_with_stream = [](const std::string& local_time_enabled, const std::string& stream_keys) {
+        return "local_time:\n  enabled: " + local_time_enabled +
+               "\n\nspecies:\n  CO:\n    - operation: add\n      field: CO_anthro\n\ncece_data:\n  streams:\n    - name: s\n      file: s.nc\n" +
+               stream_keys;
+    };
+
+    // Feature disabled: would silently fall back to UTC.
+    WriteConfigFile(test_config_file, config_with_stream("false", "      cadence: weekly\n      use_local_time: true\n"));
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
+
+    // Only weekly cadence is supported.
+    WriteConfigFile(test_config_file, config_with_stream("true", "      cadence: hourly\n      use_local_time: true\n"));
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
+    WriteConfigFile(test_config_file, config_with_stream("true", "      use_local_time: true\n"));
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
+
+    // Only nearest record selection is supported.
+    WriteConfigFile(test_config_file, config_with_stream("true", "      cadence: weekly\n      tintalgo: linear\n      use_local_time: true\n"));
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
+
+    // EarthAccess streams never reach the local-time path, so the flag must not be silently ignored.
+    WriteConfigFile(test_config_file, config_with_stream("true", "      source: earthaccess\n      cadence: weekly\n      use_local_time: true\n"));
+    EXPECT_THROW(ParseConfig(test_config_file), std::invalid_argument);
 }

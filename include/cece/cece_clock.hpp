@@ -25,7 +25,7 @@ struct ClockComponent {
  * @brief Returned by Advance() — the set of components due this step.
  */
 struct StepResult {
-    std::vector<const ClockComponent*> due_components;  ///< ordered: schemes/streams first, stacking last
+    std::vector<const ClockComponent*> due_components;  ///< ordered: streams, physics schemes, stacking
     int elapsed_seconds;                                ///< total seconds since start_time
     int hour_of_day;                                    ///< 0-23
     int day_of_week;                                    ///< 0-6, Sunday=0
@@ -75,6 +75,15 @@ class CeceClock {
      * @brief Returns the base timestep in seconds.
      */
     int BaseTimestep() const;
+
+    /**
+     * @brief Returns the simulation start time as seconds since the Unix epoch.
+     * @details Exposed for the local-time service, which needs the
+     *          absolute start instant to derive per-step UTC epoch seconds.
+     */
+    int64_t StartEpochSeconds() const {
+        return start_epoch_secs_;
+    }
 
    private:
     int64_t start_epoch_secs_;  ///< start_time as seconds since Unix epoch

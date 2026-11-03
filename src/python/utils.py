@@ -13,9 +13,10 @@ cece.initialize : Uses ``load_config`` internally.
 
 from __future__ import annotations
 
+import errno
 import logging
+import types
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
@@ -23,7 +24,29 @@ from .config import CeceConfig
 from .exceptions import CeceConfigError
 
 
-def load_config(config: Union[str, dict, CeceConfig]) -> CeceConfig:
+def _try_import_yaml() -> types.ModuleType:
+    """Import yaml or raise an error with directions for install."""
+    try:
+        import yaml
+    except ImportError:
+        raise ImportError("PyYAML is required. Install with: pip install pyyaml")
+    return yaml
+
+
+def _config_file_path(value: str) -> Path | None:
+    """Distinguish an existing file from YAML without stat-ing multiline text."""
+    if "\n" in value or "\r" in value:
+        return None
+    path = Path(value)
+    try:
+        return path if path.is_file() else None
+    except OSError as error:
+        if error.errno in (errno.ENAMETOOLONG, errno.EINVAL):
+            return None
+        raise
+
+
+def load_config(config: str | dict | CeceConfig) -> CeceConfig:
     """
     Load an CECE configuration from various sources.
 
@@ -63,26 +86,26 @@ def load_config(config: Union[str, dict, CeceConfig]) -> CeceConfig:
         try:
             return CeceConfig.from_dict(config)
         except ValueError as e:
-            raise CeceConfigError(f"Invalid configuration dict: {str(e)}")
+            raise CeceConfigError(f"Invalid configuration dict: {e!s}")
 
     if isinstance(config, str):
         # Check if it's a file path
-        path = Path(config)
-        if path.exists() and path.is_file():
+        path = _config_file_path(config)
+        if path is not None:
             try:
                 with open(path, "r") as f:
                     yaml_str = f.read()
                 return _load_config_from_yaml(yaml_str)
-            except Exception as e:
+            except (OSError, TypeError, ValueError, AttributeError) as e:
                 raise CeceConfigError(
-                    f"Failed to load config from file '{config}': {str(e)}"
+                    f"Failed to load config from file '{config}': {e!s}"
                 )
         else:
             # Treat as YAML string
             try:
                 return _load_config_from_yaml(config)
-            except Exception as e:
-                raise CeceConfigError(f"Failed to parse config YAML: {str(e)}")
+            except (TypeError, ValueError) as e:
+                raise CeceConfigError(f"Failed to parse config YAML: {e!s}")
 
     raise CeceConfigError(f"Invalid config type: {type(config)}")
 
@@ -109,7 +132,7 @@ def _load_config_from_yaml(yaml_str: str) -> CeceConfig:
     try:
         return CeceConfig.from_yaml(yaml_str)
     except (ImportError, ValueError) as e:
-        raise CeceConfigError(f"Failed to parse config YAML: {str(e)}")
+        raise CeceConfigError(f"Failed to parse config YAML: {e!s}")
 
 
 def validate_array_dimensions(array: np.ndarray, expected_shape: tuple) -> None:
@@ -189,10 +212,7 @@ def dict_to_yaml(config_dict: dict) -> str:
     ImportError
         If PyYAML is not installed.
     """
-    try:
-        import yaml
-    except ImportError:
-        raise ImportError("PyYAML is required. Install with: pip install pyyaml")
+    yaml = _try_import_yaml()
 
     return yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
 
@@ -218,18 +238,15 @@ def yaml_to_dict(yaml_str: str) -> dict:
     ValueError
         If the YAML string is malformed or does not represent a dictionary.
     """
-    try:
-        import yaml
-    except ImportError:
-        raise ImportError("PyYAML is required. Install with: pip install pyyaml")
+    yaml = _try_import_yaml()
 
     try:
         config_dict = yaml.safe_load(yaml_str)
         if not isinstance(config_dict, dict):
-            raise ValueError("YAML must represent a dictionary")
+            raise ValueError("YAML must represent a dictionary")  # noqa: TRY004
         return config_dict
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML: {str(e)}")
+        raise ValueError(f"Invalid YAML: {e!s}")
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -254,8 +271,11 @@ def setup_logging(level: str = "INFO") -> None:
     --------
     >>> setup_logging("DEBUG")
     """
-    numeric_level = getattr(logging, level.upper(), None)
-    if not isinstance(numeric_level, int):
+    if not isinstance(level, str):
+        raise TypeError("level must be a string")
+    normalized_level = level.upper()
+    numeric_level = logging.getLevelName(normalized_level)
+    if numeric_level == f"Level {normalized_level}":
         raise ValueError(f"Invalid log level: {level}")
 
     logging.basicConfig(

@@ -10,37 +10,37 @@ The migration consolidates the 600+ line C-linkage wrapper (with `void*` casting
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│                  Python User Code                    │
-│         cece.initialize() / cece.compute()           │
+│                  Python User Code                   │
+│         cece.initialize() / cece.compute()          │
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
-│              Python API Layer (preserved)             │
-│                                                      │
-│  __init__.py   config.py   state.py   exceptions.py  │
-│                          utils.py                    │
+│              Python API Layer (preserved)           │
+│                                                     │
+│  __init__.py   config.py      state.py              │
+│                exceptions.py  utils.py              │
 └──────────────────────┬──────────────────────────────┘
                        │
-┌──────────────────────▼──────────────────────────────┐
+┌──────────────────────▼───────────────────────────────┐
 │          pybind11 Module (_cece_core.so)             │
 │                                                      │
-│  ┌──────────┐ ┌──────────┐ ┌───────────────────┐    │
-│  │  Config   │ │  State   │ │     Compute       │    │
-│  │ Bindings  │ │ Bindings │ │    Bindings       │    │
-│  └──────────┘ └──────────┘ └───────────────────┘    │
-│  ┌──────────┐ ┌──────────┐ ┌───────────────────┐    │
-│  │  Enum    │ │Exception │ │  Logger/Validator  │    │
+│  ┌──────────┐ ┌───────────┐ ┌───────────────────┐    │
+│  │  Config  │ │  State    │ │     Compute       │    │
+│  │ Bindings │ │ Bindings  │ │    Bindings       │    │
+│  └──────────┘ └───────────┘ └───────────────────┘    │
+│  ┌──────────┐ ┌───────────┐ ┌───────────────────┐    │
+│  │  Enum    │ │Exception  │ │ Logger/Validator  │    │
 │  │ Bindings │ │Translators│ │    Bindings       │    │
-│  └──────────┘ └──────────┘ └───────────────────┘    │
-└──────────────────────┬──────────────────────────────┘
+│  └──────────┘ └───────────┘ └───────────────────┘    │
+└──────────────────────┬───────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
-│              C++ Core (libcece.so)                    │
-│                                                      │
-│  cece_config.hpp    cece_state.hpp                   │
-│  cece_compute.hpp   cece_stacking_engine.hpp         │
-│  cece_config_validator.hpp   cece_logger.hpp         │
-│  cece_kokkos_config.hpp                              │
+│              C++ Core (libcece.so)                  │
+│                                                     │
+│  cece_config.hpp    cece_state.hpp                  │
+│  cece_compute.hpp   cece_stacking_engine.hpp        │
+│  cece_config_validator.hpp   cece_logger.hpp        │
+│  cece_kokkos_config.hpp                             │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -66,7 +66,8 @@ cece.initialize(config)
 state = cece.CeceState(nx=144, ny=96, nz=72)
 
 # Add import fields (meteorological data, scale factors, etc.)
-temperature = np.asfortranarray(np.random.rand(144, 96, 72))
+rng = np.random.default_rng()
+temperature = np.asfortranarray(rng.random(size=(144, 96, 72)))
 state.add_import_field("TEMPERATURE", temperature)
 
 # Run computation (GIL is released automatically)
@@ -172,7 +173,7 @@ config = cece.CeceConfig.from_dict({
 config = cece.CeceConfig()
 layer = cece.EmissionLayer(field_name="CO_ANTHRO", operation="add", scale=1.5)
 config.add_species("CO", [layer])
-config.add_physics_scheme("megan", language="fortran")
+config.add_physics_scheme("megan", language="cpp")
 
 # Validate
 result = config.validate()
@@ -226,7 +227,7 @@ Container for 3D import and export fields on a fixed grid.
 state = cece.CeceState(nx=144, ny=96, nz=72)
 
 # Add import fields
-temp = np.asfortranarray(np.zeros((144, 96, 72)))
+temp = np.asfortranarray(np.zeros((144, 96, 72), order="F"))
 state.add_import_field("TEMPERATURE", temp)
 
 # Access fields via dictionary-like interface
@@ -316,7 +317,7 @@ The pybind11 bindings use zero-copy data transfer between NumPy arrays and Kokko
 - Always provide Fortran-contiguous arrays to avoid unnecessary copies:
 
   ```python
-  data = np.asfortranarray(np.zeros((nx, ny, nz), dtype=np.float64))
+  data = np.asfortranarray(np.zeros((nx, ny, nz), dtype=np.float64, order="F"))
   ```
 
 - All arrays must be `float64` (double precision).
@@ -428,7 +429,7 @@ logger.info("Starting CECE computation")
 
 - CMake 3.20+
 - C++20 compiler
-- Python 3.8+ with development headers
+- Python 3.10+ with development headers
 - Kokkos (fetched automatically via CMake FetchContent)
 - pybind11 v2.12.0 (fetched automatically via CMake FetchContent)
 
@@ -454,7 +455,7 @@ The `src/python/CMakeLists.txt` handles:
 
 - Fetching pybind11 v2.12.0 via `FetchContent`
 - Building the `_cece_core` extension module with `pybind11_add_module`
-- Linking against `cece`, `Kokkos::kokkos`, and `yaml-cpp`
+- Linking against `cece`, `Kokkos::kokkos`, and HELM CONF
 - Copying Python source files into the package output directory
 
 ## Migration Guide
@@ -489,3 +490,11 @@ from cece import _cece_core
 ```
 
 The pybind11 module exposes C++ types directly as Python classes, so there is no need for ctypes function signatures or manual memory management.
+
+## Persistent column and grid physics
+
+For selected physics execution, use the new `cece.Model` interface described in
+[Python column physics](interfaces/python-columns.md). The legacy `compute()`
+entry point performs stacking; it does not execute the full physics lifecycle.
+Per-scheme UFS-compatible flux interfaces are described in
+[CCPP interfaces](interfaces/ccpp.md).

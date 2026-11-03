@@ -4,6 +4,9 @@ CECE is configured using a YAML file, typically named `cece_config.yaml`. This f
 
 ## Top-Level Structure
 
+This outline shows where each kind of configuration belongs. Sections are optional; include only the ones your run uses.
+
+<!-- cece-validate: overview -->
 ```yaml
 driver:
   # ... driver timing and execution configuration ...
@@ -22,6 +25,9 @@ masks:
 temporal_profiles:
   # ... periodic scaling factors (diurnal, weekly, etc.) ...
 
+local_time:
+  # ... opt-in per-cell UTC-to-local time conversion (default: disabled) ...
+
 species:
   # ... species definitions ...
 
@@ -36,6 +42,9 @@ cece_data:
 
 output:
   # ... NetCDF output configuration ...
+
+nuopc:
+  # ... field-coupling export/import declarations (optional) ...
 ```
 
 ---
@@ -50,7 +59,8 @@ The `driver` section configures the execution timing and control parameters for 
 | `end_time` | String | Simulation end time in ISO 8601 format |
 | `timestep_seconds` | Integer | Base time step duration in seconds. All component refresh intervals must be integer multiples of this value. |
 | `stacking_refresh_interval_seconds` | Integer | (Optional) Stacking engine execution interval in seconds. Must be a positive multiple of `timestep_seconds`. Default: `0` (use `timestep_seconds`). |
-| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads. Must be ≥ 1; invalid values warn and default to 1. Default: `1`. Used as the fallback when `output.amio_worker_threads` is not set. |
+| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads. Must be ≥ 1 when explicitly set; nonpositive values are rejected. Default: `1` when omitted. Used as the fallback when `output.amio_worker_threads` is omitted. |
+| `amio_staging_buffer_count` | Integer | (Optional) Number of AMIO staging buffers for offline input reads. Must be ≥ 1 when explicitly set; nonpositive values are rejected. Default: `8` when omitted. Increase to 16 for large global files if AMIO reports staging backpressure. |
 
 **Example:**
 ```yaml
@@ -220,6 +230,82 @@ temporal_profiles:
 
 ---
 
+## `local_time`
+
+Opt-in feature that converts UTC to **local standard time per grid cell** so that
+temporal cycles (`diurnal_cycle`, `weekly_cycle`, `seasonal_cycle`) can be
+evaluated at local time. Note this is civil clock time per time zone, not local
+solar time (which is based on Sun position). It is **disabled by default**; with
+the feature off (or when a layer omits `use_local_time`) behavior is
+bit-identical to a pre-feature run.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `enabled` | Boolean | Master switch. When `false` (default) or the section is absent, the grid file is never opened and no memory is allocated. |
+| `grid_file` | String | Path to the RLE-compressed UTC-offset grid (e.g. `data/utc_grid_720r.rle`). Defaults to `data/utc_grid_720r.rle` when empty. |
+
+**Example:**
+```yaml
+local_time:
+  enabled: true
+  grid_file: data/utc_grid_720r.rle
+
+temporal_profiles:
+  traffic_diurnal: [0.5, 0.3, 0.2, 0.3, 0.6, 1.2, 1.8, 1.5, 1.2, 1.0, 1.1, 1.2,
+                    1.3, 1.2, 1.3, 1.5, 1.8, 2.0, 1.8, 1.5, 1.2, 1.0, 0.8, 0.6]
+
+species:
+  co:
+    - field: "traffic_co"
+      operation: "add"
+      diurnal_cycle: "traffic_diurnal"
+      use_local_time: true   # this layer scales at local time
+    - field: "background_co"
+      operation: "add"       # UTC scaling (unchanged behavior)
+```
+
+### How it works
+
+- The grid file is decoded **once** at initialization into a dense cosine-reduced
+  raster of signed UTC offsets (quarter-hour precision, produced by
+  `scripts/utcoffset_generator.py` from each time zone's standard offset):
+  1440 uniform
+  0.125° latitude rows whose column count tapers toward the poles
+  (`ncol = max(4, 4·round(720·cos lat))`), giving ~14 km ground resolution
+  everywhere at 36% fewer cells than a full regular grid. Each rank
+  keeps only a read-only band-local device array of its own cells' offsets.
+- Each cell uses the **nearest grid cell** (no interpolation). Every point on
+  Earth carries a UTC offset, including the oceans (the offset of the time zone
+  covering the point, e.g. an `Etc/GMT±n` ocean zone); only genuinely unresolved
+  points fall back to offset 0, i.e. UTC.
+- Offsets are **standard (non-DST) time all year round**: a zone that observes
+  daylight saving time is not shifted in its summer. Each zone's standard offset
+  is the smaller of its offsets in mid-January and mid-July, which gives the
+  non-DST offset in both hemispheres (for example Sydney +10, Auckland +12,
+  Santiago −4, Dublin +0, Casablanca +1).
+- Local hour / day-of-week / month are derived with integer arithmetic and
+  correct date rollover (a −8 h offset at 02:00 UTC yields 18:00 the previous
+  local day, and the weekly cycle follows the local day).
+- **All outputs remain UTC**: NetCDF time axes, provenance records, and log
+  timestamps are untouched — local time is an internal computation input only.
+- **Fail fast when enabled**: if the feature is enabled but the grid file is
+  missing or corrupt, initialization fails with an error — a partial or absent
+  grid is never silently used. (Layers that set `use_local_time` while the
+  feature is disabled are also rejected at parse time.)
+- The offset source sits behind a provider interface (`IUtcOffsetProvider`),
+  so a future DST-aware / time-varying source can replace the static grid
+  without any configuration-schema or consumer changes.
+
+See [examples/cece_config_localtime.yaml](../examples/cece_config_localtime.yaml)
+for a self-contained runnable example (an identity diurnal profile reveals the
+local hour actually used per cell).
+
+For gridded weekly factors read from a data stream (for example CAMS-TEMPO), the
+layer option does not apply; set `use_local_time` on the stream instead. See
+[Local-weekday weekly profiles](#local-weekday-weekly-profiles-use_local_time).
+
+---
+
 ## `species`
 
 The `species` block defines the emission targets and the layers that contribute to them. This is the core configuration section that determines how different emission sources are combined.
@@ -238,18 +324,21 @@ The `species` block defines the emission targets and the layers that contribute 
 | `diurnal_cycle` | String | (Optional) Reference to temporal profile for diurnal scaling |
 | `weekly_cycle` | String | (Optional) Reference to temporal profile for weekly scaling |
 | `seasonal_cycle` | String | (Optional) Reference to temporal profile for seasonal scaling |
+| `use_local_time` | Boolean | (Optional) Evaluate this layer's temporal cycles at each cell's **local** time instead of UTC (requires the global `local_time.enabled`; configuring it while the feature is disabled is a parse error; Default: `false`) |
 
 ### Vertical Distribution Properties
 
+`vdist` is an optional map nested under a species layer. Set the keys that apply to the selected method.
+
 | Key | Type | Description |
 | --- | --- | --- |
-| `vdist_method` | String | Vertical distribution algorithm: `SINGLE`, `RANGE`, `PRESSURE`, `HEIGHT`, `PBL` |
-| `vdist_layer_start` | Integer | Starting layer index for `SINGLE`/`RANGE` methods |
-| `vdist_layer_end` | Integer | Ending layer index for `RANGE` method |
-| `vdist_p_start` | Float | Starting pressure [Pa] for `PRESSURE` method |
-| `vdist_p_end` | Float | Ending pressure [Pa] for `PRESSURE` method |
-| `vdist_h_start` | Float | Starting height [m] for `HEIGHT` method |
-| `vdist_h_end` | Float | Ending height [m] for `HEIGHT` method |
+| `method` | String | Distribution method: `single` (default), `range`, `pressure`, `height`, or `pbl`. |
+| `layer_start` | Integer | Zero-based layer index for `single`, or inclusive first index for `range`. Default: `0`. |
+| `layer_end` | Integer | Inclusive last zero-based layer index for `range`. Default: `0`. |
+| `p_start` | Float | Lower pressure bound in Pa for `pressure`. Default: `0.0`. |
+| `p_end` | Float | Upper pressure bound in Pa for `pressure`. Default: `0.0`. |
+| `h_start` | Float | Lower altitude bound in meters for `height`. Default: `0.0`. |
+| `h_end` | Float | Upper altitude bound in meters for `height`. Default: `0.0`. |
 
 ### Complete Example
 
@@ -272,6 +361,8 @@ species:
       category: "anthropogenic"
       hierarchy: 10                  # Higher priority
       mask: "regional_mask"
+      vdist:
+        method: pbl
 
   # Aircraft NOx with vertical distribution
   nox:
@@ -279,15 +370,17 @@ species:
       operation: "add"
       category: "anthropogenic"
       hierarchy: 1
-      vdist_method: "PBL"           # Distribute in boundary layer
+      vdist:
+        method: pbl                 # Distribute in boundary layer
 
     - field: "aircraft_nox"
       operation: "add"
       category: "transportation"
       hierarchy: 1
-      vdist_method: "HEIGHT"        # Distribute by altitude
-      vdist_h_start: 8000.0         # 8 km
-      vdist_h_end: 12000.0          # 12 km
+      vdist:
+        method: height             # Distribute by altitude
+        h_start: 8000.0            # 8 km
+        h_end: 12000.0             # 12 km
 
   # Biogenic emissions with environmental scaling
   isoprene:
@@ -299,6 +392,13 @@ species:
       mask: "vegetation_mask"
       diurnal_cycle: "biogenic_diurnal"
       seasonal_cycle: "growing_season"
+
+temporal_profiles:
+  traffic_diurnal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  biogenic_diurnal: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  growing_season: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 ```
 
 ---
@@ -319,13 +419,33 @@ List of physics schemes to instantiate and execute during the Run phase. Physics
 | Scheme Name | Description | Key Parameters |
 | ----------- | ----------- | -------------- |
 | `sea_salt` | Marine aerosol emissions | `r_sala_min`, `r_salc_max`, `sea_salt_density` |
-| `megan` | Biogenic isoprene emissions (single-species) | `beta`, `ldf`, `aef`, `co2_concentration` |
-| `megan3` | Full MEGAN3 multi-species biogenic emissions | `mechanism_file`, `speciation_file`, `emission_classes` |
-| `bdsnp` | Soil NO emissions (BDSNP/YL95) | `soil_no_method`, `fert_emission_factor` |
+| `megan` | [Biogenic isoprene emissions](megan.md), with `megan21` (legacy alias `native`) and `hemco_3_12_1` methods | `megan_method`, `aef`, `hemco_co2_inhibition`, history settings |
+| `megan3` | [19-class C++ biogenic emissions and chemical speciation](megan.md#megan3-multi-species-multi-class); bulk runtime activity factors, not complete upstream MEGAN3 parity | `mechanism_file`, `speciation_file`, `emission_classes` |
+| `bdsnp` | [Berkeley-Dalhousie Soil NOx Parameterization (BDSNP) or YL95 soil NO emissions](soil_nox.md) | `soil_no_method`, `use_soil_temperature` |
 | `dust` | Mineral dust emissions | `particle_density`, `tuning_factor` |
 | `lightning` | Lightning NOx production | `yield_land`, `yield_ocean` |
 | `volcano` | Volcanic SO₂ emissions | `target_location`, `emission_rate` |
 | `dms` | Ocean DMS emissions | `schmidt_coeffs`, `transfer_velocity` |
+
+The C++ `bdsnp` scheme accepts two `soil_no_method` values:
+
+- `bdsnp` (default): the validated effective-input, stateless BDSNP
+  calculation; and
+- `yl95`: the Yienger and Levy (1995) calculation.
+
+Unknown method names are rejected.
+
+Canonical `bdsnp` requires scalar temperature, soil moisture, arid and
+non-arid fractions, LAI, wind-speed squared, solar-zenith cosine, fertilizer,
+deposited-N, and pulse-factor fields. It also requires exactly 24 layers for
+`soilnox_land_fractions` and `soilnox_canopy_nox`, and writes both
+`soil_nox_emissions` and `soil_nox_fertilizer_emissions`. All scalar fields and
+both outputs must have exactly one level and the same horizontal dimensions.
+
+Pulse, canopy, fertilizer, and deposited-N are supplied effective inputs. The
+legacy `bdsnp_fortran` scheme does not implement this contract and is not
+equivalent to canonical C++ `bdsnp`. See
+[BDSNP Soil NO Emissions](soil_nox.md) for the complete field contract.
 
 **Example:**
 ```yaml
@@ -453,11 +573,24 @@ datasets:
 
 Reference the speciation files in the MEGAN3 scheme configuration:
 
+The [MEGAN example](../examples/cece_config_megan3.yaml) supplies a standalone
+template. See [MEGAN method selection](megan.md#standalone-driver-setup) for
+the alternative single-species configurations; do not schedule two `megan`
+instances to select different methods in one run.
+
+MEGAN3 class AEFs, including `default_aef` and imported `AEF_<CLASS>`
+fields, are amount fluxes in kmol class m⁻² s⁻¹. The speciation engine applies
+the target-species molecular weight in kg kmol⁻¹ to produce output mass fluxes
+in kg m⁻² s⁻¹. Convert a mass-basis AEF to an amount-basis AEF before supplying
+it to MEGAN3.
+
 ```yaml
 physics_schemes:
   - name: bdsnp
     options:
-      soil_no_method: bdsnp
+      # Use the compact YL95 coupling here. Canonical BDSNP requires the full
+      # effective-input contract documented in docs/soil_nox.md.
+      soil_no_method: yl95
 
   - name: megan3
     options:
@@ -471,18 +604,19 @@ physics_schemes:
           ct1: 95.0
           cleo: 2.0
           beta: 0.13
-          default_aef: 1.0e-9
+          default_aef: 1.0e-9  # kmol ISOP m-2 s-1
         MT_PINE:
           ldf: 0.10
           ct1: 80.0
           cleo: 1.83
           beta: 0.10
-          default_aef: 3.0e-10
+          default_aef: 3.0e-10  # kmol MT_PINE m-2 s-1
         # ... remaining 17 classes
-    output_mapping:
-      MEGAN_ISOP: ISOP_BIOG
-      MEGAN_TERP: TERP_BIOG
 ```
+
+The current C++ MEGAN3 speciation engine writes `MEGAN_ISOP`, `MEGAN_TERP`,
+and the other `MEGAN_`-prefixed species names directly. Select these names in
+`output.fields`; `output_mapping` does not rename the engine's species outputs.
 
 The speciation engine computes each output species as:
 
@@ -513,15 +647,13 @@ Controls diagnostic output and intermediate variable capture for analysis and va
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `output_interval_seconds` | Integer | Frequency of diagnostic output in seconds |
+| `output_interval` | Integer | Frequency of diagnostic output in seconds |
 | `variables` | List | List of field names to include in diagnostic output |
-| `enabled` | Boolean | Enable/disable diagnostic output (default: true) |
 
 **Example:**
 ```yaml
 diagnostics:
-  output_interval_seconds: 3600     # Hourly output
-  enabled: true
+  output_interval: 3600             # Hourly output
   variables:
     - "co"
     - "nox"
@@ -543,15 +675,20 @@ Configuration for data streams that read external emission inventories and auxil
 | `name` | String | Unique identifier for the data stream |
 | `file` | String | Path to NetCDF data file(s) |
 | `refresh_interval_seconds` | Integer | (Optional) Data ingestion interval in seconds. Must be a positive multiple of `timestep_seconds`. Default: `0` (use `timestep_seconds`, i.e., ingest every step). |
-| `cadence` | String | (Optional) Temporal cadence for record selection: `hourly`, `weekly`, or `monthly`. When set, the driver maps the simulation datetime onto the appropriate file record (hour-of-day, day-of-week, or month). If omitted, legacy step-index cycling is used. |
-| `yearFirst` | Integer | First year of data coverage |
-| `yearLast` | Integer | Last year of data coverage |
-| `yearAlign` | Integer | Simulation year to align with data |
-| `taxmode` | String | Time axis mode: `cycle`, `extend`, or `limit` |
-| `tintalgo` | String | Temporal interpolation: `linear` or `nearest`. For `monthly` cadence with `linear`, mid-month interpolation is applied between bracketing records. Default: `nearest`. |
-| `mapalgo` | String | Spatial regridding: `consd`, `bilinear`, `consf`, `nn`, `redist`, or `passthrough` (skip regridding — data must be on the model grid already, sizes are validated) |
+| `cadence` | String | (Optional) How file records are addressed: `series` (default), `daily`, `monthly`, `hourly`, `weekly`, or `stepwise`. See [Record Selection](#record-selection-cadence). |
+| `time_var` | String | (Optional) Name of the time coordinate variable. Default: `time` (falls back to `Time`, `t`, `valid_time`). |
+| `time_units` | String | (Optional) Override for the time variable's CF `units` attribute (e.g. `"hours since 2020-01-01 00:00:00"`). Use when the file's attribute is missing or non-standard. |
+| `calendar` | String | (Optional) Override for the time variable's CF `calendar` attribute: `gregorian`/`standard`/`proleptic_gregorian`, `noleap`/`365_day`, or `360_day`. |
+| `yearFirst` | Integer | First calendar year of data coverage in the file. Default: `0`. Only consulted on the arithmetic fallback path (`daily`/`monthly` cadence with an undecodable time axis). |
+| `yearLast` | Integer | Last calendar year of data coverage in the file. Default: `0`. Same applicability as `yearFirst`. |
+| `yearAlign` | Integer | Simulation year corresponding to the first file year. Default: `0` (no shift, simulation years map 1-to-1 onto file years). |
+| `taxmode` | String | Behavior when the simulation time falls outside the file's coverage: `cycle` (default, clamp to the closest covered year), `extend` (clamp to the nearest end), or `limit` (fail). |
+| `tintalgo` | String | Temporal interpolation: `linear` or `nearest`. Default: `nearest`. Ignored by the `stepwise` cadence. |
+| `time_label` | String | (Optional) Where each time coordinate sits in the interval its record describes: `auto` (default), `start`, `center`, or `end`. Applies to decoded time axes. See [Time Labels](#time-labels-time_label). |
+| `mapalgo` | String | Spatial regridding: `consd` (default), `bilinear`, `consf`, `nn`, `redist`, or `passthrough`. `passthrough` requires identical dimensions and ordered source/target coordinates, then copies without AXIS regridding. |
 | `data_model` | String | (Optional) AMIO NetCDF data model for reads: `enhanced`, `classic`, or `auto`. Default behavior is auto (`enhanced` first, then `classic` fallback on backend open failure). |
-| `variables` | List | Variable mappings between file and model |
+| `use_local_time` | Boolean | (Optional) With `cadence: weekly` and `tintalgo: nearest` only: each cell reads the weekly record of its **local** weekday instead of the UTC weekday. Requires `local_time.enabled` and a 7-record file. Default: `false`. See [Local-weekday weekly profiles](#local-weekday-weekly-profiles-use_local_time). |
+| `variables` | List | (Optional) Variable mappings between file and model. If omitted, null, or empty, the stream `name` is used for both names and the standalone driver logs a warning. A mapping may be a string shorthand or a map with a required `model` name and optional `file` name; omitted `file` defaults to `model`. |
 
 ### Variable Mapping
 
@@ -559,18 +696,34 @@ Configuration for data streams that read external emission inventories and auxil
 | --- | --- | --- |
 | `file` | String | Variable name in NetCDF file |
 | `model` | String | Internal field name in CECE |
+| `levels` | Integer | (Optional) Number of nonspatial layers for this variable. Defaults to the global model `nz`; values must be positive. |
+
+For canonical BDSNP, add a stream under `cece_data.streams`. The two
+biome-dependent fields use 24 layers, while scalar fields omit `levels`:
+
+<!-- cece-validate: context cece_data.streams -->
+```yaml
+- name: soilnox_inputs
+  file: soilnox.nc
+  variables:
+    - file: SOILNOX_LAND_FRACTIONS
+      model: soilnox_land_fractions
+      levels: 24
+    - file: SOILNOX_CANOPY_NOX
+      model: soilnox_canopy_nox
+      levels: 24
+```
 
 **Example:**
 ```yaml
 cece_data:
   streams:
     - name: "MACCITY_CO"
-      file: "/data/inventories/MACCity_CO_2010.nc"
-      yearFirst: 2000
-      yearLast: 2010
-      yearAlign: 2020           # Use 2010 data for year 2020
-      taxmode: "cycle"          # Repeat yearly cycle
-      tintalgo: "linear"        # Linear time interpolation
+      file: "/data/inventories/MACCity_CO_2000-2010.nc"
+      # cadence omitted -> "series": the file's own time axis is decoded and the
+      # simulation time is bracketed against the actual record times.
+      taxmode: "cycle"          # Outside 2000-2010, read the closest covered year
+      tintalgo: "linear"        # Linear interpolation between bracketing records
       mapalgo: "consd"          # Conservative regridding
       variables:
         - file: "MACCity_CO"    # Variable name in file
@@ -578,10 +731,8 @@ cece_data:
 
     - name: "HTAP_NOX"
       file: "/data/inventories/HTAPv3_NOx_*.nc"  # Wildcard for multiple files
-      yearFirst: 2018
-      yearLast: 2018
-      yearAlign: 2020
-      taxmode: "extend"         # Extend last value beyond data range
+      yearAlign: 2020           # Simulation year 2020 aligns to the first file year
+      taxmode: "extend"         # Clamp to the nearest end outside the covered range
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"     # Force classic model for legacy files
@@ -591,7 +742,7 @@ cece_data:
 
     - name: "DIURNAL_PROFILE"
       file: "/data/profiles/diurnal_nox.nc"
-      cadence: "hourly"         # Select record by hour-of-day (0-23)
+      cadence: "hourly"         # Profile: select record by hour-of-day (0-23)
       mapalgo: "consd"
       variables:
         - file: "NOx_HOURLY"
@@ -599,7 +750,7 @@ cece_data:
 
     - name: "MONTHLY_CLIM"
       file: "/data/climatology/monthly_co.nc"
-      cadence: "monthly"        # Select record by month (0-11)
+      cadence: "monthly"        # Series with a monthly arithmetic fallback
       tintalgo: "linear"        # Mid-month linear interpolation
       mapalgo: "consd"
       variables:
@@ -607,11 +758,304 @@ cece_data:
           model: "co_monthly_clim"
 ```
 
+### Record Selection (`cadence`)
+
+`cadence` selects *how* a stream's file records are addressed for a given simulation
+date-time. There are three kinds:
+
+| `cadence` | Kind | Behavior |
+| --- | --- | --- |
+| *(omitted)*, `series` | Series | Decode the file's CF time axis and bracket the simulation time against the actual record times. Honors `tintalgo`, `taxmode`, and `yearAlign`. |
+| `daily`, `monthly` | Series | Same as `series`, but if the time axis cannot be decoded, degrade to calendar arithmetic at the stated granularity (day-of-year / month-of-year) using `yearFirst`, `yearLast`, `yearAlign`, and `taxmode`. |
+| `hourly`, `weekly` | Profile | Climatological profile indexed directly by a calendar field: hour-of-day (records 0–23) or day-of-week (records 0–6, 0 = Monday). The time axis is not read. `tintalgo` is honored; `taxmode`, `yearAlign`, `yearFirst`, and `yearLast` are ignored (a warning is logged if set). |
+| `stepwise` (alias `step`) | Stepwise | Opt-in step-index cycling: record `= step_index % n_records`. Time is ignored entirely. `tintalgo`, `taxmode`, and `yearAlign` are ignored (a warning is logged if set). |
+
+Any other value is a configuration error.
+
+> **Changed behavior:** omitting `cadence` used to mean step-index cycling. It now
+> means `series` (time-aware record selection), which is almost always what is
+> wanted. Set `cadence: stepwise` to opt back in to the old index-walking behavior.
+
+#### Local-weekday weekly profiles (`use_local_time`)
+
+A `weekly` stream normally reads one record for the whole globe, chosen by the UTC
+weekday. For gridded day-of-week factors such as CAMS-TEMPO, each cell should instead use
+the factor of its own local weekday. Set `use_local_time: true` on the stream:
+
+```yaml
+local_time:
+  enabled: true
+
+cece_data:
+  streams:
+    - name: "CAMS_WEEKLY"
+      file: "/data/profiles/weekly_factors.nc"   # exactly 7 records, 0=Monday
+      cadence: "weekly"
+      use_local_time: true
+```
+
+- It is supported only with `cadence: weekly` and `tintalgo: nearest` (the default), and
+  the file must have exactly 7 records. Other combinations are configuration errors, as is
+  enabling it while `local_time.enabled` is false.
+- UTC offsets span -12 h to +14 h, so a cell's local date is the UTC date or the day before
+  or after it. Every rank reads and regrids those three records, and each cell takes the
+  one for its local weekday. A record is read once per week, as in the UTC case.
+- The composed field changes whenever a cell's local date changes, so it is recomputed
+  every time the stream is ingested. Keep `refresh_interval_seconds` at one hour or less
+  (quarter-hour zones such as Nepal flip up to one refresh interval late).
+- Only the day of week is localized. An `hourly` stream is still indexed by the UTC hour.
+- The same offset grid and caveats apply as for the layer option; see
+  [`local_time`](#local_time).
+
+#### Decoding the time axis
+
+For `series` (and the `daily`/`monthly` variants) the driver reads the stream's time
+coordinate variable — `time_var`, defaulting to `time` with fallbacks to `Time`, `t`,
+and `valid_time` — together with its CF `units` (`"<unit> since <reference>"`) and
+`calendar` attributes. Only fixed-length units are decodable: seconds, minutes, hours,
+and days. Months and years are calendar-ambiguous and are treated as undecodable.
+
+Use `time_units` and `calendar` to supply these values for files whose attributes are
+missing or non-standard; the config values take precedence over the file's attributes.
+
+If the axis cannot be decoded and the cadence carries no granularity to fall back on
+(that is, plain `series` on a file with more than one record), the run fails with a
+message pointing at the three ways out: set `time_units`, use `cadence: daily`/`monthly`,
+or use `cadence: stepwise` to ignore time altogether. Files with a single record always
+resolve to record 0.
+
+#### Numeric types and packed data
+
+Variables and coordinates are read using the element type the file declares, so
+integer-valued time axes, coordinates, and data (all common in CF files) decode
+correctly. CF packing attributes are applied on read wherever they are present:
+
+$$\mathrm{value} = \mathrm{stored} \times \mathrm{scale\\_factor} + \mathrm{add\\_offset}$$
+
+This needs no configuration — `scale_factor` and `add_offset` are picked up from the
+file, and a variable without them is read unchanged.
+
+#### Interpolation
+
+`tintalgo: nearest` (the default) reads the single closest record. `tintalgo: linear`
+reads the two bracketing records and blends them on the source grid before regridding.
+On the arithmetic fallback path, `monthly` uses the mid-month convention and `daily`
+uses the mid-day convention, so e.g. January 1 blends the December and January records.
+
+The `hourly` and `weekly` profiles interpolate cyclically about each record's midpoint,
+so Sunday 18:00 blends the Sunday and Monday records a quarter of the way across.
+
+#### Time Labels (`time_label`)
+
+A record's time coordinate may sit at the start, the middle, or the end of the interval it
+describes, and CF files rarely state which. `time_label` names the convention so the
+driver brackets against interval centers rather than the raw stamps:
+
+| `time_label` | Meaning |
+| --- | --- |
+| `auto` (default) | Use the axis's CF `bounds` when it has them; otherwise infer from a monthly axis, where stamps that all fall on the first day of a month at 00:00 are read as `start` and stamps that all fall on a month's last day as `end`, or from a day-spaced axis, where stamps that all fall at 00:00 are read as `start` and stamps that all fall at 12:00 are already centers. Every other axis is left as `center`, with a warning. |
+| `start` | Each stamp opens the interval it labels. |
+| `center` | Each stamp is used as written. |
+| `end` | Each stamp closes the interval it labels. A monthly stamp of `2020-02-01T00:00` is the exclusive end of January. |
+
+If the time variable advertises a CF `bounds` attribute, `auto` takes each record's
+interval straight from the bounds variable and infers nothing. An explicit `time_label`
+overrides the bounds as a manual escape hatch.
+
+Without bounds, `auto` only infers from monthly and daily axes, where the stamps
+themselves give the convention away. A daily axis cannot tell `start` from `end` — both
+land at midnight — so midnight stamps are assumed to be `start`, the far more common
+convention for daily means and scale factors. The driver logs that assumption once per
+axis; set `time_label: end` for a right-labelled daily file, or `time_label: center` for
+daily instantaneous snapshots. Sub-daily axes are left as written, also with a warning.
+Nothing is inferred there because a stamp on the hour is equally consistent with an
+interval start and with instantaneous data, and because a run whose timestep matches the
+record spacing lands on the stamps themselves, where both readings select the same
+record.
+
+`start` and `end` apply to any decoded axis. The opposite bound is the neighbouring
+record, so an hourly-mean file stamped on the hour brackets against half-hour centers.
+Monthly axes use calendar arithmetic instead, since month lengths vary.
+
+Labeling affects both nearest-record selection and `linear` weights. Without it, a file
+stamping December data `2020-12-01` would send a December 20 simulation time to the
+January record.
+
+### Temporal Alignment Semantics (`yearAlign`, `taxmode`)
+
+`yearAlign` shifts the simulation time onto the file's time axis: it names the
+simulation year that corresponds to the file's **first** year. `yearAlign: 0` (the
+default) means no shift — simulation years map 1-to-1 onto file years. On the
+arithmetic fallback path the dataset year is computed as:
+
+$$\mathrm{effective\\_year} = \mathrm{yearFirst} + (\mathrm{sim\\_year} - \mathrm{yearAlign})$$
+
+`taxmode` decides what happens when the simulation time falls outside the file's
+coverage:
+
+* **`cycle`** (default): for a file whose records span whole calendar years, clamp the
+  simulation year to the closest year the file covers, keeping the month-by-month
+  seasonality of that year. A 2000–2023 inventory reads its 2023 records for simulation
+  year 2026, and a single-year climatology reads its one year every simulation year. A
+  sub-annual axis carries no year structure, so it wraps by the axis period instead: a
+  48-record hourly file repeats every 48 hours and simulation hour 53 reads record 5.
+* **`extend`**: clamp to the nearest end of the file's coverage. Useful for running past
+  the last year of an inventory.
+* **`limit`**: no record is resolved and the run fails.
+
+`yearFirst` and `yearLast` describe the file's year coverage. They are only consulted on
+the arithmetic fallback path; when the time axis is decodable the record times carry that
+information themselves, so setting them on a `series` stream logs a warning.
+
+### Practical Applications & Common Use Cases
+
+#### 1. Future Projections / Present-Day Runs with Historical Inventories
+**Scenario:** You are running a simulation for year 2026, but your emissions inventory (e.g., CEDS or HTAP) only extends through 2023. You want all simulation years $\ge 2023$ to use the 2023 emission rates.
+```yaml
+cece_data:
+  streams:
+    - name: "CEDS_ANTHRO_NOX"
+      file: "/data/emissions/CEDS_NOx_2000-2023.nc"
+      cadence: "monthly"
+      taxmode: "extend"         # Sim year 2026 clamps to the last file record
+      tintalgo: "linear"
+      # yearFirst/yearLast only matter if the time axis cannot be decoded:
+      yearFirst: 2000
+      yearLast: 2023
+```
+
+#### 2. Historical Reanalysis / Hindcast Runs
+**Scenario:** You are running a historical simulation (e.g., 2010–2015) using a multi-year dataset that covers 2000–2020. Each simulation year should strictly use the corresponding file year.
+```yaml
+cece_data:
+  streams:
+    - name: "HISTORICAL_EMISSIONS"
+      file: "/data/emissions/inventory_2000-2020.nc"
+      cadence: "monthly"
+      yearAlign: 0              # 1-to-1 mapping (sim year 2015 -> file year 2015)
+      taxmode: "limit"          # Fail if the simulation leaves 2000-2020
+      tintalgo: "linear"
+```
+
+#### 3. Holding a Multi-Year Inventory's Seasonal Cycle
+**Scenario:** You have a 10-year dataset (2000–2010) and are simulating 2011–2030. Later simulation years should keep the file's seasonal cycle rather than freezing on its final record.
+```yaml
+cece_data:
+  streams:
+    - name: "CYCLING_INVENTORY"
+      file: "/data/emissions/inventory_2000-2010.nc"
+      cadence: "monthly"
+      taxmode: "cycle"          # Sim years after 2010 read the 2010 records, month by month
+      tintalgo: "linear"
+```
+Where `extend` would hold the single last record (December 2010) for the rest of the run,
+`cycle` clamps only the year, so each simulation month still reads that month's record.
+
+#### 4. Applying a Single-Year Inventory to a Different Simulation Year
+**Scenario:** You have a single-year inventory for year 2010, but you are running a simulation for year 2020.
+```yaml
+cece_data:
+  streams:
+    - name: "SINGLE_YEAR_INVENTORY"
+      file: "/data/emissions/inventory_2010.nc"
+      cadence: "monthly"
+      yearAlign: 2020           # Sim year 2020 aligns to the first file year (2010)
+      taxmode: "extend"
+      tintalgo: "linear"
+```
+
+#### 5. Monthly Climatologies (12-Record Files)
+**Scenario:** You have a 12-month climatology file (Jan–Dec) that applies identically to every simulation year.
+```yaml
+cece_data:
+  streams:
+    - name: "MONTHLY_CLIMATOLOGY"
+      file: "/data/climatology/monthly_isoprene.nc"
+      cadence: "monthly"        # Falls back to month-of-year indexing if the
+                                # 12-record axis has no decodable units
+      tintalgo: "linear"        # Smooth mid-month interpolation
+      taxmode: "cycle"          # Reuse the same 12 records every year
+```
+
+#### 6. Daily Climatologies and Daily Emissions Files
+**Scenario:** Reading daily data files (e.g., 365/366-day daily climatology or multi-year daily emissions).
+```yaml
+cece_data:
+  streams:
+    - name: "DAILY_CLIMATOLOGY"
+      file: "/data/climatology/daily_emissions.nc"
+      cadence: "daily"          # Falls back to day-of-year indexing (records 0-364/365)
+      tintalgo: "linear"        # Smooth intra-day linear interpolation
+      taxmode: "cycle"
+
+    - name: "MULTIYEAR_DAILY_EMISSIONS"
+      file: "/data/emissions/daily_inventory_2000-2023.nc"
+      cadence: "daily"
+      taxmode: "extend"
+      tintalgo: "linear"
+      yearFirst: 2000           # Fallback-path coverage hints
+      yearLast: 2023
+```
+
+#### 7. Diurnal (Hourly) and Weekly Variation Profiles
+**Scenario:** Applying 24-hour diurnal scale factors or 7-day weekly scale factors. These
+are climatological profiles, not time series, so the file's time axis is not consulted and
+no other temporal keys apply.
+```yaml
+cece_data:
+  streams:
+    - name: "DIURNAL_SCALE"
+      file: "/data/profiles/diurnal_factors.nc"
+      cadence: "hourly"         # Selects record 0-23 by hour of day
+
+    - name: "WEEKLY_SCALE"
+      file: "/data/profiles/weekly_factors.nc"
+      cadence: "weekly"         # Selects record 0-6 by day of week (0=Mon ... 6=Sun)
+```
+
+#### 8. Sub-Daily Time Series (e.g. Hourly Emissions over a Date Range)
+**Scenario:** An hourly emissions file spanning several days. This is a *series*, not an
+hour-of-day profile — each record has its own date, so `cadence: hourly` would be wrong.
+```yaml
+cece_data:
+  streams:
+    - name: "HOURLY_FIRE_EMISSIONS"
+      file: "/data/emissions/fire_hourly_20240701-20240707.nc"
+      # cadence omitted -> series: bracket the simulation time on the decoded axis
+      tintalgo: "linear"
+      taxmode: "extend"         # Hold the last record once the run outlasts the file
+```
+
+#### 9. Ignoring Time Entirely (Legacy Step Cycling)
+**Scenario:** Reproducing the pre-`series` default, where record `n` is read on step `n`
+regardless of the simulation date.
+```yaml
+cece_data:
+  streams:
+    - name: "STEP_CYCLED_INPUT"
+      file: "/data/inventories/records.nc"
+      cadence: "stepwise"       # record = step_index % n_records; time is ignored
+```
+
+#### 10. Files with Missing or Non-Standard Time Metadata
+**Scenario:** A file whose time variable is named `valid_time` and carries no `units`
+attribute, so the axis cannot be decoded from the file alone.
+```yaml
+cece_data:
+  streams:
+    - name: "LEGACY_INVENTORY"
+      file: "/data/inventories/legacy_no_units.nc"
+      time_var: "valid_time"
+      time_units: "hours since 2020-01-01 00:00:00"
+      calendar: "noleap"
+      tintalgo: "linear"
+```
+
 ---
 
 ## `output`
 
-Configuration for NetCDF output file generation with emission fields and diagnostics.
+Configuration for NetCDF output file generation with emission fields.
 
 | Key | Type | Description |
 | --- | --- | --- |
@@ -620,9 +1064,11 @@ Configuration for NetCDF output file generation with emission fields and diagnos
 | `filename_pattern` | String | Filename template with time substitution |
 | `frequency_steps` | Integer | Output frequency in timesteps |
 | `fields` | List | Fields to write; each entry is either a field name string or a map with `name` and optional `attributes` |
-| `diagnostics` | Boolean | Also write diagnostic fields (default: false) |
-| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads for output. Must be ≥ 1; invalid values warn and default to 1. Falls back to `driver.amio_worker_threads` when not set. |
-| `global_attributes` | Map | (Optional) Map of custom NetCDF global attributes to write verbatim on the output file, overriding any defaults. |
+| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads for output. Must be ≥ 1 when explicitly set; nonpositive values are rejected. When omitted, falls back to `driver.amio_worker_threads`. |
+| `amio_staging_buffer_count` | Integer | Number of output staging buffers, in `[1, 4096]`. Default: `2`. The writer waits for each asynchronous write and bounds the pool at this count. |
+| `amio_staging_buffer_capacity_bytes` | Integer | Minimum capacity of each output staging buffer, in `[1, 1073741824]`. Default: `67108864` (64 MiB). The writer automatically raises this to fit one complete `float64` output field. |
+| `amio_staging_timeout_ms` | Integer | Output staging acquisition and write-completion timeout, in `[1, 60000]` milliseconds. Default: `60000`. |
+| `global_attributes` | Map | (Optional) Map of NetCDF global attribute names to string, number, or boolean values, overriding any defaults. |
 
 ### Fields and Attributes
 
@@ -663,7 +1109,7 @@ Semantics:
 
 ### Custom Global Attributes
 
-The optional `global_attributes` map allows you to specify custom global NetCDF attributes to write verbatim on the output files, overriding any default attributes:
+The optional `global_attributes` map allows you to override recognized global NetCDF attributes on the output files:
 
 ```yaml
 output:
@@ -673,7 +1119,7 @@ output:
     references: "Custom project publication URL (2026)"
 ```
 
-The standalone writer automatically populates a standard set of geoscientific default attributes (`title`, `Conventions`, `institution`, `source`, `history`, `references`, `comment`, and `gridspec_file`). Any key-value pair specified under `global_attributes` overrides these defaults, while other omitted keys retain their professional defaults.
+The standalone writer automatically populates a standard set of geoscientific default attributes (`title`, `Conventions`, `institution`, `source`, `history`, `references`, `comment`, and `gridspec_file`). Values supplied for attributes recognized by AMIO override these defaults; unrecognized keys are ignored by AMIO, and the writer logs a warning for each one. AMIO writes any value that parses as a number, quoted or not, as a numeric NetCDF attribute.
 
 ### Filename Pattern Substitutions
 
@@ -693,6 +1139,10 @@ output:
   directory: "./output"
   filename_pattern: "cece_emissions_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
   frequency_steps: 1            # Output every timestep
+  amio_worker_threads: 2
+  amio_staging_buffer_count: 2
+  amio_staging_buffer_capacity_bytes: 67108864
+  amio_staging_timeout_ms: 60000
   fields:
     - name: "co"
       attributes:
@@ -705,3 +1155,108 @@ output:
     - "isoprene"
     - "sea_salt_total"
 ```
+
+---
+
+## `nuopc`
+
+The optional top-level `nuopc:` section declares which fields CECE exchanges
+with a coupling framework when it runs through the NUOPC cap
+(`cece_nuopc_app`). It has no effect on the standalone C++ driver, and when
+the section is absent (or empty) the cap advertises no fields at all — the
+standalone behavior of the cap is then byte-for-byte unchanged.
+
+```yaml
+species:                  # the export key 'oc' must be a species here
+  oc:
+    - field: OC_ANTHRO
+      operation: add
+meteorology:              # the import key 'temperature' must be an input here
+  temperature: air_temperature
+nuopc:
+  export_fields:          # optional; keys must be species in `species:`
+    oc:
+      standard_name: "agent_count_emission_flux_of_particulate_organic_matter"
+      units: "kg m-2 s-1"    # optional; must match the dictionary's canonical units
+      name: "oc_flux"        # optional state item name; defaults to the species key
+  import_fields:          # optional; keys must be input names in
+                         # `meteorology:`, `scale_factors:`, or `masks:`
+    temperature:
+      standard_name: "air_temperature"
+      units: "K"
+      name: "tmp"           # optional; defaults to the input key
+```
+
+### Entry properties
+
+| Key | Required | Notes |
+| --- | -------- | ----- |
+| `export_fields.<species>` | — | one entry per emission species to expose to a coupled host; the exported field is the species' aggregated emission flux |
+| `import_fields.<input>` | — | one entry per host-provided forcing input; the key must exist in `meteorology:`, `scale_factors:`, or `masks:` so the delivered values can be resolved to a model input name |
+| `standard_name` | yes | the NUOPC community standard name for the field; validated against the active NUOPC Field Dictionary when the cap advertises |
+| `units` | no | must equal the dictionary's canonical units for that standard name; omitted means the dictionary's canonical units apply |
+| `name` | no | the name of the field in the coupling state; defaults to the species key (exports) or input key (imports). Must not contain `/` |
+
+### Field geometry
+
+The exchange geometry is fixed and not user-configurable:
+
+- **Exports** are rank-3 fields: the two horizontal grid dimensions plus a
+  vertical dimension spanning `1:nz`, where `nz` comes from
+  `driver.grid.nz`.
+- **Imports** are rank-2 surface fields (the two horizontal grid dimensions,
+  no vertical).
+
+### Dictionary membership is a host responsibility
+
+The `standard_name` values are checked against the NUOPC Field Dictionary at
+runtime, when the cap advertises its fields — not when the configuration is
+parsed. The ESMF library ships with a small preloaded dictionary covering
+common ocean and land-surface names only; emission and other specialized names
+must be provided by the **host application** that drives the coupling, which
+installs its dictionary before any component initializes. If a name is not in
+the active dictionary, the run fails loudly at advertise time and the error
+message names the offending standard name.
+
+When running the NUOPC cap standalone for testing, the app accepts a
+`--field-dictionary <path.yaml>` flag to emulate a host that provides a
+community dictionary:
+
+```bash
+./bin/cece_nuopc_app --field-dictionary tests/nuopc_coupling/test_field_dictionary.yaml \
+    examples/cece_config_ceds_oc_small_coupled.yaml
+```
+
+Without the flag, the preloaded dictionary is used, so a config advertising
+names outside it fails at advertise — the expected behavior for a host that
+has not supplied the needed entries.
+
+### Validation at parse time
+
+The configuration parser rejects, with an error naming the offending key:
+
+- an export key that is not a configured emission species;
+- an import key that appears in none of `meteorology:`, `scale_factors:`, or
+  `masks:`;
+- an entry with a missing or empty `standard_name`;
+- a `standard_name` or `name` containing `/`;
+- unknown sub-keys under an entry.
+
+### Coupled behavior in one paragraph
+
+At initialization the cap advertises every configured export and import, and
+the coupling framework connects matching pairs between components. Connected
+exports are reference-shared: a host that realizes on CECE's grid reads
+CECE's computed emission storage directly, with no per-step copy. Connected
+imports are realized on the geometry the host provides, and each step the cap
+copies the delivered values into the simulation's input fields before the
+compute step. Fields that are configured but never connected are removed at
+realization, allocate nothing, and produce no error — which is what keeps a
+`nuopc:`-bearing config byte-for-byte identical to the same run without
+peers. See [NUOPC Cap Parity](nuopc_cap_parity.md) for the data-flow walk and
+the coupling integration tests.
+
+A complete example lives in
+`examples/cece_config_ceds_oc_small_coupled.yaml` (the small CEDS ocean
+fixture plus a `nuopc:` block exporting `oc` and importing one temperature
+field).

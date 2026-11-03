@@ -10,9 +10,20 @@
 
 #include "cece/cece_logger.hpp"
 
+namespace {
+
+constexpr int kMinOutputStagingBufferCount = 1;
+constexpr int kMaxOutputStagingBufferCount = 4096;
+constexpr int kMinOutputStagingBufferCapacityBytes = 1;
+constexpr int kMaxOutputStagingBufferCapacityBytes = 1073741824;
+constexpr int kMinOutputStagingTimeoutMs = 1;
+constexpr int kMaxOutputStagingTimeoutMs = 60000;
+
+}  // namespace
+
 namespace cece {
 
-ValidationResult ConfigValidator::ValidateConfig(const YAML::Node& config) {
+ValidationResult ConfigValidator::ValidateConfig(const conf::Value& config) {
     ValidationResult result;
 
     // Validate species definitions
@@ -37,14 +48,14 @@ ValidationResult ConfigValidator::ValidateConfig(const YAML::Node& config) {
     return result;
 }
 
-void ConfigValidator::ValidateSpecies(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidateSpecies(const conf::Value& config, ValidationResult& result) {
     if (!config["species"]) {
         result.errors.push_back({"species", "No species defined in configuration", "Add a 'species' section with at least one emission species"});
         return;
     }
 
     const auto& species_node = config["species"];
-    if (!species_node.IsSequence()) {
+    if (species_node.kind() != conf::Node_Kind::Sequence) {
         result.errors.push_back({"species", "Species must be a list", "Change 'species' to a YAML list (use '-' for each item)"});
         return;
     }
@@ -67,14 +78,14 @@ void ConfigValidator::ValidateSpecies(const YAML::Node& config, ValidationResult
     }
 }
 
-void ConfigValidator::ValidateLayers(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidateLayers(const conf::Value& config, ValidationResult& result) {
     if (!config["layers"]) {
         result.warnings.push_back("No layers defined in configuration");
         return;
     }
 
     const auto& layers_node = config["layers"];
-    if (!layers_node.IsSequence()) {
+    if (layers_node.kind() != conf::Node_Kind::Sequence) {
         result.errors.push_back({"layers", "Layers must be a list", "Change 'layers' to a YAML list (use '-' for each item)"});
         return;
     }
@@ -95,7 +106,7 @@ void ConfigValidator::ValidateLayers(const YAML::Node& config, ValidationResult&
             result.errors.push_back({"layers[" + std::to_string(i) + "].file", "Layer file path is missing",
                                      "Add a 'file' field with the path to the emission data file"});
         } else {
-            std::string file_path = layer["file"].as<std::string>();
+            std::string file_path = layer["file"].as_string();
             if (!FileExists(file_path)) {
                 result.errors.push_back({"layers[" + std::to_string(i) + "].file", "File not found: " + file_path,
                                          "Verify the file path is correct and the file exists"});
@@ -110,7 +121,7 @@ void ConfigValidator::ValidateLayers(const YAML::Node& config, ValidationResult&
         if (!layer["operation"]) {
             result.warnings.push_back("layers[" + std::to_string(i) + "].operation: Operation not specified, defaulting to 'add'");
         } else {
-            std::string op = layer["operation"].as<std::string>();
+            std::string op = layer["operation"].as_string();
             if (op != "add" && op != "replace") {
                 result.errors.push_back(
                     {"layers[" + std::to_string(i) + "].operation", "Invalid operation: " + op, "Operation must be either 'add' or 'replace'"});
@@ -119,7 +130,7 @@ void ConfigValidator::ValidateLayers(const YAML::Node& config, ValidationResult&
     }
 }
 
-void ConfigValidator::ValidateVerticalDistribution(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidateVerticalDistribution(const conf::Value& config, ValidationResult& result) {
     if (!config["layers"]) {
         return;
     }
@@ -139,7 +150,7 @@ void ConfigValidator::ValidateVerticalDistribution(const YAML::Node& config, Val
             result.errors.push_back({"layers[" + std::to_string(i) + "].vertical_distribution.method", "Vertical distribution method is missing",
                                      "Add a 'method' field: SINGLE, RANGE, PRESSURE, HEIGHT, or PBL"});
         } else {
-            std::string method = vdist["method"].as<std::string>();
+            std::string method = vdist["method"].as_string();
             if (method != "SINGLE" && method != "RANGE" && method != "PRESSURE" && method != "HEIGHT" && method != "PBL") {
                 result.errors.push_back({"layers[" + std::to_string(i) + "].vertical_distribution.method",
                                          "Invalid vertical distribution method: " + method,
@@ -149,7 +160,7 @@ void ConfigValidator::ValidateVerticalDistribution(const YAML::Node& config, Val
     }
 }
 
-void ConfigValidator::ValidateDataStreams(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidateDataStreams(const conf::Value& config, ValidationResult& result) {
     if (!config["cece_data"]) {
         return;
     }
@@ -157,7 +168,7 @@ void ConfigValidator::ValidateDataStreams(const YAML::Node& config, ValidationRe
     const auto& cece_data = config["cece_data"];
 
     if (cece_data["streams_yaml"]) {
-        std::string streams_file = cece_data["streams_yaml"].as<std::string>();
+        std::string streams_file = cece_data["streams_yaml"].as_string();
         if (!FileExists(streams_file)) {
             result.errors.push_back(
                 {"cece_data.streams_yaml", "Streams file not found: " + streams_file, "Verify the streams file path is correct and the file exists"});
@@ -165,7 +176,7 @@ void ConfigValidator::ValidateDataStreams(const YAML::Node& config, ValidationRe
     }
 
     if (cece_data["data_root"]) {
-        std::string data_root = cece_data["data_root"].as<std::string>();
+        std::string data_root = cece_data["data_root"].as_string();
         if (!std::filesystem::exists(data_root)) {
             result.errors.push_back({"cece_data.data_root", "Data root directory not found: " + data_root,
                                      "Verify the data root path is correct and the directory exists"});
@@ -173,14 +184,14 @@ void ConfigValidator::ValidateDataStreams(const YAML::Node& config, ValidationRe
     }
 }
 
-void ConfigValidator::ValidatePhysicsSchemes(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidatePhysicsSchemes(const conf::Value& config, ValidationResult& result) {
     if (!config["physics_schemes"]) {
         result.warnings.push_back("No physics schemes configured");
         return;
     }
 
     const auto& schemes_node = config["physics_schemes"];
-    if (!schemes_node.IsSequence()) {
+    if (schemes_node.kind() != conf::Node_Kind::Sequence) {
         result.errors.push_back(
             {"physics_schemes", "Physics schemes must be a list", "Change 'physics_schemes' to a YAML list (use '-' for each item)"});
         return;
@@ -194,13 +205,13 @@ void ConfigValidator::ValidatePhysicsSchemes(const YAML::Node& config, Validatio
                 {"physics_schemes[" + std::to_string(i) + "].name", "Scheme name is missing", "Add a 'name' field to each physics scheme"});
         }
 
-        if (scheme["enabled"] && !scheme["enabled"].as<bool>()) {
+        if (scheme["enabled"] && !scheme["enabled"].as_bool()) {
             result.warnings.push_back("physics_schemes[" + std::to_string(i) + "]: Scheme is disabled");
         }
     }
 }
 
-void ConfigValidator::ValidateOutput(const YAML::Node& config, ValidationResult& result) {
+void ConfigValidator::ValidateOutput(const conf::Value& config, ValidationResult& result) {
     if (!config["output"]) {
         return;
     }
@@ -208,16 +219,40 @@ void ConfigValidator::ValidateOutput(const YAML::Node& config, ValidationResult&
     const auto& output = config["output"];
 
     if (output["directory"]) {
-        std::string dir = output["directory"].as<std::string>();
+        std::string dir = output["directory"].as_string();
         if (!DirectoryIsWritable(dir)) {
             result.warnings.push_back("output.directory: Directory not writable or does not exist: " + dir);
         }
     }
 
     if (output["frequency_steps"]) {
-        int freq = output["frequency_steps"].as<int>();
+        int freq = output["frequency_steps"].as_int();
         if (freq <= 0) {
             result.errors.push_back({"output.frequency_steps", "Output frequency must be positive", "Set frequency_steps to a positive integer"});
+        }
+    }
+
+    if (output["amio_staging_buffer_count"]) {
+        int count = output["amio_staging_buffer_count"].as_int();
+        if (count < kMinOutputStagingBufferCount || count > kMaxOutputStagingBufferCount) {
+            result.errors.push_back({"output.amio_staging_buffer_count", "Output staging buffer count must be in [1, 4096]",
+                                     "Set amio_staging_buffer_count between 1 and 4096"});
+        }
+    }
+
+    if (output["amio_staging_buffer_capacity_bytes"]) {
+        int capacity = output["amio_staging_buffer_capacity_bytes"].as_int();
+        if (capacity < kMinOutputStagingBufferCapacityBytes || capacity > kMaxOutputStagingBufferCapacityBytes) {
+            result.errors.push_back({"output.amio_staging_buffer_capacity_bytes", "Output staging buffer capacity must be in [1, 1073741824]",
+                                     "Set capacity to at least the largest output field and no more than 1 GiB"});
+        }
+    }
+
+    if (output["amio_staging_timeout_ms"]) {
+        int timeout = output["amio_staging_timeout_ms"].as_int();
+        if (timeout < kMinOutputStagingTimeoutMs || timeout > kMaxOutputStagingTimeoutMs) {
+            result.errors.push_back({"output.amio_staging_timeout_ms", "Output staging timeout must be in [1, 60000] milliseconds",
+                                     "Set amio_staging_timeout_ms between 1 and 60000"});
         }
     }
 }

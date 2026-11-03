@@ -9,8 +9,11 @@
 #include "cece/cece_logger.hpp"
 #include "cece/cece_stacking_engine.hpp"
 #include "cece/cece_state.hpp"
+#include "conf/config.hpp"
+#include "conf/error.hpp"
 
 namespace py = pybind11;
+void BindSchemeRuntime(py::module_& module);
 
 /**
  * @brief Pybind11 trampoline class for cece::FieldResolver.
@@ -91,6 +94,7 @@ static void cece_exception_translator(std::exception_ptr p) {
 }
 
 PYBIND11_MODULE(_cece_core, m) {
+    BindSchemeRuntime(m);
     m.doc() = "CECE C++ core bindings via pybind11";
 
     // --- Exception Translation ---
@@ -144,6 +148,7 @@ PYBIND11_MODULE(_cece_core, m) {
         .def_readwrite("diurnal_cycle", &cece::EmissionLayer::diurnal_cycle)
         .def_readwrite("weekly_cycle", &cece::EmissionLayer::weekly_cycle)
         .def_readwrite("seasonal_cycle", &cece::EmissionLayer::seasonal_cycle)
+        .def_readwrite("use_local_time", &cece::EmissionLayer::use_local_time)
         .def_readwrite("vdist_method", &cece::EmissionLayer::vdist_method)
         .def_readwrite("vdist_layer_start", &cece::EmissionLayer::vdist_layer_start)
         .def_readwrite("vdist_layer_end", &cece::EmissionLayer::vdist_layer_end)
@@ -155,6 +160,13 @@ PYBIND11_MODULE(_cece_core, m) {
     // --- TemporalCycle Binding (needed for CeceConfig.temporal_cycles) ---
 
     py::class_<cece::TemporalCycle>(m, "TemporalCycle").def(py::init<>()).def_readwrite("factors", &cece::TemporalCycle::factors);
+
+    // --- LocalTimeConfig Binding ---
+
+    py::class_<cece::LocalTimeConfig>(m, "LocalTimeConfig")
+        .def(py::init<>())
+        .def_readwrite("enabled", &cece::LocalTimeConfig::enabled)
+        .def_readwrite("grid_file", &cece::LocalTimeConfig::grid_file);
 
     // --- PhysicsSchemeConfig Binding (needed for CeceConfig.physics_schemes) ---
 
@@ -172,9 +184,12 @@ PYBIND11_MODULE(_cece_core, m) {
         .def_readwrite("scale_factor_mapping", &cece::CeceConfig::scale_factor_mapping)
         .def_readwrite("mask_mapping", &cece::CeceConfig::mask_mapping)
         .def_readwrite("temporal_cycles", &cece::CeceConfig::temporal_cycles)
+        .def_readwrite("local_time", &cece::CeceConfig::local_time)
         .def_readwrite("physics_schemes", &cece::CeceConfig::physics_schemes);
 
     // --- Module-level functions ---
+
+    m.def("ParseConfigText", &cece::ParseConfigText, py::arg("yaml"));
 
     m.def("ParseConfig", &cece::ParseConfig, py::arg("filename"), "Parse an CECE YAML configuration file and return an CeceConfig object.");
 
@@ -322,15 +337,11 @@ PYBIND11_MODULE(_cece_core, m) {
                 int ny = static_cast<int>(host_view.extent(1));
                 int nz = static_cast<int>(host_view.extent(2));
 
-                // Create a capsule that prevents deallocation while the NumPy array is alive.
-                // The capsule captures a pointer to the DualView3D in the fields map.
-                // The fields map entry stays alive as long as the CeceExportState is alive,
-                // and the capsule prevents Python from freeing the data pointer.
-                py::capsule capsule(host_view.data(), [](void*) {
-                    // No-op destructor: the data is owned by the DualView3D in the
-                    // CeceExportState.fields map. The capsule just prevents NumPy
-                    // from trying to free this pointer.
-                });
+                // Retain a Kokkos view reference, not just the raw pointer. This
+                // keeps the allocation alive even after the state/map is destroyed.
+                using HostView = decltype(host_view);
+                auto* owner = new HostView(host_view);
+                py::capsule capsule(owner, [](void* pointer) { delete static_cast<HostView*>(pointer); });
 
                 // Return py::array_t with shape/strides pointing to host view data
                 // Kokkos LayoutLeft = Fortran column-major order
@@ -423,13 +434,12 @@ PYBIND11_MODULE(_cece_core, m) {
         .def_static(
             "ValidateConfig",
             [](const std::string& yaml_str) {
-                YAML::Node config;
                 try {
-                    config = YAML::Load(yaml_str);
-                } catch (const YAML::Exception& e) {
+                    conf::Config parsed = conf::Config::from_string(yaml_str);
+                    return cece::ConfigValidator::ValidateConfig(parsed.root());
+                } catch (const conf::Conf_Error& e) {
                     throw py::value_error(std::string("YAML parse error: ") + e.what());
                 }
-                return cece::ConfigValidator::ValidateConfig(config);
             },
             py::arg("yaml_string"), "Validate an CECE YAML configuration string. Raises ValueError on parse failure.");
 
@@ -457,6 +467,8 @@ PYBIND11_MODULE(_cece_core, m) {
         "get_log_level",
         []() {
             auto& logger = cece::CeceLogger::GetInstance();
+            // Each enum value must retain its distinct public string spelling.
+            // NOLINTNEXTLINE(bugprone-branch-clone)
             switch (logger.GetLogLevel()) {
                 case cece::LogLevel::DEBUG:
                     return std::string("DEBUG");

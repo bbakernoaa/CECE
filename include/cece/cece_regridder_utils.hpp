@@ -14,9 +14,47 @@
 
 namespace cece::io {
 
-/// Build an AXIS UnstructuredMesh from rectilinear coordinate arrays.
-axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int nj, const std::vector<double>& lons, const std::vector<double>& lats,
-                                                                    const std::string& gridspec_file = "");
+/// Build an AXIS UnstructuredMesh from rectilinear coordinate arrays or a FV3 NetCDF grid specification file.
+/// The band starts at global row `j0` and spans `nband` rows.
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int nx, int nband, int j0, const std::vector<double>& lons,
+                                                                    const std::vector<double>& lats, const std::string& gridspec_file = "");
+
+/// Convenience overload that builds a whole-grid mesh (band offset `j0 = 0`).
+inline axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int nx, int ny, const std::vector<double>& lons,
+                                                                           const std::vector<double>& lats, const std::string& gridspec_file = "") {
+    return build_axis_mesh(nx, ny, 0, lons, lats, gridspec_file);
+}
+
+/// Build the destination sub-mesh for a rectilinear latitude band [j0, j1) with
+/// GLOBALLY-CONSISTENT cell corners. Unlike a plain build_axis_mesh over a
+/// band-local coordinate slice (whose outer latitude edges AXIS would extrapolate
+/// one-sidedly from band-local centers — correct only on a uniform grid), this
+/// derives every latitude edge from the FULL global `full_lats` center array and
+/// every longitude edge from the full `full_lons` (periodic), so the band's
+/// boundary rows carry the true global cell edges (the midpoint to the neighbour
+/// row owned by an adjacent rank). This makes the band conservative regrid match
+/// the corresponding rows of the global regrid exactly on non-uniform grids.
+/// `full_lons` has length nx (rectilinear); `full_lats` is the full global
+/// latitude center array of length >= j1.
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_band_mesh_with_global_corners(int nx, int j0, int j1, const std::vector<double>& full_lons,
+                                                                                        const std::vector<double>& full_lats);
+
+/// Build the destination sub-mesh for a CURVILINEAR latitude band [j0, j1) with
+/// GLOBALLY-CONSISTENT 2-D cell corners. The band's boundary corners depend on
+/// neighbour centers in both longitude and latitude, so they are derived from the
+/// FULL global curvilinear center arrays via the same AXIS shared corner-synthesis
+/// kernel used for the rectilinear band (axis::topology::synthesize_band_corners),
+/// then pinned with set_corners. This makes the curvilinear band conservative
+/// regrid match the corresponding rows of the global regrid at the seams, and
+/// leaves a whole-grid (single-rank) band byte-for-byte identical to the global
+/// mesh. `full_center_lon`/`full_center_lat` are the flattened global centers
+/// (length nx * ny_global, index i + j*nx); `band_center_lon`/`band_center_lat`
+/// are the band's nx * (j1 - j0) centers (the global rows [j0, j1)).
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_band_mesh_curvilinear_with_global_corners(int nx, int j0, int j1,
+                                                                                                    const std::vector<double>& full_center_lon,
+                                                                                                    const std::vector<double>& full_center_lat,
+                                                                                                    const std::vector<double>& band_center_lon,
+                                                                                                    const std::vector<double>& band_center_lat);
 
 /// A precomputed, reusable regridding plan for one stream variable.
 ///
@@ -34,8 +72,25 @@ struct RegridPlan {
     int j1 = 0;                                                   ///< one-past-last destination row owned by this rank
     int file_nx = 0;                                              ///< source longitude count (from coords)
     int file_ny = 0;                                              ///< source latitude count (from coords)
-    bool built = false;                                           ///< true once weights are generated
+    /// Exact source latitude-row window [src_j0, src_j0 + src_rows) that the
+    /// weight matrix actually references (min/max column / file_nx). Band-scoped
+    /// reads fetch only these rows instead of the full source record: under MPI
+    /// this is the difference between every rank pulling the whole global field
+    /// (16x replicated IO) and each rank pulling only its band's footprint.
+    /// src_rows == 0 means "no window computed" (callers read full records);
+    /// build_regrid_plan always sets it for built plans.
+    int src_j0 = 0;
+    int src_rows = 0;
+    bool identity = false;  ///< copy source cells directly; no AXIS weights are applied
+    bool built = false;     ///< true once weights are generated
 };
+
+/// Return true when source and target longitude/latitude coordinates describe
+/// the same ordered spherical grid. Rectilinear (lon[nx], lat[ny]) and flattened curvilinear
+/// (lon[nx*ny], lat[nx*ny]) representations may be mixed. Longitude values
+/// that differ only by a 360-degree convention are considered equal.
+bool same_spherical_grid_coordinates(int nx, int ny, const std::vector<double>& source_lons, const std::vector<double>& source_lats,
+                                     const std::vector<double>& target_lons, const std::vector<double>& target_lats, double tolerance = 1.0e-10);
 
 /// Build the interpolation weights for a rank-local destination row band
 /// [j0, j1). Reads the source `lon`/`lat` coordinate variables from the open
@@ -46,6 +101,31 @@ struct RegridPlan {
 bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const std::vector<double>& target_lons,
                        const std::vector<double>& target_lats, const std::string& map_algo, int j0, int j1, const std::string& gridspec_file,
                        RegridPlan& plan);
+
+/** Build a plan from geographic coordinates without opening a dataset.
+ * Coordinates must describe either two rectilinear axes or two flattened
+ * curvilinear arrays. A multi-column, single-row source with one latitude
+ * is supported only for passthrough; it lacks the geometry needed by the
+ * existing interpolation mesh builder. Kokkos must already be initialized.
+ * @param source_nx Number of source columns.
+ * @param source_ny Number of source rows.
+ * @param source_lons Source longitudes in degrees, as an axis or flattened grid.
+ * @param source_lats Source latitudes in degrees, as an axis or flattened grid.
+ * @param nx Number of target columns.
+ * @param ny Number of target rows.
+ * @param target_lons Target longitudes in degrees, as an axis or flattened grid.
+ * @param target_lats Target latitudes in degrees, as an axis or flattened grid.
+ * @param map_algo Existing CECE interpolation method name.
+ * @param j0 First target row in this plan.
+ * @param j1 One past the last target row in this plan.
+ * @param gridspec_file Optional target grid specification file.
+ * @param[out] plan Plan populated by the shared AXIS implementation.
+ * @return True on success.
+ * @throws std::invalid_argument if dimensions, coordinates, or row bounds are invalid.
+ */
+bool build_regrid_plan_from_coordinates(int source_nx, int source_ny, const std::vector<double>& source_lons, const std::vector<double>& source_lats,
+                                        int nx, int ny, const std::vector<double>& target_lons, const std::vector<double>& target_lats,
+                                        const std::string& map_algo, int j0, int j1, const std::string& gridspec_file, RegridPlan& plan);
 
 /// Apply a previously built plan to one source field snapshot, producing the
 /// rank-local destination slice `local_dst` of size nx * (j1 - j0), laid out

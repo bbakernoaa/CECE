@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <Kokkos_Core.hpp>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 
 #include "cece/cece_config.hpp"
 #include "cece/cece_data_ingestor.hpp"
+#include "cece/cece_io.hpp"
 
 /**
  * @file test_cece_ingestor.cpp
@@ -70,9 +73,156 @@ TEST_F(IngestorTest, PassthroughMapalgoSerializedCorrectly) {
     EXPECT_NE(yaml_out.find("map_algo: \"passthrough\""), std::string::npos);
 }
 
-}  // namespace cece::test
+TEST_F(IngestorTest, CeceIoAllocatesConfiguredPerVariableLevels) {
+    namespace fs = std::filesystem;
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path config_path = fs::temp_directory_path() / ("cece_io_levels_" + std::to_string(stamp) + ".yaml");
 
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    {
+        std::ofstream config(config_path);
+        ASSERT_TRUE(config.good());
+        config << "cece_data:\n"
+               << "  streams:\n"
+               << "    - name: test_stream\n"
+               << "      variables:\n"
+               << "        - scalar_field\n"
+               << "        - file: LAND_FRACTION\n"
+               << "          model: soilnox_land_fractions\n"
+               << "          levels: 24\n";
+    }
+
+    cece::io::CeceIO io;
+    ASSERT_NO_THROW(io.Initialize(config_path.string(), 3, 2, 1));
+
+    const auto scalar = io.GetFieldView("scalar_field");
+    EXPECT_EQ(scalar.extent(0), 3u);
+    EXPECT_EQ(scalar.extent(1), 2u);
+    EXPECT_EQ(scalar.extent(2), 1u);
+
+    const auto layered = io.GetFieldView("soilnox_land_fractions");
+    EXPECT_EQ(layered.extent(0), 3u);
+    EXPECT_EQ(layered.extent(1), 2u);
+    EXPECT_EQ(layered.extent(2), 24u);
+
+    io.Finalize();
+    std::error_code ec;
+    fs::remove(config_path, ec);
+    EXPECT_FALSE(ec) << ec.message();
 }
+
+TEST_F(IngestorTest, CeceIoSkipsEarthAccessAndMapsImplicitStreams) {
+    namespace fs = std::filesystem;
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path config_path = fs::temp_directory_path() / ("cece_io_earthaccess_" + std::to_string(stamp) + ".yaml");
+
+    {
+        std::ofstream config(config_path);
+        ASSERT_TRUE(config.good());
+        config << "cece_data:\n"
+               << "  streams:\n"
+               << "    - name: modis_lai\n"
+               << "      source: earthaccess\n"
+               << "      short_name: MCD15A2H\n"
+               << "      temporal_start: '2022-07-01'\n"
+               << "      temporal_end: '2022-07-03'\n"
+               << "      variables:\n"
+               << "        Lai_500m: leaf_area_index\n"
+               << "    - name: local_stream\n"
+               << "      file: local.nc\n"
+               << "      variables:\n"
+               << "        - file: LOCAL_FILE\n"
+               << "          model: local_model\n"
+               << "    - name: missing_variables\n"
+               << "    - name: null_variables\n"
+               << "      variables:\n"
+               << "    - name: empty_variables\n"
+               << "      variables: []\n";
+    }
+
+    cece::io::CeceIO io;
+    ASSERT_NO_THROW(io.Initialize(config_path.string(), 3, 2, 1));
+    const auto names = io.GetOutputVarNames();
+    EXPECT_EQ(names.size(), 4u);
+    EXPECT_EQ(names[0], "local_model");
+    for (const char* name : {"missing_variables", "null_variables", "empty_variables"}) {
+        EXPECT_EQ(io.GetFieldView(name).extent(0), 3u) << name;
+    }
+
+    io.Finalize();
+    std::error_code ec;
+    fs::remove(config_path, ec);
+    EXPECT_FALSE(ec) << ec.message();
+}
+
+TEST_F(IngestorTest, CeceIoRejectsEmptyVariableNames) {
+    namespace fs = std::filesystem;
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path config_path = fs::temp_directory_path() / ("cece_io_empty_name_" + std::to_string(stamp) + ".yaml");
+
+    for (const char* stream :
+         {"    - name: \"\"\n", "    - name: s\n      variables: [\"\"]\n", "    - name: s\n      variables:\n        - model: \"\"\n"}) {
+        {
+            std::ofstream config(config_path);
+            ASSERT_TRUE(config.good());
+            config << "cece_data:\n  streams:\n" << stream;
+        }
+        cece::io::CeceIO io;
+        EXPECT_THROW(io.Initialize(config_path.string(), 3, 2, 1), std::runtime_error) << stream;
+    }
+
+    std::error_code ec;
+    fs::remove(config_path, ec);
+    EXPECT_FALSE(ec) << ec.message();
+}
+TEST_F(IngestorTest, PreservesTwentyFourLayersInCacheAndImportState) {
+    constexpr int nx = 3;
+    constexpr int ny = 2;
+    constexpr int levels = 24;
+    constexpr int horizontal_size = nx * ny;
+
+    std::vector<double> values(static_cast<size_t>(levels) * horizontal_size);
+    for (int lev = 0; lev < levels; ++lev) {
+        for (int j = 0; j < ny; ++j) {
+            for (int i = 0; i < nx; ++i) {
+                values[static_cast<size_t>(lev) * horizontal_size + j * nx + i] = 10000.0 * lev + 100.0 * j + i + 0.25;
+            }
+        }
+    }
+
+    CeceDataIngestor ingestor;
+    int rc = -1;
+    ingestor.SetField("soilnox_land_fractions", values.data(), levels, horizontal_size, nx, ny, /*model_nz=*/1, &rc);
+    ASSERT_EQ(rc, 0);
+
+    const auto cached = ingestor.ResolveField("soilnox_land_fractions", nx, ny, 1);
+    ASSERT_NE(cached.data(), nullptr);
+    EXPECT_EQ(cached.extent(0), static_cast<size_t>(nx));
+    EXPECT_EQ(cached.extent(1), static_cast<size_t>(ny));
+    EXPECT_EQ(cached.extent(2), static_cast<size_t>(levels));
+
+    CeceDataConfig config;
+    CeceDataStreamConfig stream;
+    CeceDataVariableConfig variable;
+    variable.name_in_file = "LAND_FRACTION";
+    variable.name_in_model = "soilnox_land_fractions";
+    stream.variables.push_back(variable);
+    config.streams.push_back(stream);
+
+    CeceImportState import_state;
+    ingestor.IngestEmissionsInline(config, import_state, nx, ny, /*model_nz=*/1);
+    ASSERT_TRUE(import_state.fields.contains("soilnox_land_fractions"));
+
+    const auto imported = import_state.fields.at("soilnox_land_fractions").view_device();
+    ASSERT_EQ(imported.extent(2), static_cast<size_t>(levels));
+    const auto host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), imported);
+    for (int lev = 0; lev < levels; ++lev) {
+        for (int j = 0; j < ny; ++j) {
+            for (int i = 0; i < nx; ++i) {
+                const double expected = values[static_cast<size_t>(lev) * horizontal_size + j * nx + i];
+                EXPECT_DOUBLE_EQ(host(i, j, lev), expected) << "i=" << i << " j=" << j << " lev=" << lev;
+            }
+        }
+    }
+}
+
+}  // namespace cece::test

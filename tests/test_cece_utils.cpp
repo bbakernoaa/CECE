@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
+#include <netcdf.h>
 #include <unistd.h>
 
 #include <Kokkos_Core.hpp>
@@ -11,6 +12,7 @@
 
 #include "cece/cece_config.hpp"
 #include "cece/cece_internal.hpp"
+#include "cece/cece_regridder_utils.hpp"
 #include "cece/cece_standalone_writer.hpp"
 #include "cece/cece_utils.hpp"
 
@@ -25,7 +27,7 @@ namespace cece::test {
 class CeceUtilsTest : public ::testing::Test {
    protected:
     void SetUp() override {
-        // Kokkos and MPI are managed by KokkosMpiEnvironment
+        // Kokkos and MPI are managed by the shared cece_test_main environment
     }
 };
 
@@ -58,6 +60,192 @@ TEST_F(CeceUtilsTest, WrapESMCFieldUpdatesRawData) {
 
     // Also verify through the view
     EXPECT_DOUBLE_EQ(view(2, 3, 1), 42.0);
+}
+
+TEST_F(CeceUtilsTest, Hemco4x5CoordinatesAreTheSameOrderedGrid) {
+    constexpr int nx = 72;
+    constexpr int ny = 46;
+
+    std::vector<double> lons(nx);
+    for (int i = 0; i < nx; ++i) {
+        lons[i] = -180.0 + 5.0 * i;
+    }
+
+    std::vector<double> lats;
+    lats.reserve(ny);
+    lats.push_back(-89.0);
+    for (double lat = -86.0; lat <= 86.0; lat += 4.0) {
+        lats.push_back(lat);
+    }
+    lats.push_back(89.0);
+    ASSERT_EQ(lats.size(), static_cast<size_t>(ny));
+
+    EXPECT_TRUE(io::same_spherical_grid_coordinates(nx, ny, lons, lats, lons, lats));
+
+    // A 0..360 convention is equivalent only when cell ordering is unchanged.
+    std::vector<double> lons_360 = lons;
+    for (double& lon : lons_360) {
+        if (lon < 0.0) lon += 360.0;
+    }
+    EXPECT_TRUE(io::same_spherical_grid_coordinates(nx, ny, lons_360, lats, lons, lats));
+
+    std::vector<double> cyclically_shifted_lons = lons;
+    std::rotate(cyclically_shifted_lons.begin(), cyclically_shifted_lons.begin() + 1, cyclically_shifted_lons.end());
+    EXPECT_FALSE(io::same_spherical_grid_coordinates(nx, ny, cyclically_shifted_lons, lats, lons, lats));
+
+    std::vector<double> shifted_lats = lats;
+    shifted_lats.front() = -90.0;
+    EXPECT_FALSE(io::same_spherical_grid_coordinates(nx, ny, lons, shifted_lats, lons, lats));
+}
+
+TEST_F(CeceUtilsTest, IdentityRegridPlanCopiesTheOwnedRowsExactly) {
+    io::RegridPlan plan;
+    plan.file_nx = 3;
+    plan.file_ny = 4;
+    plan.j0 = 1;
+    plan.j1 = 3;
+    plan.identity = true;
+    plan.built = true;
+
+    const std::vector<double> source = {0.0, 1.0, 2.0, 10.0, 11.0, 12.0, 20.0, 21.0, 22.0, 30.0, 31.0, 32.0};
+    std::vector<double> destination;
+
+    ASSERT_TRUE(io::apply_regrid_plan(plan, 0, false, source.data(), 3, 4, 3, destination));
+    const std::vector<double> expected = {10.0, 11.0, 12.0, 20.0, 21.0, 22.0};
+    EXPECT_EQ(destination, expected);
+
+    plan.j0 = 0;
+    plan.j1 = 4;
+    const std::vector<float> source_with_offset = {-999.0F, 0.0F, 1.0F, 2.0F, 10.0F, 11.0F, 12.0F, 20.0F, 21.0F, 22.0F, 30.0F, 31.0F, 32.0F};
+    ASSERT_TRUE(io::apply_regrid_plan(plan, 1, true, source_with_offset.data(), 3, 4, 3, destination));
+    EXPECT_EQ(destination, source);
+}
+
+TEST_F(CeceUtilsTest, CoordinatePlanPassesThroughIdenticalGridWithoutDataset) {
+    const std::vector<double> lon = {0., 120., 240.};
+    const std::vector<double> lat = {-45., 0., 45.};
+    const std::vector<double> input = {1., 2., 3., 4., 5., 6., 7., 8., 9.};
+    io::RegridPlan plan;
+    ASSERT_TRUE(io::build_regrid_plan_from_coordinates(3, 3, lon, lat, 3, 3, lon, lat, "passthrough", 1, 3, "", plan));
+    std::vector<double> output;
+    ASSERT_TRUE(io::apply_regrid_plan(plan, 0, false, input.data(), 3, 3, 3, output));
+    EXPECT_EQ(output, (std::vector<double>{4., 5., 6., 7., 8., 9.}));
+}
+
+TEST_F(CeceUtilsTest, CoordinatePlanRejectsMixedTargetGeometry) {
+    const std::vector<double> lon = {0., 120., 240.};
+    const std::vector<double> lat = {-45., 0., 45.};
+    const std::vector<double> target_lons = {0., 120., 240., 0., 120., 240., 0., 120., 240.};
+    io::RegridPlan plan;
+    EXPECT_THROW(io::build_regrid_plan_from_coordinates(3, 3, lon, lat, 3, 3, target_lons, lat, "passthrough", 0, 3, "", plan),
+                 std::invalid_argument);
+}
+
+TEST_F(CeceUtilsTest, CoordinatePlanRejectsSingleRowAxisWithoutCellGeometry) {
+    const std::vector<double> lon = {0., 120., 240.};
+    const std::vector<double> source_lat = {0.};
+    const std::vector<double> target_lat = {-45., 0., 45.};
+    io::RegridPlan plan;
+    EXPECT_THROW(io::build_regrid_plan_from_coordinates(3, 1, lon, source_lat, 3, 3, lon, target_lat, "nearest", 0, 0, "", plan),
+                 std::invalid_argument);
+}
+
+TEST_F(CeceUtilsTest, CoordinatePlanInterpolatesConstantFieldWithAxis) {
+    const std::vector<double> lon = {0., 90., 180., 270.};
+    const std::vector<double> lat = {-45., 0., 45.};
+    const std::vector<double> input(12, 2.5);
+    io::RegridPlan plan;
+    ASSERT_TRUE(io::build_regrid_plan_from_coordinates(4, 3, lon, lat, 4, 3, lon, lat, "nearest", 0, 3, "", plan));
+    ASSERT_FALSE(plan.identity);
+    std::vector<double> output;
+    ASSERT_TRUE(io::apply_regrid_plan(plan, 0, false, input.data(), 4, 3, 4, output));
+    ASSERT_EQ(output.size(), input.size());
+    for (double value : output) EXPECT_NEAR(value, 2.5, 1.e-12);
+}
+
+TEST_F(CeceUtilsTest, CoordinatePlanNearestMatchesPythonForDifferentGrids) {
+    const std::vector<double> lon = {0., 90., 180., 270.};
+    const std::vector<double> lat = {-45., 0., 45.};
+    const std::vector<double> target_lon = {20., 100., 200., 280.};
+    const std::vector<double> target_lat = {-30., 30.};
+    const std::vector<double> input = {0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11.};
+    io::RegridPlan plan;
+    ASSERT_TRUE(io::build_regrid_plan_from_coordinates(4, 3, lon, lat, 4, 2, target_lon, target_lat, "nearest", 0, 2, "", plan));
+    std::vector<double> output;
+    ASSERT_TRUE(io::apply_regrid_plan(plan, 0, false, input.data(), 4, 3, 4, output));
+    EXPECT_EQ(output, (std::vector<double>{0., 1., 2., 3., 8., 9., 10., 11.}));
+}
+
+TEST_F(CeceUtilsTest, IdentityRegridPlanRejectsDimensionsDifferentFromVerifiedGrid) {
+    io::RegridPlan plan;
+    plan.file_nx = 3;
+    plan.file_ny = 4;
+    plan.j0 = 0;
+    plan.j1 = 4;
+    plan.identity = true;
+    plan.built = true;
+
+    const std::vector<double> source(12, 1.0);
+    std::vector<double> destination;
+    EXPECT_FALSE(io::apply_regrid_plan(plan, 0, false, source.data(), 2, 4, 3, destination));
+}
+
+TEST_F(CeceUtilsTest, StandaloneWriterPreservesHemco4x5CoordinateCenters) {
+    constexpr int nx = 72;
+    constexpr int ny = 46;
+    const std::string test_dir = "test_output_dir_hemco_coords_" + std::to_string(getpid());
+
+    std::vector<double> lons(nx);
+    for (int i = 0; i < nx; ++i) {
+        lons[i] = -180.0 + 5.0 * i;
+    }
+    std::vector<double> lats;
+    lats.reserve(ny);
+    lats.push_back(-89.0);
+    for (double lat = -86.0; lat <= 86.0; lat += 4.0) {
+        lats.push_back(lat);
+    }
+    lats.push_back(89.0);
+
+    CeceOutputConfig config;
+    config.enabled = true;
+    config.directory = test_dir;
+    config.filename_pattern = "hemco_grid.nc";
+    config.fields = {{"test_field", {}}};
+    config.fields.SetTimeUnits("2021-06-20T12:00:00");
+
+    CeceStandaloneWriter writer(config);
+    ASSERT_EQ(writer.InitializeWithCoords("2021-06-20T12:00:00", nx, ny, 1, lons, lats), 0);
+
+    DualView3D test_field("test_field", nx, ny, 1);
+    test_field.sync<Kokkos::HostSpace>();
+    auto test_field_host = test_field.view_host();
+    Kokkos::deep_copy(test_field_host, 0.0);
+    test_field.modify<Kokkos::HostSpace>();
+    std::unordered_map<std::string, DualView3D> fields;
+    fields["test_field"] = test_field;
+    ASSERT_EQ(writer.WriteTimeStep(fields, 3600.0, 1), 0);
+    writer.Finalize();
+
+    const std::string output_path = test_dir + "/hemco_grid.nc";
+    int ncid = -1;
+    ASSERT_EQ(nc_open(output_path.c_str(), NC_NOWRITE, &ncid), NC_NOERR);
+
+    int lon_varid = -1;
+    int lat_varid = -1;
+    ASSERT_EQ(nc_inq_varid(ncid, "lon", &lon_varid), NC_NOERR);
+    ASSERT_EQ(nc_inq_varid(ncid, "lat", &lat_varid), NC_NOERR);
+    std::vector<double> written_lons(nx);
+    std::vector<double> written_lats(ny);
+    ASSERT_EQ(nc_get_var_double(ncid, lon_varid, written_lons.data()), NC_NOERR);
+    ASSERT_EQ(nc_get_var_double(ncid, lat_varid, written_lats.data()), NC_NOERR);
+    EXPECT_EQ(written_lons, lons);
+    EXPECT_EQ(written_lats, lats);
+    EXPECT_EQ(nc_close(ncid), NC_NOERR);
+
+    if (std::filesystem::exists(test_dir)) {
+        std::filesystem::remove_all(test_dir);
+    }
 }
 
 TEST_F(CeceUtilsTest, StandaloneWriterDuplicateCoordsDetection) {
@@ -245,82 +433,135 @@ TEST_F(CeceUtilsTest, CoreWriteStepSkipsInitialStep) {
     }
 }
 
-}  // namespace cece::test
-
-// Custom GTest Environment to manage Kokkos & MPI lifecycle globally
-class KokkosMpiEnvironment : public ::testing::Environment {
-   private:
-    int argc_;
-    char** argv_;
-
-   public:
-    KokkosMpiEnvironment(int argc, char** argv) : argc_(argc), argv_(argv) {}
-
-    void SetUp() override {
-        // Initialize MPI first
-        int mpi_initialized = 0;
-        MPI_Initialized(&mpi_initialized);
-        if (!mpi_initialized) {
-            int provided = 0;
-            MPI_Init_thread(&argc_, &argv_, MPI_THREAD_MULTIPLE, &provided);
-        }
-
-        // Initialize Kokkos
-        if (!Kokkos::is_initialized()) {
-            Kokkos::initialize(argc_, argv_);
+static std::string find_grid_file(const std::string& filename) {
+    // The repo's data/ dir is known at compile time (CECE_SOURCE_DIR) so the
+    // lookup works from any build directory; the cwd-relative guesses remain
+    // for builds without the define.
+    std::vector<std::string> candidate_paths = {
+#ifdef CECE_SOURCE_DIR
+        std::string(CECE_SOURCE_DIR) + "/data/" + filename,
+#endif
+        "data/" + filename,
+        "../data/" + filename,
+        "tests/data/" + filename,
+        "../tests/data/" + filename,
+        "/work/data/" + filename,
+    };
+    for (const auto& path : candidate_paths) {
+        if (std::filesystem::exists(path)) {
+            return path;
         }
     }
-    void TearDown() override {
-        // Finalize Kokkos
-        if (Kokkos::is_initialized()) {
-            Kokkos::finalize();
-        }
-
-        // Finalize MPI
-        int mpi_initialized = 0;
-        MPI_Initialized(&mpi_initialized);
-        if (mpi_initialized) {
-            MPI_Finalize();
-        }
-    }
-};
-
-int main(int argc, char** argv) {
-    bool is_discovery = false;
-    for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--gtest_list_tests") {
-            is_discovery = true;
-            break;
-        }
-    }
-
-    if (!is_discovery) {
-        // Prevent Intel MPI from detecting Slurm and attempting PMI/PMIX process manager bootstrap during unit tests
-        unsetenv("SLURM_JOB_ID");
-        unsetenv("SLURM_STEP_ID");
-        unsetenv("PMI_RANK");
-        unsetenv("PMI_SIZE");
-
-        // Configure Intel MPI to allow standalone, local-only execution on login nodes (prevent PMI2/Hydra aborts)
-        setenv("I_MPI_HYDRA_BOOTSTRAP", "none", 0);
-        setenv("I_MPI_SHM", "disable", 0);
-
-        // Initialize MPI to check rank and prevent parallel duplicate execution conflicts of local unit tests
-        int mpi_initialized = 0;
-        MPI_Initialized(&mpi_initialized);
-        if (!mpi_initialized) {
-            int provided = 0;
-            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-        }
-        int rank = 0;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        if (rank > 0) {
-            MPI_Finalize();
-            return 0;
-        }
-    }
-
-    ::testing::InitGoogleTest(&argc, argv);
-    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment(argc, argv));
-    return RUN_ALL_TESTS();
+    return filename;
 }
+
+TEST_F(CeceUtilsTest, BuildAxisMeshFV3GridSpec) {
+    std::string spec_file = find_grid_file("C96_grid_spec.tile1.nc");
+    ASSERT_TRUE(std::filesystem::exists(spec_file)) << "Missing test file: " << spec_file;
+
+    std::vector<double> dummy_lons(96, 0.0);
+    std::vector<double> dummy_lats(96, 0.0);
+
+    auto mesh = cece::io::build_axis_mesh(96, 96, 0, dummy_lons, dummy_lats, spec_file);
+
+    EXPECT_EQ(mesh.n_cells(), static_cast<size_t>(96 * 96));
+
+    auto node_coords = mesh.node_coords();
+    EXPECT_EQ(node_coords.extent(0), static_cast<size_t>(96 * 96 * 4));
+    EXPECT_EQ(node_coords.extent(1), static_cast<size_t>(2));
+}
+
+TEST_F(CeceUtilsTest, BuildAxisMeshFV3NativeGrid) {
+    std::string grid_file = find_grid_file("C96_grid.tile1.nc");
+    ASSERT_TRUE(std::filesystem::exists(grid_file)) << "Missing test file: " << grid_file;
+
+    std::vector<double> dummy_lons(96, 0.0);
+    std::vector<double> dummy_lats(96, 0.0);
+
+    auto mesh = cece::io::build_axis_mesh(96, 96, 0, dummy_lons, dummy_lats, grid_file);
+
+    EXPECT_EQ(mesh.n_cells(), static_cast<size_t>(96 * 96));
+
+    auto node_coords = mesh.node_coords();
+    EXPECT_EQ(node_coords.extent(0), static_cast<size_t>(96 * 96 * 4));
+    EXPECT_EQ(node_coords.extent(1), static_cast<size_t>(2));
+}
+
+TEST_F(CeceUtilsTest, BuildAxisMeshMPIRankSlicing) {
+    std::string spec_file = find_grid_file("C96_grid_spec.tile1.nc");
+    ASSERT_TRUE(std::filesystem::exists(spec_file)) << "Missing test file: " << spec_file;
+
+    std::vector<double> dummy_lons(96, 0.0);
+    std::vector<double> dummy_lats(48, 0.0);
+
+    // Simulate Rank 0: j0 = 0, nband = 48
+    auto mesh_rank0 = cece::io::build_axis_mesh(96, 48, 0, dummy_lons, dummy_lats, spec_file);
+    EXPECT_EQ(mesh_rank0.n_cells(), static_cast<size_t>(96 * 48));
+    EXPECT_EQ(mesh_rank0.node_coords().extent(0), static_cast<size_t>(96 * 48 * 4));
+
+    // Simulate Rank 1: j0 = 48, nband = 48
+    auto mesh_rank1 = cece::io::build_axis_mesh(96, 48, 48, dummy_lons, dummy_lats, spec_file);
+    EXPECT_EQ(mesh_rank1.n_cells(), static_cast<size_t>(96 * 48));
+    EXPECT_EQ(mesh_rank1.node_coords().extent(0), static_cast<size_t>(96 * 48 * 4));
+
+    // Verify that coordinates for rank 0 and rank 1 are different (rank 1 is higher latitude band)
+    auto coords0 = mesh_rank0.node_coords();
+    auto coords1 = mesh_rank1.node_coords();
+    EXPECT_NE(coords0(0, 1), coords1(0, 1));
+}
+
+TEST_F(CeceUtilsTest, BuildAxisMeshFastFailOnInvalidGridspec) {
+    std::vector<double> dummy_lons(96, 0.0);
+    std::vector<double> dummy_lats(96, 0.0);
+
+    // Non-existent file must throw std::runtime_error
+    EXPECT_THROW(cece::io::build_axis_mesh(96, 96, 0, dummy_lons, dummy_lats, "non_existent_grid.nc"), std::runtime_error);
+
+    // Dimension mismatch must throw std::runtime_error
+    std::string spec_file = find_grid_file("C96_grid_spec.tile1.nc");
+    if (std::filesystem::exists(spec_file)) {
+        EXPECT_THROW(cece::io::build_axis_mesh(200, 200, 0, dummy_lons, dummy_lats, spec_file), std::runtime_error);
+    }
+}
+
+// A projected-grid CF file names its horizontal coordinates "x" and "y" too, but
+// they are cartesian metres on an even-sized cell-centre lattice rather than the
+// odd (2*n + 1) geographic-degree corner lattice of an FV3 supergrid. The
+// supergrid branch must not claim such a file; it should fall through to the
+// unsupported-convention error.
+TEST_F(CeceUtilsTest, BuildAxisMeshRejectsProjectedXyAsSupergrid) {
+    const std::filesystem::path nc_path = std::filesystem::temp_directory_path() / "cece_projected_xy_tile.nc";
+    std::filesystem::remove(nc_path);
+
+    constexpr int nx = 96, ny = 96;
+    int ncid = -1;
+    ASSERT_EQ(nc_create(nc_path.c_str(), NC_CLOBBER | NC_NETCDF4, &ncid), NC_NOERR);
+    int x_dim = -1, y_dim = -1;
+    ASSERT_EQ(nc_def_dim(ncid, "x", nx, &x_dim), NC_NOERR);
+    ASSERT_EQ(nc_def_dim(ncid, "y", ny, &y_dim), NC_NOERR);
+    int x_var = -1, y_var = -1;
+    const int dims[2] = {y_dim, x_dim};
+    ASSERT_EQ(nc_def_var(ncid, "x", NC_DOUBLE, 2, dims, &x_var), NC_NOERR);
+    ASSERT_EQ(nc_def_var(ncid, "y", NC_DOUBLE, 2, dims, &y_var), NC_NOERR);
+    const char x_units[] = "m";
+    const char y_units[] = "m";
+    const char x_name[] = "projection_x_coordinate";
+    const char y_name[] = "projection_y_coordinate";
+    ASSERT_EQ(nc_put_att_text(ncid, x_var, "units", sizeof(x_units) - 1, x_units), NC_NOERR);
+    ASSERT_EQ(nc_put_att_text(ncid, y_var, "units", sizeof(y_units) - 1, y_units), NC_NOERR);
+    ASSERT_EQ(nc_put_att_text(ncid, x_var, "standard_name", sizeof(x_name) - 1, x_name), NC_NOERR);
+    ASSERT_EQ(nc_put_att_text(ncid, y_var, "standard_name", sizeof(y_name) - 1, y_name), NC_NOERR);
+    ASSERT_EQ(nc_enddef(ncid), NC_NOERR);
+    std::vector<double> coords(static_cast<size_t>(nx) * ny, 0.0);
+    ASSERT_EQ(nc_put_var_double(ncid, x_var, coords.data()), NC_NOERR);
+    ASSERT_EQ(nc_put_var_double(ncid, y_var, coords.data()), NC_NOERR);
+    ASSERT_EQ(nc_close(ncid), NC_NOERR);
+
+    std::vector<double> dummy_lons(nx, 0.0);
+    std::vector<double> dummy_lats(ny, 0.0);
+    EXPECT_THROW(cece::io::build_axis_mesh(nx, ny, 0, dummy_lons, dummy_lats, nc_path.string()), std::runtime_error);
+
+    std::filesystem::remove(nc_path);
+}
+
+}  // namespace cece::test

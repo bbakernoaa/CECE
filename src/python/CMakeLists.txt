@@ -9,20 +9,52 @@ message(STATUS "Found Python3: ${Python3_EXECUTABLE}")
 message(STATUS "Python3 version: ${Python3_VERSION}")
 message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
 
-# Fetch pybind11 v2.12.0
+# pybind11 — find_package first; FetchContent fallback (v2.12.0)
 include(FetchContent)
 
-# Disable LTO before fetching pybind11 to work around GCC 13 internal compiler
+# Disable LTO before resolving pybind11 to work around GCC 13 internal compiler
 # error. pybind11 enables LTO by default via pybind11::lto target.
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 
-FetchContent_Declare(pybind11 GIT_REPOSITORY https://github.com/pybind/pybind11.git GIT_TAG v2.12.0)
-FetchContent_MakeAvailable(pybind11)
+find_package(pybind11 CONFIG QUIET)
+
+if(pybind11_FOUND)
+  cece_register_dep("pybind11" "system ${pybind11_VERSION} (${pybind11_DIR})")
+elseif(CECE_FETCH_DEPS)
+  FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG v2.12.0
+  )
+  FetchContent_MakeAvailable(pybind11)
+  cece_register_dep("pybind11" "FetchContent (v2.12.0)")
+else()
+  message(
+    FATAL_ERROR
+    "pybind11 not found via find_package() and CECE_FETCH_DEPS=OFF. Install pybind11 or configure with -DBUILD_PYTHON_BINDINGS=OFF."
+  )
+endif()
 
 # Build the pybind11 extension module
-pybind11_add_module(_cece_core cece_pybind.cpp)
+pybind11_add_module(_cece_core cece_pybind.cpp cece_scheme_pybind.cpp)
 
-target_link_libraries(_cece_core PRIVATE cece Kokkos::kokkos yaml-cpp)
+target_link_libraries(_cece_core PRIVATE cece_core Kokkos::kokkos)
+
+if(CECE_PYTHON_SIMULATION)
+  get_target_property(_cece_kokkos_type Kokkos::kokkoscore TYPE)
+  if(_cece_kokkos_type STREQUAL "STATIC_LIBRARY")
+    message(
+      FATAL_ERROR
+      "Python simulation requires a shared Kokkos build; static Kokkos can create independent runtimes across extensions. Rebuild Kokkos with -DBUILD_SHARED_LIBS=ON or configure -DCECE_PYTHON_SIMULATION=OFF."
+    )
+  endif()
+  pybind11_add_module(_cece_simulation cece_simulation_pybind.cpp)
+  target_link_libraries(_cece_simulation PRIVATE cece_driver MPI::MPI_CXX)
+  set_target_properties(
+    _cece_simulation
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/cece"
+  )
+endif()
 
 # Place the compiled .so in the cece package directory
 set_target_properties(
@@ -35,8 +67,27 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/cece")
 
 # Copy Python source files to build directory (excluding old binding files)
 file(
-  COPY __init__.py config.py state.py exceptions.py utils.py py.typed
+  COPY
+    __init__.py
+    config.py
+    state.py
+    exceptions.py
+    utils.py
+    py.typed
+    earthaccess_resolver.py
+    stream_bridge.py
+    model.py
+    grid.py
+    field_adapter.py
+    preparation.py
+    simulation.py
   DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/cece"
+)
+
+file(COPY sources DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/cece")
+file(
+  COPY "${PROJECT_SOURCE_DIR}/data/speciation"
+  DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/cece/data"
 )
 
 # Create setup.py for installation
@@ -51,9 +102,9 @@ setup(
     author='CECE Development Team',
     packages=find_packages(),
     package_data={
-        'cece': ['*.so', '*.dylib', '*.dll', 'py.typed'],
+        'cece': ['*.so', '*.dylib', '*.dll', 'py.typed', 'data/speciation/*.yaml'],
     },
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
         'numpy>=1.20',
         'pyyaml>=5.4',
@@ -77,9 +128,12 @@ add_custom_target(
   DEPENDS _cece_core
   COMMENT "Python CECE package ready in ${CMAKE_CURRENT_BINARY_DIR}/cece"
 )
+if(CECE_PYTHON_SIMULATION)
+  add_dependencies(python_package _cece_simulation)
+endif()
 
 message(STATUS "Python bindings configuration:")
-message(STATUS "  Binding method: pybind11 (v2.12.0 via FetchContent)")
+message(STATUS "  Binding method: pybind11 ${pybind11_VERSION}")
 message(STATUS "  Extension module: _cece_core")
 message(STATUS "  Package directory: ${CMAKE_CURRENT_BINARY_DIR}/cece")
 message(STATUS "  Installation target: ${Python3_SITELIB}/cece")

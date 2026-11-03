@@ -12,6 +12,8 @@
 #include <logs/logs.hpp>
 #include <string>
 
+#include "cece/cece_mpi_env.hpp"
+
 namespace cece {
 
 /**
@@ -91,6 +93,19 @@ class CeceLogger {
     }
 
     /**
+     * @brief Register an additional caller-owned output stream as a LOGS sink.
+     * @details Backed by helm/libs/logs logs::Sink, which wraps exactly one
+     *          std::ostream and never owns it. Intended for tests/diagnostics
+     *          that need to capture or redirect log records; the caller must
+     *          keep the stream alive for as long as records may be logged.
+     *          Records are written to every registered sink (including the
+     *          default stdout sink), so this captures rather than replaces.
+     */
+    void AddStreamSink(std::ostream& stream) {
+        logger_.add_sink(logs::Sink(stream));
+    }
+
+    /**
      * @brief Log an error message
      */
     void LogError(const std::string& message, const std::string& file = "", int line = 0) {
@@ -107,6 +122,7 @@ class CeceLogger {
      */
     void LogWarning(const std::string& message, const std::string& file = "", int line = 0) {
         EnsureCommunicatorConfigured();
+        if (logger_.rank() > 0) return;  // Only Rank 0 logs warnings
         logs::Submit_Options opts;
         if (!file.empty() && line > 0) {
             opts.location = logs::Source_Location{file, line, ""};
@@ -119,6 +135,7 @@ class CeceLogger {
      */
     void LogInfo(const std::string& message, const std::string& file = "", int line = 0) {
         EnsureCommunicatorConfigured();
+        if (logger_.rank() > 0) return;  // Only Rank 0 logs info messages
         logs::Submit_Options opts;
         if (!file.empty() && line > 0) {
             opts.location = logs::Source_Location{file, line, ""};
@@ -127,7 +144,7 @@ class CeceLogger {
     }
 
     /**
-     * @brief Log a debug message
+     * @brief Log a debug message (logged across all ranks with rank attribution)
      */
     void LogDebug(const std::string& message, const std::string& file = "", int line = 0) {
         EnsureCommunicatorConfigured();
@@ -157,9 +174,7 @@ class CeceLogger {
 
     void EnsureCommunicatorConfigured() {
         if (logger_.rank() == -1) {
-            int mpi_initialized = 0;
-            MPI_Initialized(&mpi_initialized);
-            if (mpi_initialized) {
+            if (mpi_environment_ready()) {
                 logger_.configure_communicator(MPI_COMM_WORLD);
             }
         }

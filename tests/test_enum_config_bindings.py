@@ -6,6 +6,7 @@ Tests enum value access, ParseConfig, and AddSpecies/AddScaleFactor/AddMask.
 
 import os
 import sys
+
 import pytest
 
 # Add the build output directory to the path so _cece_core can be imported
@@ -89,9 +90,9 @@ class TestEmissionLayer:
 
     def test_readwrite_scale(self):
         layer = _cece_core.EmissionLayer()
-        assert layer.scale == 1.0  # default
+        assert layer.scale == pytest.approx(1.0)  # default
         layer.scale = 2.5
-        assert layer.scale == 2.5
+        assert layer.scale == pytest.approx(2.5)
 
     def test_readwrite_hierarchy(self):
         layer = _cece_core.EmissionLayer()
@@ -120,15 +121,15 @@ class TestEmissionLayer:
         layer = _cece_core.EmissionLayer()
         layer.vdist_p_start = 100000.0
         layer.vdist_p_end = 50000.0
-        assert layer.vdist_p_start == 100000.0
-        assert layer.vdist_p_end == 50000.0
+        assert layer.vdist_p_start == pytest.approx(100000.0)
+        assert layer.vdist_p_end == pytest.approx(50000.0)
 
     def test_readwrite_vdist_height_range(self):
         layer = _cece_core.EmissionLayer()
         layer.vdist_h_start = 0.0
         layer.vdist_h_end = 1000.0
-        assert layer.vdist_h_start == 0.0
-        assert layer.vdist_h_end == 1000.0
+        assert layer.vdist_h_start == pytest.approx(0.0)
+        assert layer.vdist_h_end == pytest.approx(1000.0)
 
 
 class TestParseConfig:
@@ -141,11 +142,11 @@ class TestParseConfig:
         config = _cece_core.ParseConfig(config_path)
         assert config is not None
         assert isinstance(config, _cece_core.CeceConfig)
-        # ex1 has a "co" species
-        assert "co" in config.species_layers
+        # ex1 defines its emissions under the NOx species.
+        assert "nox" in config.species_layers
 
     def test_parse_invalid_path_raises(self):
-        from exceptions import CeceException
+        from cece.exceptions import CeceException
 
         with pytest.raises(CeceException):
             _cece_core.ParseConfig("/nonexistent/path/config.yaml")
