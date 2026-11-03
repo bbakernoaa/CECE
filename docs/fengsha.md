@@ -128,9 +128,9 @@ Optional (fallbacks match CTSM's Leung_2023 defaults):
 ## YAML Configuration Example
 
 ```yaml
-physics:
+physics_schemes:
   - name: fengsha
-    config:
+    options:
       alpha: 1.0
       gamma: 1.0
       kvhmax: 2.45e-4

@@ -64,9 +64,9 @@ For each grid cell on land:
 ## YAML Configuration Example
 
 ```yaml
-physics:
+physics_schemes:
   - name: ginoux
-    config:
+    options:
       ch_du: 0.8e-9
       grav: 9.81
       particle_radii: [0.73e-6, 1.4e-6, 2.4e-6, 4.5e-6, 8.0e-6]  # must match the field's size dimension

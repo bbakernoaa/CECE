@@ -68,3 +68,5 @@ specs/
 .vscode/
 
 .scratch/
+
+docs/api/  # generated Doxygen site, not the tracked sources in docs/
