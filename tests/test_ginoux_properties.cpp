@@ -1,4 +1,3 @@
-#include <conf/value.hpp>
 /**
  * @file test_ginoux_properties.cpp
  * @brief Property-based tests for the Ginoux (GOCART2G) dust emission scheme.
@@ -17,8 +16,11 @@
 
 #include <Kokkos_Core.hpp>
 #include <cmath>
+#include <conf/config.hpp>
+#include <iomanip>
 #include <memory>
 #include <random>
+#include <sstream>
 #include <vector>
 
 #include "cece/cece_physics_factory.hpp"
@@ -268,12 +270,19 @@ TEST_F(GinouxPropertyTest, Property5_ConfiguredRadiiOverride) {
     std::vector<double> radii;
     for (int n = 0; n < nbins; ++n) radii.push_back((n + 1) * 1.5e-6);
 
-    YAML::Node config;
-    config["particle_radii"] = radii;
+    const auto sequence_yaml = [](const std::string& key, const std::vector<double>& values) {
+        std::ostringstream out;
+        out << key << ": [" << std::setprecision(17);
+        for (size_t k = 0; k < values.size(); ++k) out << (k ? ", " : "") << values[k];
+        out << "]\n";
+        return out.str();
+    };
+
+    conf::Config config = conf::Config::from_string(sequence_yaml("particle_radii", radii));
 
     PhysicsSchemeConfig cfg;
     cfg.name = "ginoux";
-    cfg.options = config;
+    cfg.options = config.root();
     auto scheme = PhysicsFactory::CreateScheme(cfg);
     ASSERT_NE(scheme, nullptr);
     EXPECT_NO_THROW(scheme->Initialize(cfg.options, nullptr));
@@ -319,14 +328,13 @@ TEST_F(GinouxPropertyTest, Property5_ConfiguredRadiiOverride) {
     }
 
     // A mismatched override length must fall back to the field rather than crash.
-    YAML::Node short_config;
     std::vector<double> short_radii = radii;
     short_radii.pop_back();
-    short_config["particle_radii"] = short_radii;
+    conf::Config short_config = conf::Config::from_string(sequence_yaml("particle_radii", short_radii));
 
     PhysicsSchemeConfig cfg2;
     cfg2.name = "ginoux";
-    cfg2.options = short_config;
+    cfg2.options = short_config.root();
     auto scheme2 = PhysicsFactory::CreateScheme(cfg2);
     ASSERT_NE(scheme2, nullptr);
     scheme2->Initialize(cfg2.options, nullptr);

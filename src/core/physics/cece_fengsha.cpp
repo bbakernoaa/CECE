@@ -383,7 +383,7 @@ double fengsha_brittle_impaction_flux(double eta, double rho_a, double ust_ft, d
 }
 
 /**
- * @brief Initialize the FENGSHA scheme from YAML configuration.
+ * @brief Initialize the FENGSHA scheme from configuration.
  *
  * Reads the scheme tuning parameters (see docs/fengsha.md for the full table) and
  * resolves the dust size-bin geometry with `cece::dustbins::Resolve`. Nothing is
@@ -394,20 +394,20 @@ double fengsha_brittle_impaction_flux(double eta, double rho_a, double ust_ft, d
  * nothing configured, the kernel falls back to equal weights over however many
  * size bins the emission field has. A `num_bins` option is rejected outright.
  *
- * @param config YAML configuration node with FENGSHA parameters
+ * @param config Scheme configuration (helm `conf::Value`) with FENGSHA parameters
  * @param diag_manager Diagnostic manager for tracking outputs
  */
-void FengshaScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* diag_manager) {
+void FengshaScheme::Initialize(const conf::Value& config, CeceDiagnosticManager* diag_manager) {
     BasePhysicsScheme::Initialize(config, diag_manager);
 
-    if (config["alpha"]) alpha_ = config["alpha"].as<double>();
-    if (config["gamma"]) gamma_ = config["gamma"].as<double>();
-    if (config["kvhmax"]) kvhmax_ = config["kvhmax"].as<double>();
-    if (config["grav"]) grav_ = config["grav"].as<double>();
-    if (config["drylimit_factor"]) drylimit_factor_ = config["drylimit_factor"].as<double>();
-    if (config["use_intermittency"]) use_intermittency_ = config["use_intermittency"].as<bool>();
-    if (config["use_brittle_impaction"]) use_brittle_impaction_ = config["use_brittle_impaction"].as<bool>();
-    if (config["c_tune"]) c_tune_ = config["c_tune"].as<double>();
+    if (config["alpha"]) alpha_ = config["alpha"].as_double();
+    if (config["gamma"]) gamma_ = config["gamma"].as_double();
+    if (config["kvhmax"]) kvhmax_ = config["kvhmax"].as_double();
+    if (config["grav"]) grav_ = config["grav"].as_double();
+    if (config["drylimit_factor"]) drylimit_factor_ = config["drylimit_factor"].as_double();
+    if (config["use_intermittency"]) use_intermittency_ = config["use_intermittency"].as_bool();
+    if (config["use_brittle_impaction"]) use_brittle_impaction_ = config["use_brittle_impaction"].as_bool();
+    if (config["c_tune"]) c_tune_ = config["c_tune"].as_double();
 
     // Size-bin geometry is entirely configuration-driven (see cece_dust_bins.hpp);
     // the bin count itself is taken from the emission field in Run().

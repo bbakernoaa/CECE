@@ -63,6 +63,9 @@ class K14Scheme : public BasePhysicsScheme {
 
     /// @brief True when `bin_weights_` was populated from configuration.
     bool has_bin_weights_ = false;
+
+    /// @brief Guards the one-time warning about the equal-weights fallback.
+    bool warned_equal_bins_ = false;
 };
 
 }  // namespace cece

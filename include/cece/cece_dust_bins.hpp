@@ -9,9 +9,8 @@
  * @version 1.0
  */
 
-#include <yaml-cpp/yaml.h>
-
 #include <cmath>
+#include <conf/value.hpp>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,7 +22,7 @@ namespace cece {
 
 /**
  * @namespace dustbins
- * @brief Helpers that turn YAML configuration into a dust size-bin geometry.
+ * @brief Helpers that turn scheme configuration into a dust size-bin geometry.
  *
  * @details
  * The number of dust size bins is a property of the model grid and its fields,
@@ -32,7 +31,8 @@ namespace cece {
  * configuration is the bin *geometry* - the representative radius and the
  * lower/upper edge of each bin - because the threshold, drag and collection
  * calculations depend on particle size. This namespace resolves that geometry
- * from the user's YAML so that no scheme carries a hard-coded bin count or a
+ * from the user's configuration (a helm `conf::Value`, parsed from the YAML
+ * control file) so that no scheme carries a hard-coded bin count or a
  * hard-coded default bin table.
  *
  * Resolution order (see `dustbins::Resolve`):
@@ -126,17 +126,18 @@ inline std::vector<double> compute_kok_distribution(const std::vector<double>& r
 namespace detail {
 
 /**
- * @brief Read a YAML sequence into a std::vector<double>.
+ * @brief Read a configured sequence into a std::vector<double>.
  * @param node Configuration node to look the key up in
  * @param key Sequence key name
  * @return The values, or an empty vector when the key is absent
  */
-inline std::vector<double> read_sequence(const YAML::Node& node, const std::string& key) {
-    if (!node[key]) return {};
-    if (!node[key].IsSequence()) {
+inline std::vector<double> read_sequence(const conf::Value& node, const std::string& key) {
+    const conf::Value entry = node[key];
+    if (!entry.is_defined()) return {};
+    if (entry.kind() != conf::Node_Kind::Sequence) {
         throw std::invalid_argument("dust bins: '" + key + "' must be a sequence of numbers");
     }
-    return node[key].as<std::vector<double>>();
+    return entry.as_double_list();
 }
 
 /**
@@ -159,21 +160,22 @@ inline void check_metres(const std::string& key, const std::vector<double>& valu
 }  // namespace detail
 
 /**
- * @brief Resolve the dust size-bin geometry from a scheme's YAML options.
+ * @brief Resolve the dust size-bin geometry from a scheme's configuration.
  * @details
  * Implements the resolution order described in the `dustbins` namespace
  * documentation. A partial geometry (for example `particle_radii` without
  * `bin_upper_edges`) is rejected rather than silently completed, so that a typo
  * in the control file cannot quietly change the bin definition.
- * @param config Scheme options node (may be empty or undefined)
+ * @param config Scheme options node (may be undefined)
  * @param scheme_name Name used in error messages
  * @return The resolved geometry; `has_geometry`/`has_weights` say what was filled
  */
-inline DustBins Resolve(const YAML::Node& config, const std::string& scheme_name) {
+inline DustBins Resolve(const conf::Value& config, const std::string& scheme_name) {
     const std::string prefix = scheme_name + ": dust bins";
 
-    if (config["num_bins"]) {
-        throw std::invalid_argument(prefix + ": the 'num_bins' option was removed - the bin count comes from the size"
+    if (config["num_bins"].is_defined()) {
+        throw std::invalid_argument(prefix +
+                                    ": the 'num_bins' option was removed - the bin count comes from the size"
                                     " dimension of the emission field. Configure the bin geometry instead with"
                                     " 'particle_radii', 'bin_lower_edges' and 'bin_upper_edges'.");
     }
@@ -195,9 +197,9 @@ inline DustBins Resolve(const YAML::Node& config, const std::string& scheme_name
     if (has_radii && (has_lower != has_upper)) {
         throw std::invalid_argument(prefix + ": 'bin_lower_edges' and 'bin_upper_edges' must be given together");
     }
-    if (has_radii && has_lower && has_upper &&
-        !(bins.radii.size() == bins.lower_edges.size() && bins.radii.size() == bins.upper_edges.size())) {
-        throw std::invalid_argument(prefix + ": 'particle_radii', 'bin_lower_edges' and 'bin_upper_edges' must have the"
+    if (has_radii && has_lower && has_upper && !(bins.radii.size() == bins.lower_edges.size() && bins.radii.size() == bins.upper_edges.size())) {
+        throw std::invalid_argument(prefix +
+                                    ": 'particle_radii', 'bin_lower_edges' and 'bin_upper_edges' must have the"
                                     " same length (got " +
                                     std::to_string(bins.radii.size()) + ", " + std::to_string(bins.lower_edges.size()) + ", " +
                                     std::to_string(bins.upper_edges.size()) + ")");
@@ -208,14 +210,13 @@ inline DustBins Resolve(const YAML::Node& config, const std::string& scheme_name
         detail::check_metres("bin_upper_edges", bins.upper_edges);
         for (size_t n = 0; n < bins.radii.size(); ++n) {
             if (!(bins.upper_edges[n] > bins.lower_edges[n])) {
-                throw std::invalid_argument(prefix + ": bin " + std::to_string(n) + " has invalid edges [" +
-                                            std::to_string(bins.lower_edges[n]) + ", " + std::to_string(bins.upper_edges[n]) +
-                                            "] (need 0 < lower < upper)");
+                throw std::invalid_argument(prefix + ": bin " + std::to_string(n) + " has invalid edges [" + std::to_string(bins.lower_edges[n]) +
+                                            ", " + std::to_string(bins.upper_edges[n]) + "] (need 0 < lower < upper)");
             }
             if (!(bins.radii[n] >= bins.lower_edges[n] && bins.radii[n] <= bins.upper_edges[n])) {
-                throw std::invalid_argument(prefix + ": bin " + std::to_string(n) + " representative radius " +
-                                            std::to_string(bins.radii[n]) + " lies outside its edges [" +
-                                            std::to_string(bins.lower_edges[n]) + ", " + std::to_string(bins.upper_edges[n]) + "]");
+                throw std::invalid_argument(prefix + ": bin " + std::to_string(n) + " representative radius " + std::to_string(bins.radii[n]) +
+                                            " lies outside its edges [" + std::to_string(bins.lower_edges[n]) + ", " +
+                                            std::to_string(bins.upper_edges[n]) + "]");
             }
         }
         bins.has_geometry = true;
@@ -223,8 +224,8 @@ inline DustBins Resolve(const YAML::Node& config, const std::string& scheme_name
 
     if (has_weights) {
         if (bins.has_geometry && bins.weights.size() != bins.radii.size()) {
-            throw std::invalid_argument(prefix + ": 'bin_weights' has " + std::to_string(bins.weights.size()) +
-                                        " entries but " + std::to_string(bins.radii.size()) + " bins were configured");
+            throw std::invalid_argument(prefix + ": 'bin_weights' has " + std::to_string(bins.weights.size()) + " entries but " +
+                                        std::to_string(bins.radii.size()) + " bins were configured");
         }
         double sum = 0.0;
         for (const double w : bins.weights) {
@@ -251,7 +252,8 @@ inline DustBins Resolve(const YAML::Node& config, const std::string& scheme_name
         bins.source = "configured weights, applied directly to the emission field bins";
     } else {
         bins.source = "no bin configuration - equal weights over the emission field bins";
-        CECE_LOG_WARNING(prefix + ": no 'particle_radii'/'bin_weights' configured, emitting with equal weights across the "
+        CECE_LOG_WARNING(prefix +
+                         ": no 'particle_radii'/'bin_weights' configured, emitting with equal weights across the "
                          "size bins of the emission field. Configure the bin geometry explicitly if the scheme needs "
                          "size-resolved thresholds.");
     }

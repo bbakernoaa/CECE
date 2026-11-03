@@ -25,42 +25,11 @@
 #include <iostream>
 #include <vector>
 
+#include "cece/cece_dust_bins.hpp"
+#include "cece/cece_logger.hpp"
 #include "cece/cece_physics_factory.hpp"
 
-namespace {
-
-/// @brief Compute Kok (2011) normalized dust aerosol size distribution.
-/// @param radii Particle bin effective radii [m]
-/// @param lower_edges Bin lower edge radii [m]
-/// @param upper_edges Bin upper edge radii [m]
-/// @return Normalized distribution weights summing to 1.0
-inline std::vector<double> compute_kok_distribution(const std::vector<double>& radii, const std::vector<double>& lower_edges,
-                                                    const std::vector<double>& upper_edges) {
-    constexpr double mmd = 3.4;      // median mass diameter [μm]
-    constexpr double stddev = 3.0;   // geometric standard deviation
-    constexpr double lambda = 12.0;  // crack propagation length [μm]
-    const double factor = 1.0 / (std::sqrt(2.0) * std::log(stddev));
-
-    int nbins = static_cast<int>(radii.size());
-    std::vector<double> dist(nbins, 0.0);
-    double total = 0.0;
-
-    for (int n = 0; n < nbins; ++n) {
-        double diameter = 2.0 * radii[n] * 1e6;  // convert m → μm
-        double rLow = lower_edges[n] * 1e6;
-        double rUp = upper_edges[n] * 1e6;
-        double dlam = diameter / lambda;
-        dist[n] = diameter * (1.0 + std::erf(factor * std::log(diameter / mmd))) * std::exp(-dlam * dlam * dlam) * std::log(rUp / rLow);
-        total += dist[n];
-    }
-
-    if (total > 0.0) {
-        for (int n = 0; n < nbins; ++n) dist[n] /= total;
-    }
-    return dist;
-}
-
-}  // anonymous namespace
+namespace {}  // anonymous namespace
 
 namespace cece {
 
@@ -139,37 +108,15 @@ void K14Scheme::Initialize(const conf::Value& config, CeceDiagnosticManager* dia
     if (config["grav"]) grav_ = config["grav"].as_double();
     if (config["von_karman"]) von_karman_ = config["von_karman"].as_double();
     if (config["opt_clay"]) opt_clay_ = config["opt_clay"].as_int();
-    if (config["num_bins"]) num_bins_ = config["num_bins"].as_int();
-
-    // Compute Kok distribution from particle size parameters if provided
-    if (config["particle_radii"] && config["bin_lower_edges"] && config["bin_upper_edges"]) {
-        auto radii = config["particle_radii"].as_double_list();
-        auto lower = config["bin_lower_edges"].as_double_list();
-        auto upper = config["bin_upper_edges"].as_double_list();
-        num_bins_ = static_cast<int>(radii.size());
-
-        auto dist = compute_kok_distribution(radii, lower, upper);
-
-        bin_distribution_ = Kokkos::View<double*, Kokkos::DefaultExecutionSpace>("k14_bin_dist", num_bins_);
-        auto h_dist = Kokkos::create_mirror_view(bin_distribution_);
-        for (int n = 0; n < num_bins_; ++n) {
-            h_dist(n) = dist[n];
-        }
-        Kokkos::deep_copy(bin_distribution_, h_dist);
-        has_custom_distribution_ = true;
-    } else {
-        // Fallback: uniform distribution for backward compatibility
-        bin_distribution_ = Kokkos::View<double*, Kokkos::DefaultExecutionSpace>("k14_bin_dist", num_bins_);
-        auto h_dist = Kokkos::create_mirror_view(bin_distribution_);
-        double uniform_weight = 1.0 / num_bins_;
-        for (int n = 0; n < num_bins_; ++n) {
-            h_dist(n) = uniform_weight;
-        }
-        Kokkos::deep_copy(bin_distribution_, h_dist);
-        has_custom_distribution_ = false;
+    // Size-bin geometry is entirely configuration-driven (see cece_dust_bins.hpp);
+    // the bin count itself is taken from the emission field in Run().
+    const auto bins = dustbins::Resolve(config, "K14Scheme");
+    if (bins.has_weights) {
+        bin_weights_ = dustbins::MakeView("k14_bin_weights", bins.weights);
+        has_bin_weights_ = true;
     }
 
-    std::cout << "K14Scheme: Initialized. ch_du=" << ch_du_ << " opt_clay=" << opt_clay_ << " num_bins=" << num_bins_ << "\n";
+    std::cout << "K14Scheme: Initialized. ch_du=" << ch_du_ << " opt_clay=" << opt_clay_ << " bins=" << bins.source << "\n";
 }
 
 void K14Scheme::Run(CeceImportState& import_state, CeceExportState& export_state) {
@@ -216,8 +163,26 @@ void K14Scheme::Run(CeceImportState& import_state, CeceExportState& export_state
     double grav = grav_;
     int opt_clay = opt_clay_;
 
-    // Capture the pre-computed bin distribution view
-    auto bin_dist = bin_distribution_;
+    // Bin weights: configured weights are used only when their length matches the
+    // size dimension of the emission field; otherwise the flux is split equally
+    // over the field bins so that the total is still conserved (weights sum to 1).
+    auto bin_dist = bin_weights_;
+    int nweights = 0;
+    if (has_bin_weights_) {
+        const int configured = static_cast<int>(bin_dist.extent(0));
+        if (configured == nbins) {
+            nweights = configured;
+        } else {
+            CECE_LOG_WARNING("K14Scheme::Run: " + std::to_string(configured) + " configured size bins do not match the " + std::to_string(nbins) +
+                             " bins of the emission field; splitting the flux equally instead.");
+        }
+    } else if (!warned_equal_bins_) {
+        CECE_LOG_WARNING(
+            "K14Scheme::Run: no bin configuration supplied, distributing emissions with equal weights over "
+            "the " +
+            std::to_string(nbins) + " bins of the emission field.");
+        warned_equal_bins_ = true;
+    }
 
     // Physical constants
     constexpr double a_n = 0.0123;
@@ -364,8 +329,10 @@ void K14Scheme::Run(CeceImportState& import_state, CeceExportState& export_state
             // ---------------------------------------------------------------
             // Step 13: Scale and distribute across bins
             // ---------------------------------------------------------------
+            // Distribute the size-integrated flux across the size bins.
             for (int n = 0; n < nbins; ++n) {
-                emissions(i, j, n) = flux * ch_du * bin_dist(n);
+                const double weight = nweights > 0 ? bin_dist(n) : 1.0 / nbins;
+                emissions(i, j, n) = flux * ch_du * weight;
             }
         });
 

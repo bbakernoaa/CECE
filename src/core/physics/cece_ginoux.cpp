@@ -58,20 +58,20 @@ double ginoux_moisture_threshold(double u_thresh0, double gwettop) {
 namespace cece {
 
 /**
- * @brief Initialize the Ginoux scheme from YAML configuration.
+ * @brief Initialize the Ginoux scheme from configuration.
  *
  * Reads the emission tuning constant and gravity, and resolves the optional
  * per-bin `particle_radii` override with `cece::dustbins::Resolve`. The bin
  * count is not configured here: it is the size dimension of the emission field.
  *
- * @param config YAML configuration node with Ginoux parameters
+ * @param config Scheme configuration (helm `conf::Value`) with Ginoux parameters
  * @param diag_manager Diagnostic manager for tracking outputs
  */
-void GinouxScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* diag_manager) {
+void GinouxScheme::Initialize(const conf::Value& config, CeceDiagnosticManager* diag_manager) {
     BasePhysicsScheme::Initialize(config, diag_manager);
 
-    if (config["ch_du"]) ch_du_ = config["ch_du"].as<double>();
-    if (config["grav"]) grav_ = config["grav"].as<double>();
+    if (config["ch_du"]) ch_du_ = config["ch_du"].as_double();
+    if (config["grav"]) grav_ = config["grav"].as_double();
 
     // Optional per-bin radii override. The bin count is never configured here: it
     // is the size dimension of the emission field, and Run() checks the override
