@@ -27,7 +27,11 @@ class GinouxFortranScheme : public BasePhysicsScheme {
    private:
     double ch_du_ = 0.8e-9;
     double grav_ = 9.81;
-    int num_bins_ = 5;
+
+    // No bin count is stored here: the bridge passes the size dimension of the
+    // emission field to the Fortran kernel, and the bin radii come from the
+    // `particle_radius` import field. See cece_dust_bins.hpp for the shared
+    // configuration keys used by the native scheme.
 };
 
 }  // namespace cece

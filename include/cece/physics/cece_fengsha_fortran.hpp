@@ -32,9 +32,15 @@ class FengshaFortranScheme : public BasePhysicsScheme {
     double kvhmax_ = 2.45e-4;
     double grav_ = 9.81;
     double drylimit_factor_ = 1.0;
-    int num_bins_ = 5;
-    std::vector<double> bin_distribution_;
-    bool has_custom_distribution_ = false;
+    /// @brief Emission mass fraction of each size bin [-], normalised to sum 1.
+    /// @details
+    /// Resolved from configuration by `cece::dustbins::Resolve` (see
+    /// cece_dust_bins.hpp); sized from the configured geometry, never from a
+    /// hard-coded bin count.
+    std::vector<double> bin_weights_;
+
+    /// @brief True when `bin_weights_` was populated from configuration.
+    bool has_bin_weights_ = false;
 };
 
 }  // namespace cece

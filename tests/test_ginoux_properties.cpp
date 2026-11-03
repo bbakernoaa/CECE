@@ -16,7 +16,9 @@
 
 #include <Kokkos_Core.hpp>
 #include <cmath>
+#include <memory>
 #include <random>
+#include <vector>
 
 #include "cece/cece_physics_factory.hpp"
 #include "cece/cece_state.hpp"
@@ -392,6 +394,113 @@ TEST_F(GinouxPropertyTest, Property4_ZeroEmissionInvariant) {
                             << "Fortran below-threshold cell (" << i << "," << j << "," << n << ") should have zero emissions, iter=" << iter;
                     }
                 }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Property 5: Configured particle_radii override is used and field-free
+// Feature: ginoux-dust-scheme, Property 5: Configuration-driven size bins
+// ============================================================================
+
+TEST_F(GinouxPropertyTest, Property5_ConfiguredRadiiOverride) {
+    const int nx = 3, ny = 2, nbins = 4;
+
+    std::vector<double> radii;
+    for (int n = 0; n < nbins; ++n) radii.push_back((n + 1) * 1.5e-6);
+
+    YAML::Node config;
+    config["particle_radii"] = radii;
+
+    PhysicsSchemeConfig cfg;
+    cfg.name = "ginoux";
+    cfg.options = config;
+    auto scheme = PhysicsFactory::CreateScheme(cfg);
+    ASSERT_NE(scheme, nullptr);
+    EXPECT_NO_THROW(scheme->Initialize(cfg.options, nullptr));
+
+    CeceImportState import_state;
+    CeceExportState export_state;
+    // No `particle_radius` field is supplied at all: the configured override must
+    // be enough for the scheme to run.
+    import_state.fields["u10m"] = create_dv("u10m", nx, ny, 1, 6.0);
+    import_state.fields["v10m"] = create_dv("v10m", nx, ny, 1, 0.0);
+    import_state.fields["surface_soil_wetness"] = create_dv("gwettop", nx, ny, 1, 0.1);
+    import_state.fields["land_mask"] = create_dv("oro", nx, ny, 1, 1.0);
+    import_state.fields["lake_fraction"] = create_dv("fraclake", nx, ny, 1, 0.0);
+    import_state.fields["dust_source"] = create_dv("du_src", nx, ny, 1, 1.0);
+    export_state.fields["ginoux_dust_emissions"] = create_dv("emis", nx, ny, nbins, 0.0);
+
+    auto* base = dynamic_cast<BasePhysicsScheme*>(scheme.get());
+    if (base) base->ClearPhysicsCache();
+    scheme->Run(import_state, export_state);
+
+    auto& dv = export_state.fields["ginoux_dust_emissions"];
+    dv.sync<Kokkos::HostSpace>();
+    auto h = dv.view_host();
+
+    // Independent reference: Marticorena threshold + Ginoux moisture factor.
+    const double ch_du = 0.8e-9, grav = 9.81, air_dens = 1.25, soil_density = 2650.0, w10 = 6.0;
+    auto u_thresh0 = [](double d, double rho_s, double g, double rho_a) -> double {
+        const double re = 1331.0 * std::pow(100.0 * d, 1.56) + 0.38;
+        return 0.13 * std::sqrt(rho_s * g * d / rho_a) * std::sqrt(1.0 + 6.0e-7 / (rho_s * g * std::pow(d, 2.5))) /
+               std::sqrt(1.928 * std::pow(re, 0.092) - 1.0);
+    };
+    const double moist = 1.2 + 0.2 * std::log10(std::max(1.0e-3, 0.1));
+
+    for (int n = 0; n < nbins; ++n) {
+        const double ut0 = u_thresh0(2.0 * radii[n], soil_density, grav, air_dens);
+        const double ut = ut0 * moist;
+        const double expected = w10 > ut ? ch_du * 1.0 * w10 * w10 * (w10 - ut) : 0.0;
+        for (int j = 0; j < ny; ++j) {
+            for (int i = 0; i < nx; ++i) {
+                EXPECT_NEAR(h(i, j, n), expected, std::abs(expected) * 1e-12 + 1e-30) << "bin " << n;
+            }
+        }
+    }
+
+    // A mismatched override length must fall back to the field rather than crash.
+    YAML::Node short_config;
+    std::vector<double> short_radii = radii;
+    short_radii.pop_back();
+    short_config["particle_radii"] = short_radii;
+
+    PhysicsSchemeConfig cfg2;
+    cfg2.name = "ginoux";
+    cfg2.options = short_config;
+    auto scheme2 = PhysicsFactory::CreateScheme(cfg2);
+    ASSERT_NE(scheme2, nullptr);
+    scheme2->Initialize(cfg2.options, nullptr);
+
+    CeceImportState import2;
+    CeceExportState export2;
+    import2.fields["u10m"] = create_dv("u10m", nx, ny, 1, 6.0);
+    import2.fields["v10m"] = create_dv("v10m", nx, ny, 1, 0.0);
+    import2.fields["surface_soil_wetness"] = create_dv("gwettop", nx, ny, 1, 0.1);
+    import2.fields["land_mask"] = create_dv("oro", nx, ny, 1, 1.0);
+    import2.fields["lake_fraction"] = create_dv("fraclake", nx, ny, 1, 0.0);
+    import2.fields["dust_source"] = create_dv("du_src", nx, ny, 1, 1.0);
+    import2.fields["particle_radius"] = create_dv("radius", 1, 1, nbins, 0.0);
+    {
+        auto hr = import2.fields["particle_radius"].view_host();
+        for (int n = 0; n < nbins; ++n) hr(0, 0, n) = radii[n];
+        import2.fields["particle_radius"].modify<Kokkos::HostSpace>();
+        import2.fields["particle_radius"].sync<Kokkos::DefaultExecutionSpace>();
+    }
+    export2.fields["ginoux_dust_emissions"] = create_dv("emis", nx, ny, nbins, 0.0);
+
+    auto* base2 = dynamic_cast<BasePhysicsScheme*>(scheme2.get());
+    if (base2) base2->ClearPhysicsCache();
+    EXPECT_NO_THROW(scheme2->Run(import2, export2));
+
+    auto& dv2 = export2.fields["ginoux_dust_emissions"];
+    dv2.sync<Kokkos::HostSpace>();
+    auto h2 = dv2.view_host();
+    for (int n = 0; n < nbins; ++n) {
+        for (int j = 0; j < ny; ++j) {
+            for (int i = 0; i < nx; ++i) {
+                EXPECT_DOUBLE_EQ(h2(i, j, n), h(i, j, n)) << "fallback to field should match, bin " << n;
             }
         }
     }

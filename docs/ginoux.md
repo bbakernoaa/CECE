@@ -19,8 +19,13 @@ References:
 | --- | --- | --- | --- |
 | `ch_du` | double | 0.8e-9 | Dust emission tuning constant |
 | `grav` | double | 9.81 | Gravitational acceleration [m/s²] |
-| `num_bins` | int | 5 | Number of dust size bins |
-| `particle_radii` | sequence[double] | *(none)* | Particle radii per bin [m]; overrides `num_bins` if provided |
+| `particle_radii` | sequence[double] | *(none)* | Particle radius of each size bin [m]; when absent the model `radius` field supplies them |
+
+The number of size bins is the third (size) dimension of the emission field, not
+a scheme option — the former `num_bins` key is rejected with an error. A
+`particle_radii` list whose length differs from that dimension is ignored with a
+warning, and the `radius` field is used instead. See
+`include/cece/cece_dust_bins.hpp` for the shared bin-configuration keys.
 
 ## Import Fields
 
@@ -32,7 +37,7 @@ References:
 | `land_mask` | dimensionless | Land mask (1 = land) |
 | `lake_fraction` | fraction | Lake fraction [0–1] |
 | `dust_source` | dimensionless | Dust source / erodibility map |
-| `particle_radius` | m | Particle radius per bin (3D: 1 × 1 × nbins) |
+| `particle_radius` | m | Particle radius per bin (3D: 1 × 1 × nbins); optional when `particle_radii` is configured with a matching bin count |
 
 ## Export Fields
 
@@ -64,8 +69,7 @@ physics:
     config:
       ch_du: 0.8e-9
       grav: 9.81
-      num_bins: 5
-      particle_radii: [0.73e-6, 1.4e-6, 2.4e-6, 4.5e-6, 8.0e-6]
+      particle_radii: [0.73e-6, 1.4e-6, 2.4e-6, 4.5e-6, 8.0e-6]  # must match the field's size dimension
 ```
 
 ## Implementation Notes
@@ -73,6 +77,6 @@ physics:
 - Available as both native C++ (Kokkos) and Fortran bridge implementations
 - Produces multi-bin (3D) output; the third dimension is the size bin index
 - Uses `Kokkos::pow`, `Kokkos::sqrt`, `Kokkos::log10`, `Kokkos::max`, and `Kokkos::round` for GPU portability
-- Particle radii can be provided via config or read from the `particle_radius` import field
+- Particle radii can be provided via config (`particle_radii`) or read from the `particle_radius` import field; the config override is used only when its length equals the size dimension of the emission field, otherwise the field wins and a warning is logged
 - The `particle_radius` import field is indexed as `(0, 0, n)` — it stores per-bin values in the third dimension
 - Physical constants: soil density = 2650 kg/m³, air density = 1.25 kg/m³ (hard-coded in kernel)

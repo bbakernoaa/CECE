@@ -33,8 +33,17 @@ class GinouxScheme : public BasePhysicsScheme {
    private:
     double ch_du_ = 0.8e-9;
     double grav_ = 9.81;
-    int num_bins_ = 5;
+
+    /// @brief Optional per-bin particle radius override [m], from `particle_radii`.
+    /// @details
+    /// The bin count itself is taken from the size dimension of the emission
+    /// field. When the override is absent, or its length disagrees with the
+    /// field, the model `radius` field supplies the bin sizes (see
+    /// cece_dust_bins.hpp for the configuration keys).
     Kokkos::View<double*, Kokkos::DefaultExecutionSpace> particle_radii_;
+
+    /// @brief True when `particle_radii_` was populated from configuration.
+    bool has_particle_radii_ = false;
 };
 
 }  // namespace cece

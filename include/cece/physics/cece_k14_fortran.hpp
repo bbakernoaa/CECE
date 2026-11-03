@@ -35,9 +35,16 @@ class K14FortranScheme : public BasePhysicsScheme {
     double grav_ = 9.81;
     double von_karman_ = 0.4;
     int opt_clay_ = 0;
-    int num_bins_ = 5;
-    std::vector<double> bin_distribution_;
-    bool has_custom_distribution_ = false;
+    /// @brief Emission mass fraction of each size bin [-], normalised to sum 1.
+    /// @details
+    /// Resolved from configuration by `cece::dustbins::Resolve` (see
+    /// cece_dust_bins.hpp); sized from the configured geometry, never from a
+    /// hard-coded bin count. The bridge truncates/validates against the field's
+    /// size dimension before calling the Fortran kernel.
+    std::vector<double> bin_weights_;
+
+    /// @brief True when `bin_weights_` was populated from configuration.
+    bool has_bin_weights_ = false;
 };
 
 }  // namespace cece

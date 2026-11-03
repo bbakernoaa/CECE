@@ -21,6 +21,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "cece/cece_dust_bins.hpp"
+#include "cece/cece_logger.hpp"
 #include "cece/cece_physics_factory.hpp"
 
 namespace cece {
@@ -55,28 +57,53 @@ double ginoux_moisture_threshold(double u_thresh0, double gwettop) {
 
 namespace cece {
 
+/**
+ * @brief Initialize the Ginoux scheme from YAML configuration.
+ *
+ * Reads the emission tuning constant and gravity, and resolves the optional
+ * per-bin `particle_radii` override with `cece::dustbins::Resolve`. The bin
+ * count is not configured here: it is the size dimension of the emission field.
+ *
+ * @param config YAML configuration node with Ginoux parameters
+ * @param diag_manager Diagnostic manager for tracking outputs
+ */
 void GinouxScheme::Initialize(const YAML::Node& config, CeceDiagnosticManager* diag_manager) {
     BasePhysicsScheme::Initialize(config, diag_manager);
 
     if (config["ch_du"]) ch_du_ = config["ch_du"].as<double>();
     if (config["grav"]) grav_ = config["grav"].as<double>();
-    if (config["num_bins"]) num_bins_ = config["num_bins"].as<int>();
 
-    // Read particle radii from config or use defaults
-    if (config["particle_radii"]) {
-        auto radii_vec = config["particle_radii"].as<std::vector<double>>();
-        num_bins_ = static_cast<int>(radii_vec.size());
-        particle_radii_ = Kokkos::View<double*, Kokkos::DefaultExecutionSpace>("particle_radii", num_bins_);
-        auto h_radii = Kokkos::create_mirror_view(particle_radii_);
-        for (int n = 0; n < num_bins_; ++n) {
-            h_radii(n) = radii_vec[n];
-        }
-        Kokkos::deep_copy(particle_radii_, h_radii);
+    // Optional per-bin radii override. The bin count is never configured here: it
+    // is the size dimension of the emission field, and Run() checks the override
+    // length against it. Without the override the model `radius` field supplies
+    // the size of each bin.
+    const auto bins = dustbins::Resolve(config, "GinouxScheme");
+    if (!bins.radii.empty()) {
+        particle_radii_ = dustbins::MakeView("ginoux_particle_radii", bins.radii);
+        has_particle_radii_ = true;
     }
 
-    std::cout << "GinouxScheme: Initialized. ch_du=" << ch_du_ << " grav=" << grav_ << " num_bins=" << num_bins_ << "\n";
+    std::cout << "GinouxScheme: Initialized. ch_du=" << ch_du_ << " grav=" << grav_ << " bins=" << bins.source << "\n";
 }
 
+/**
+ * @brief Compute size-resolved Ginoux dust emissions for one timestep.
+ *
+ * Kokkos kernel over the (nx, ny) grid. For each land cell, the 10 m wind is
+ * compared with the Marticorena dry-soil threshold modified by the Ginoux
+ * soil-moisture factor; above it the emission is
+ * `ch_du · du_src · (1 − f_lake) · u10 · u10 · (u10 − u_thresh)` per bin `n`,
+ * with the bin radius taken from the configured `particle_radii` override
+ * when its length matches the size dimension of the emission field, and from
+ * the model `radius` field otherwise.
+ *
+ * @param import_state Input fields: 10 m wind components, land mask, surface
+ *                     wetness, lake fraction, dust source function and particle
+ *                     radius (the latter optional when `particle_radii` is
+ *                     configured with a matching bin count)
+ * @param export_state Output field `ginoux_dust_emissions` [kg m-2 s-1], 3D
+ *                     (nx × ny × nbins); written in place
+ */
 void GinouxScheme::Run(CeceImportState& import_state, CeceExportState& export_state) {
     // Resolve import fields
     auto u10m = ResolveImport("u10m", import_state);
@@ -90,9 +117,16 @@ void GinouxScheme::Run(CeceImportState& import_state, CeceExportState& export_st
     // Resolve export field
     auto emissions = ResolveExport("ginoux_dust_emissions", export_state);
 
+    // The model `particle_radius` field is only required when no configured
+    // override of matching length supplies the bin sizes.
+    auto cfg_radii = particle_radii_;
+    const bool use_cfg_radii = has_particle_radii_ && static_cast<int>(cfg_radii.extent(0)) == static_cast<int>(emissions.extent(2));
+    const bool have_field_radii = (radius.data() != nullptr);
+
     // Early return if any field is missing
     if (u10m.data() == nullptr || v10m.data() == nullptr || gwettop.data() == nullptr || oro.data() == nullptr || fraclake.data() == nullptr ||
-        du_src.data() == nullptr || radius.data() == nullptr || emissions.data() == nullptr) {
+        du_src.data() == nullptr || emissions.data() == nullptr || (!use_cfg_radii && !have_field_radii)) {
+        CECE_LOG_WARNING("GinouxScheme::Run: One or more required fields could not be resolved. Skipping execution.");
         return;
     }
 
@@ -108,6 +142,17 @@ void GinouxScheme::Run(CeceImportState& import_state, CeceExportState& export_st
     constexpr double air_dens = 1.25;
     constexpr double soil_density = 2650.0;
 
+    // Bin sizes come from the configured override when its length matches the
+    // field, otherwise from the model `radius` field.
+    if (has_particle_radii_ && !use_cfg_radii) {
+        CECE_LOG_WARNING("GinouxScheme::Run: " + std::to_string(static_cast<int>(cfg_radii.extent(0))) +
+                         " configured particle_radii"
+                         " do not match the " +
+                         std::to_string(nbins) +
+                         " bins of the emission field; using the model"
+                         " 'particle_radius' field instead.");
+    }
+
     Kokkos::parallel_for(
         "GinouxKernel", Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<2>>({0, 0}, {nx, ny}), KOKKOS_LAMBDA(int i, int j) {
             // Skip if not on land
@@ -121,7 +166,8 @@ void GinouxScheme::Run(CeceImportState& import_state, CeceExportState& export_st
             double du_src_val = du_src(i, j, 0);
 
             for (int n = 0; n < nbins; ++n) {
-                double diameter = 2.0 * radius(0, 0, n);
+                const double bin_radius = use_cfg_radii ? cfg_radii(n) : radius(0, 0, n);
+                double diameter = 2.0 * bin_radius;
 
                 // Marticorena dry-soil threshold velocity
                 double u_thresh0 = ginoux_marticorena_threshold(diameter, soil_density, grav, air_dens);

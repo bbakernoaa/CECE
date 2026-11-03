@@ -53,9 +53,16 @@ class K14Scheme : public BasePhysicsScheme {
     double grav_ = 9.81;
     double von_karman_ = 0.4;
     int opt_clay_ = 0;
-    int num_bins_ = 5;
-    Kokkos::View<double*, Kokkos::DefaultExecutionSpace> bin_distribution_;
-    bool has_custom_distribution_ = false;
+    /// @brief Emission mass fraction of each size bin [-], normalised to sum 1.
+    /// @details
+    /// Resolved from configuration by `cece::dustbins::Resolve` (see
+    /// cece_dust_bins.hpp). The bin count is not stored here: it is the size
+    /// dimension of the emission field, and the kernel only uses these weights
+    /// when their length matches it.
+    Kokkos::View<double*, Kokkos::DefaultExecutionSpace> bin_weights_;
+
+    /// @brief True when `bin_weights_` was populated from configuration.
+    bool has_bin_weights_ = false;
 };
 
 }  // namespace cece
