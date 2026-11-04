@@ -42,6 +42,16 @@ def _urlopen(url: str, no_ssl_verify: bool):
     return urllib.request.urlopen(url, timeout=1800)
 
 
+def _fetch(url: str, tmp: Path, no_ssl_verify: bool) -> None:
+    """Stream url into tmp; the single network touchpoint (stubbed by the host checks)."""
+    with _urlopen(url, no_ssl_verify) as resp, open(tmp, "wb") as fh:
+        while True:
+            chunk = resp.read(1 << 20)
+            if not chunk:
+                break
+            fh.write(chunk)
+
+
 def ensure_gribs(cache_dir: str, date: str, hour: int, leads, no_ssl_verify: bool = False):
     """Return a local path per lead, fetching only what is missing."""
     cache = Path(cache_dir)
@@ -55,12 +65,7 @@ def ensure_gribs(cache_dir: str, date: str, hour: int, leads, no_ssl_verify: boo
             url = url_for(date, hour, lead)
             tmp = dest.with_suffix(dest.suffix + ".part")
             print(f"fetch   {url}", flush=True)
-            with _urlopen(url, no_ssl_verify) as resp, open(tmp, "wb") as fh:
-                while True:
-                    chunk = resp.read(1 << 20)
-                    if not chunk:
-                        break
-                    fh.write(chunk)
+            _fetch(url, tmp, no_ssl_verify)
             size = tmp.stat().st_size if tmp.exists() else 0
             if size < MIN_BYTES:
                 tmp.unlink(missing_ok=True)
