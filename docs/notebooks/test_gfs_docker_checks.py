@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 
+import nbformat
+
 import gfs_docker_checks as C
 
 CASE_BLOCK = "\n".join(
@@ -112,6 +114,14 @@ def notebook_with_case_missing_key() -> str:
 
 def notebook_with_case_extra_key() -> str:
     return good_source().replace("}\n", '    "extra_key": 1,\n}\n', 1)
+
+
+def script_with_unquoted_docker_and_quoted_decoy() -> str:
+    return (
+        minimal_good_script()
+        .replace("bash <<'STAGE'", "bash <<STAGE", 1)
+        + "\ncat <<'STAGE'\ndecoy\nSTAGE\n"
+    )
 
 
 def check_self_test_contracts(tmp: str) -> list[str]:
@@ -220,6 +230,39 @@ def check_self_test_contracts(tmp: str) -> list[str]:
     if not C.check_sync(blank_py, blank_nb):
         problems.append("whitespace-only sync divergence was not detected")
 
+    # Finding A reproduction: executed notebook must be preserved when content matches.
+    exec_py = os.path.join(tmp, "executed.py")
+    exec_nb = os.path.join(tmp, "executed.ipynb")
+    write(exec_py, "# %%\nprint('ok')\n")
+    C.sync_notebook(exec_py, exec_nb)
+    nb_exec = nbformat.read(exec_nb, as_version=4)
+    nb_exec.cells[0].execution_count = 7
+    nb_exec.cells[0].outputs = [
+        nbformat.v4.new_output("stream", name="stdout", text="ok\\n")
+    ]
+    nbformat.write(nb_exec, exec_nb)
+    if C.sync_notebook(exec_py, exec_nb) != "unchanged":
+        problems.append("executed notebook was rewritten even though cell content was unchanged")
+    reread = nbformat.read(exec_nb, as_version=4)
+    if not reread.cells[0].outputs or reread.cells[0].execution_count != 7:
+        problems.append("executed notebook outputs/execution_count were not preserved")
+    if C.check_sync(exec_py, exec_nb):
+        problems.append("check_sync reported drift for executed notebook with unchanged cell content")
+
+    # Companion: genuine content edit after execution must rewrite and then report sync clean.
+    write(exec_py, "# %%\nprint('edited')\n")
+    if C.sync_notebook(exec_py, exec_nb) != "written":
+        problems.append("content edit after execution did not force notebook rewrite")
+    if C.check_sync(exec_py, exec_nb):
+        problems.append("check_sync did not clear after rewriting edited notebook")
+
+    # Finding B reproduction: quoted decoy must not satisfy docker heredoc gate.
+    sh_decoy = os.path.join(tmp, "decoy.sh")
+    write(sh_decoy, script_with_unquoted_docker_and_quoted_decoy())
+    decoy_found = C.check_script(sh_decoy)
+    if not any("docker stage" in p for p in decoy_found):
+        problems.append("unquoted docker heredoc passed due to unrelated quoted decoy block")
+
     return problems
 
 
@@ -294,3 +337,44 @@ def test_case_missing_and_extra_keys_are_distinct(tmp_path):
     e = C.check_notebook(str(nb_e), requires=("case",))
     assert any("CASE is missing keys" in p for p in m)
     assert any("CASE has unexpected keys" in p for p in e)
+
+
+def test_sync_preserves_executed_outputs_when_cell_content_is_unchanged(tmp_path):
+    py = tmp_path / "n.py"
+    nb = tmp_path / "n.ipynb"
+    py.write_text("# %%\nprint('ok')\n")
+    C.sync_notebook(str(py), str(nb))
+
+    doc = nbformat.read(str(nb), as_version=4)
+    doc.cells[0].execution_count = 3
+    doc.cells[0].outputs = [nbformat.v4.new_output("stream", name="stdout", text="ok\\n")]
+    nbformat.write(doc, str(nb))
+
+    assert C.sync_notebook(str(py), str(nb)) == "unchanged"
+    reread = nbformat.read(str(nb), as_version=4)
+    assert reread.cells[0].execution_count == 3
+    assert reread.cells[0].outputs
+    assert C.check_sync(str(py), str(nb)) == []
+
+
+def test_sync_rewrites_on_real_content_edit_even_after_execution(tmp_path):
+    py = tmp_path / "n.py"
+    nb = tmp_path / "n.ipynb"
+    py.write_text("# %%\nprint('ok')\n")
+    C.sync_notebook(str(py), str(nb))
+
+    doc = nbformat.read(str(nb), as_version=4)
+    doc.cells[0].execution_count = 3
+    doc.cells[0].outputs = [nbformat.v4.new_output("stream", name="stdout", text="ok\\n")]
+    nbformat.write(doc, str(nb))
+
+    py.write_text("# %%\nprint('edited')\n")
+    assert C.sync_notebook(str(py), str(nb)) == "written"
+    assert C.check_sync(str(py), str(nb)) == []
+
+
+def test_unquoted_docker_heredoc_is_not_accepted_by_decoy_quoted_block(tmp_path):
+    sh = tmp_path / "decoy.sh"
+    sh.write_text(script_with_unquoted_docker_and_quoted_decoy())
+    found = C.check_script(str(sh))
+    assert any("docker stage" in p for p in found)

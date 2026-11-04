@@ -168,6 +168,40 @@ def code_kind() -> str:
     return "code"
 
 
+def normalize_cell_trailing_newline(source: str) -> str:
+    """Allow only nbformat's single trailing newline convention difference."""
+    return source[:-1] if source.endswith("\n") else source
+
+
+def _cells_match_ignoring_execution_artifacts(
+    notebook_cells: list[tuple[str, str]],
+    script_cells: list[tuple[str, str]],
+) -> bool:
+    if len(notebook_cells) != len(script_cells):
+        return False
+    for (nb_kind, nb_source), (py_kind, py_source) in zip(notebook_cells, script_cells):
+        if nb_kind != py_kind:
+            return False
+        if normalize_cell_trailing_newline(nb_source) != normalize_cell_trailing_newline(py_source):
+            return False
+    return True
+
+
+def _notebook_matches_script_content(nb_path: str, py_path: str) -> bool:
+    import nbformat
+
+    nb = nbformat.read(nb_path, as_version=4)
+    spec = nb.metadata.get("kernelspec", {}) or {}
+    if spec.get("name") != KERNEL_NAME:
+        return False
+    nb_cells = [
+        (c.cell_type, c.source if isinstance(c.source, str) else "".join(c.source))
+        for c in nb.cells
+    ]
+    py_cells = parse_cells(py_path)
+    return _cells_match_ignoring_execution_artifacts(nb_cells, py_cells)
+
+
 def render_ipynb(py_path: str):
     import nbformat
 
@@ -202,43 +236,37 @@ def _current_notebook_text(nb_path: str) -> str:
 
 
 def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
-    """Write the exact notebook image rendered from the percent script.
-
-    "unchanged" is returned iff the notebook already matches byte-for-byte what this
-    function would write, which is exactly the same predicate used by --check-sync.
-    """
+    """Sync notebook content from the percent script while preserving execution artifacts."""
     import nbformat
 
-    rendered_text = nbformat.writes(render_ipynb(py_path))
     os.makedirs(os.path.dirname(nb_path) or ".", exist_ok=True)
     if os.path.exists(nb_path):
         try:
-            if _current_notebook_text(nb_path) == rendered_text:
+            if _notebook_matches_script_content(nb_path, py_path):
                 return "unchanged"
         except Exception:
             pass
+    rendered_text = nbformat.writes(render_ipynb(py_path))
     with open(nb_path, "w") as fh:
         fh.write(rendered_text)
     return "written"
 
 
 def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
-    problems: list[str] = []
     if not os.path.exists(py_path):
         return [f"{py_path}: missing"]
     if not os.path.exists(nb_path):
         return [f"{nb_path}: missing (run --sync)"]
     try:
-        rendered_text = _rendered_notebook_text(py_path)
+        parse_cells(py_path)
     except Exception as exc:
         return [f"{py_path}: unreadable notebook script for sync check: {exc}"]
     try:
-        current_text = _current_notebook_text(nb_path)
+        if _notebook_matches_script_content(nb_path, py_path):
+            return []
     except Exception as exc:
         return [f"{nb_path}: unreadable notebook for sync check: {exc}"]
-    if current_text != rendered_text:
-        problems.append(f"{nb_path}: differs from {py_path} render output — run --sync")
-    return problems
+    return [f"{nb_path}: differs from {py_path} content/kernelspec.name — run --sync"]
 
 
 def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec",)) -> list[str]:
@@ -423,10 +451,19 @@ def check_script(path: str = SH_PATH) -> list[str]:
         problems.append(
             f"{path}: system python3 must not pip-install into the conda env — use \"$PY\" -m pip"
         )
-    if len(re.findall(r"^\s*docker\s+run\b", clean, re.M)) != 1:
+    docker_lines = list(re.finditer(r"^\s*docker\s+run\b.*$", clean, re.M))
+    if len(docker_lines) != 1:
         problems.append(f"{path}: must contain exactly one docker run invocation")
-    if "<<'STAGE'" not in clean or not re.search(r"^STAGE\s*$", clean, re.M):
-        problems.append(f"{path}: docker stage must be a single quoted heredoc <<'STAGE' ... STAGE")
+    else:
+        docker_line = docker_lines[0].group(0)
+        hd = re.search(r"<<(?!-)(\s*)(?P<delim>'STAGE'|\"STAGE\"|\\STAGE|STAGE)(?![A-Za-z0-9_])", docker_line)
+        if not hd or hd.group("delim") == "STAGE":
+            problems.append(f"{path}: docker stage must be a quoted heredoc on docker run (<<'STAGE' ... STAGE)")
+        else:
+            docker_start = docker_lines[0].end()
+            trailing = clean[docker_start:]
+            if not re.search(r"^STAGE\s*$", trailing, re.M):
+                problems.append(f"{path}: docker stage heredoc from docker run is missing its STAGE terminator")
 
     nb_block = branch_block(clean, "--nb")
     cmd_block = branch_block(clean, "-c|--cmd")
