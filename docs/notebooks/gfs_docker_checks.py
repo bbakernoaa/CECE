@@ -150,17 +150,17 @@ def parse_cells(path: str) -> list[tuple[str, str]]:
     cells: list[tuple[str, str]] = []
     kind, buf = None, []
     with open(path) as fh:
-        for line in fh.read().splitlines():
+        for line in fh.readlines():
             mark = re.match(r"^#\s*%%\s*(\[markdown\])?", line)
             if mark:
                 if kind is not None:
-                    cells.append((kind, "\n".join(buf).strip("\n")))
+                    cells.append((kind, "".join(buf)))
                 kind = "markdown" if mark.group(1) else code_kind()
                 buf = []
-            elif kind is not None and not (kind == "code" and line.startswith("from __future__")):
+            elif kind is not None:
                 buf.append(line)
     if kind is not None:
-        cells.append((kind, "\n".join(buf).strip("\n")))
+        cells.append((kind, "".join(buf)))
     return cells
 
 
@@ -179,6 +179,7 @@ def render_ipynb(py_path: str):
     }
     nb.metadata["jupytext"] = {"formats": "ipynb,py:percent"}
     for kind, source in parse_cells(py_path):
+        source = source if source.endswith("\n") else source + "\n"
         if kind == "markdown":
             nb.cells.append(nbformat.v4.new_markdown_cell(source))
         else:
@@ -208,6 +209,10 @@ def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
     return "written"
 
 
+def normalize_cell_trailing_newline(source: str) -> str:
+    return source[:-1] if source.endswith("\n") else source
+
+
 def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
     problems: list[str] = []
     if not os.path.exists(py_path):
@@ -226,7 +231,7 @@ def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
         problems.append(f"{nb_path}: {len(from_nb)} cells vs {len(from_py)} in {py_path} — run --sync")
         return problems
     for i, ((ka, sa), (kb, sb)) in enumerate(zip(from_nb, from_py)):
-        if ka != kb or sa.strip() != sb.strip():
+        if ka != kb or normalize_cell_trailing_newline(sa) != normalize_cell_trailing_newline(sb):
             problems.append(f"cell {i} differs from {py_path} ({ka} vs {kb}) — run --sync")
             break
     return problems
@@ -303,26 +308,58 @@ SH_STAGES = [
 ]
 
 
+def strip_shell_comments(src: str) -> str:
+    out = []
+    for i, line in enumerate(src.splitlines()):
+        stripped = line.lstrip()
+        if stripped.startswith("#") and not (i == 0 and stripped.startswith("#!")):
+            continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if src.endswith("\n") else "")
+
+
+def branch_block(src: str, label: str) -> str:
+    m = re.search(rf"^\s*{re.escape(label)}\)\n(.*?)(?=^\s*;;&?\s*$|^\s*esac\s*$)", src, re.M | re.S)
+    return m.group(1) if m else ""
+
+
 def check_script(path: str = SH_PATH) -> list[str]:
     problems: list[str] = []
     try:
         src = open(path).read()
     except OSError:
         return [f"{path}: missing"]
+    clean = strip_shell_comments(src)
     if not src.startswith("#!/usr/bin/env bash"):
         problems.append(f"{path}: must start with #!/usr/bin/env bash")
-    if "set -euo pipefail" not in src:
+    if "set -euo pipefail" not in clean:
         problems.append(f"{path}: needs 'set -euo pipefail'")
     for flag in ("--help", "--nb", "--rebuild", "--reset", "--skip-build", "-c |--cmd )"):
-        if flag.replace(" ", "") not in src.replace(" ", ""):
+        if flag.replace(" ", "") not in clean.replace(" ", ""):
             problems.append(f"{path}: flag {flag} is not dispatched")
     for pat, why in SH_STAGES:
-        if not re.search(pat, src, re.M):
+        if not re.search(pat, clean, re.M):
             problems.append(f"{path}: missing required stage: {pat} — {why}")
-    if re.search(r'python3? -m pip', src):
+    if re.search(r'python3? -m pip', clean):
         problems.append(
             f"{path}: system python3 must not pip-install into the conda env — use \"$PY\" -m pip"
         )
+    if len(re.findall(r"^\s*docker\s+run\b", clean, re.M)) != 1:
+        problems.append(f"{path}: must contain exactly one docker run invocation")
+    if "<<'STAGE'" not in clean or not re.search(r"^STAGE\s*$", clean, re.M):
+        problems.append(f"{path}: docker stage must be a single quoted heredoc <<'STAGE' ... STAGE")
+
+    nb_block = branch_block(clean, "--nb")
+    cmd_block = branch_block(clean, "-c|--cmd")
+    lab_block = branch_block(clean, "lab")
+    if "-p 8888:8888" in nb_block or "-p 8888:8888" in cmd_block:
+        problems.append(f"{path}: -p 8888:8888 must not be set in --nb/-c|--cmd branches")
+    if "-p 8888:8888" not in lab_block:
+        problems.append(f"{path}: lab branch must publish -p 8888:8888")
+    if "-e HOST_UID=" not in nb_block or "-e HOST_GID=" not in nb_block:
+        problems.append(f"{path}: --nb branch must pass HOST_UID/HOST_GID environment variables")
+    if not re.search(r"chown\s+.*\$HOST_UID:\$HOST_GID.*ipynb", clean):
+        problems.append(f"{path}: stage must chown the executed notebook with HOST_UID/HOST_GID")
     return problems
 
 
