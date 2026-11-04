@@ -12,6 +12,7 @@ usage: python3 docs/notebooks/gfs_docker_checks.py [data|sh|nb|all]
 from __future__ import annotations
 
 import ast
+import os
 import re
 import sys
 
@@ -99,10 +100,10 @@ def check_data_behaviour(path: str) -> list[str]:
                 Path(tmp).write_bytes(b"GRIB")
 
             mod._fetch, mod.MIN_BYTES = fake, 1
+            stack = contextlib.ExitStack()
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             try:
                 leads = [0, 3]
-                stack = contextlib.ExitStack()
-                stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                 paths = [Path(p) for p in mod.ensure_gribs(tmpdir, date, hour, leads)]
                 if len(paths) != len(leads) or not all(p.exists() for p in paths):
                     problems.append(f"{path}: ensure_gribs() returned missing files: {paths}")
@@ -112,7 +113,6 @@ def check_data_behaviour(path: str) -> list[str]:
                         problems.append(f"{path}: {p.name} mode is {mode}, expected 0o666")
                 first = len(written)
                 mod.ensure_gribs(tmpdir, date, hour, leads)
-                stack.close()
                 if first != len(leads) or len(written) != first:
                     problems.append(
                         f"{path}: cache not honoured: fetches {first} then {len(written)} "
@@ -128,20 +128,241 @@ def check_data_behaviour(path: str) -> list[str]:
     return problems
 
 
-CHECKS = {"data": check_data_module}
+PY_PATH = "docs/notebooks/fengsha_gfs.py"
+NB_PATH = "docs/notebooks/fengsha_gfs.ipynb"
+SH_PATH = "docs/notebooks/gfs-docker.sh"
+MIN_CODE_CELLS = 12
+MIN_ASSERTS = 5
+ALL_TOKENS = ("kernelspec", "bootstrap", "case", "asserts", "cells", "report", "maps", "caveats")
+KERNEL_DISPLAY = "Python 3 (CECE GFS)"
+
+
+def parse_cells(path: str) -> list[tuple[str, str]]:
+    """Cell (kind, source) pairs, from a percent-marked .py or an .ipynb."""
+    if path.endswith(".ipynb"):
+        import nbformat
+
+        nb = nbformat.read(path, as_version=4)
+        return [
+            (c.cell_type, c.source if isinstance(c.source, str) else "".join(c.source))
+            for c in nb.cells
+        ]
+    cells: list[tuple[str, str]] = []
+    kind, buf = None, []
+    with open(path) as fh:
+        for line in fh.read().splitlines():
+            mark = re.match(r"^#\s*%%\s*(\[markdown\])?", line)
+            if mark:
+                if kind is not None:
+                    cells.append((kind, "\n".join(buf).strip("\n")))
+                kind = "markdown" if mark.group(1) else code_kind()
+                buf = []
+            elif kind is not None and not (kind == "code" and line.startswith("from __future__")):
+                buf.append(line)
+    if kind is not None:
+        cells.append((kind, "\n".join(buf).strip("\n")))
+    return cells
+
+
+def code_kind() -> str:
+    return "code"
+
+
+def render_ipynb(py_path: str):
+    import nbformat
+
+    nb = nbformat.v4.new_notebook()
+    nb.metadata["kernelspec"] = {
+        "name": KERNEL_NAME,
+        "display_name": KERNEL_DISPLAY,
+        "language": "python",
+    }
+    nb.metadata["jupytext"] = {"formats": "ipynb,py:percent"}
+    for kind, source in parse_cells(py_path):
+        if kind == "markdown":
+            nb.cells.append(nbformat.v4.new_markdown_cell(source))
+        else:
+            nb.cells.append(nbformat.v4.new_code_cell(source))
+    return nb
+
+
+def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
+    """Regenerate the .ipynb from the .py unless cell sources and kernelspec already match.
+
+    Executing the notebook (Task 7) adds outputs; outputs are not compared, so a run does not
+    make the pair "out of sync" — only an edited source does.
+    """
+    import nbformat
+
+    rendered = render_ipynb(py_path)
+    os.makedirs(os.path.dirname(nb_path) or ".", exist_ok=True)
+    if os.path.exists(nb_path):
+        current = nbformat.read(nb_path, as_version=4)
+        same = [(c.cell_type, c.source) for c in current.cells] == [
+            (c.cell_type, c.source) for c in rendered.cells
+        ]
+        if same and current.metadata.get("kernelspec", {}).get("name") == KERNEL_NAME:
+            return "unchanged"
+    with open(nb_path, "w") as fh:
+        nbformat.write(rendered, fh)
+    return "written"
+
+
+def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
+    problems: list[str] = []
+    if not os.path.exists(py_path):
+        return [f"{py_path}: missing"]
+    if not os.path.exists(nb_path):
+        return [f"{nb_path}: missing (run --sync)"]
+    try:
+        from_nb = parse_cells(nb_path)
+    except Exception as exc:  # nbformat raises several unrelated types
+        return [f"{nb_path}: unreadable notebook for sync check: {exc}"]
+    try:
+        from_py = parse_cells(py_path)
+    except Exception as exc:
+        return [f"{py_path}: unreadable notebook script for sync check: {exc}"]
+    if len(from_nb) != len(from_py):
+        problems.append(f"{nb_path}: {len(from_nb)} cells vs {len(from_py)} in {py_path} — run --sync")
+        return problems
+    for i, ((ka, sa), (kb, sb)) in enumerate(zip(from_nb, from_py)):
+        if ka != kb or sa.strip() != sb.strip():
+            problems.append(f"cell {i} differs from {py_path} ({ka} vs {kb}) — run --sync")
+            break
+    return problems
+
+
+def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec",)) -> list[str]:
+    problems: list[str] = []
+    if not path.endswith(".ipynb"):
+        return [f"{path}: expected a real .ipynb (sync first)"]
+    try:
+        cells = parse_cells(path)
+        import nbformat
+
+        nb = nbformat.read(path, as_version=4)
+    except Exception as exc:  # missing file, malformed json, schema error
+        return [f"{path}: unreadable notebook: {exc}"]
+    if not cells:
+        return [f"{path}: no cells found"]
+    code = [src for kind, src in cells if kind == "code"]
+    md = "\n".join(src for kind, src in cells if kind == "markdown")
+    joined = "\n".join(code)
+    if "kernelspec" in requires:
+        spec = nb.metadata.get("kernelspec", {})
+        if spec.get("name") != KERNEL_NAME or spec.get("display_name") != KERNEL_DISPLAY:
+            problems.append(
+                f"{path}: kernelspec is {spec.get('name')!r}/{spec.get('display_name')!r}, "
+                f"expected {KERNEL_NAME!r}/{KERNEL_DISPLAY!r}"
+            )
+    if "bootstrap" in requires:
+        if "sys.path.insert" not in joined or "build/src/python" not in joined:
+            problems.append(f"{path}: no sys.path bootstrap to the volume-built cece bindings")
+    if "case" in requires:
+        missing = [k for k in CASE_KEYS if not re.search(rf'"{k}"\s*:', joined)]
+        if missing:
+            problems.append(f"{path}: CASE is missing keys {missing}")
+    if "asserts" in requires and joined.count("assert ") < MIN_ASSERTS:
+        problems.append(
+            f"{path}: {joined.count('assert ')} runtime asserts, expected at least {MIN_ASSERTS}"
+        )
+    if "cells" in requires and len(code) < MIN_CODE_CELLS:
+        problems.append(f"{path}: {len(code)} code cells, expected at least {MIN_CODE_CELLS}")
+    if "report" in requires and joined.count("build_report(") < 2:
+        problems.append(f"{path}: build_report() must be defined and called")
+    if "maps" in requires and "pcolormesh" not in joined:
+        problems.append(f"{path}: no pcolormesh map cell")
+    if "caveats" in requires:
+        for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest"):
+            if phrase not in md:
+                problems.append(f"{path}: caveats text omits {phrase!r}")
+    return problems
+
+
+SH_STAGES = [
+    (r'^IMAGE="\$\{CECE_IMAGE:-cece/cece-dev:latest\}"$', "the existing dev image is reused, not redefined"),
+    (r'--platform linux/arm64', "build and run platform must match, or mounts break with an exec-format error"),
+    (r'--override-channels', "avoid the defaults channel (license wall, different build pins)"),
+    (r"python=3\.12", "grib2io is capped at 3.13 on osx-arm64; conda solves 3.12"),
+    (r'^ENV_NAME="\$\{GFS_ENV_NAME:-cece-gfs\}"$', "the kernelspec name the notebook expects"),
+    (r"'numpy<3'", "numpy 3 breaks grib2io and xarray here"),
+    (r"pybind11", "conda pybind11 avoids the FetchContent /usr/include/python3.12 failure"),
+    (r"extern/helm/libs/axis", "axis-regrid provides regrid_rectilinear"),
+    (r"--no-deps.*monetio|monetio.*--no-deps", "MONETIO must not upgrade numpy under the bindings"),
+    (r"noaa-oar-arl/monetio", "the only clonable MONETIO remote (NOAA-EMC prompts for credentials)"),
+    (r"67b1071e30bbcbf2f8853b1c6ecc432c430a8df3", "MONETIO pinned to compatibility-lock.json"),
+    (r"-DCECE_PYTHON_SIMULATION=OFF", "the image ships a static Kokkos; ON fails at src/python/CMakeLists.txt:46"),
+    (r"-DCECE_FETCH_DEPS=OFF", "use the image-provided dependencies instead of downloading them"),
+    (r"-DBUILD_PYTHON_BINDINGS=ON", "the notebook imports _cece_core"),
+    (r"micromamba run -n", "cmake and pip must run inside the env or the .so links against the wrong python"),
+    (r"gfs_docker_data\.py", "GRIB staging must reuse the shared helper, not duplicate the URL"),
+    (r'git -C /work archive HEAD', "a dirty worktree snapshot breaks the build (deleted cmake/*.cmake)"),
+    (r"--skip-build", "escape hatch documented in the usage header"),
+    (r"--rebuild", "forces a fresh bindings build"),
+    (r"-m jupyter", "Lab and nbconvert must run from the env python, not apt's jupyter"),
+]
+
+
+def check_script(path: str = SH_PATH) -> list[str]:
+    problems: list[str] = []
+    try:
+        src = open(path).read()
+    except OSError:
+        return [f"{path}: missing"]
+    if not src.startswith("#!/usr/bin/env bash"):
+        problems.append(f"{path}: must start with #!/usr/bin/env bash")
+    if "set -euo pipefail" not in src:
+        problems.append(f"{path}: needs 'set -euo pipefail'")
+    for flag in ("--help", "--nb", "--rebuild", "--reset", "--skip-build", "-c |--cmd )"):
+        if flag.replace(" ", "") not in src.replace(" ", ""):
+            problems.append(f"{path}: flag {flag} is not dispatched")
+    for pat, why in SH_STAGES:
+        if not re.search(pat, src, re.M):
+            problems.append(f"{path}: missing required stage: {pat} — {why}")
+    if re.search(r'python3? -m pip', src):
+        problems.append(
+            f"{path}: system python3 must not pip-install into the conda env — use \"$PY\" -m pip"
+        )
+    return problems
+
+
+def sync_cmd(*paths: str) -> int:
+    py_path = paths[0] if paths else PY_PATH
+    nb_path = paths[1] if len(paths) > 1 else NB_PATH
+    print(f"{sync_notebook(py_path, nb_path)} {nb_path}")
+    return 0
+
+
+def check_sync_cmd(*paths: str) -> int:
+    problems = check_sync(*(paths or (PY_PATH, NB_PATH)))
+    for p in problems:
+        print("FAIL", p)
+    if problems:
+        return 1
+    print("PASS sync")
+    return 0
+
+
+CHECKS = {
+    "data": check_data_module,
+    "sh": check_script,
+    "nb": lambda: check_notebook(requires=("kernelspec", "bootstrap", "case", "asserts"))
+    + check_sync(),
+    "nbfinal": lambda: check_notebook(requires=ALL_TOKENS) + check_sync(),
+}
 
 
 def main(argv: list[str]) -> int:
     flags = [a for a in argv if a.startswith("--")]
     selectors = [a for a in argv if not a.startswith("--")]
     if "--sync" in flags or "--check-sync" in flags or "--self-test" in flags:
-        import test_gfs_docker_checks as fixture  # noqa: F401  (Tasks 2+)
+        import test_gfs_docker_checks as fixture
 
         handler = {
-            "--sync": fixture.sync_cmd,
-            "--check-sync": fixture.check_sync_cmd,
+            "--sync": sync_cmd,
+            "--check-sync": check_sync_cmd,
             "--self-test": fixture.self_test,
-        }[next(iter(flags))]
+        }[next(iter(f for f in flags if f in ("--sync", "--check-sync", "--self-test")))]
         return handler(*selectors)
     targets = selectors or list(CHECKS)
     if "all" in targets:
