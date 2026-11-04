@@ -67,27 +67,26 @@ def check_data_behaviour(path: str) -> list[str]:
         spec = importlib.util.spec_from_file_location("gfs_docker_data_under_test", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-    except (ImportError, OSError, SyntaxError, AttributeError) as exc:
+    except Exception as exc:  # noqa: BLE001 - any import-time failure is a problem, not a traceback
         return [f"{path}: cannot import for behaviour checks: {exc!r}"]
     problems: list[str] = []
     date, hour = "20261103", 12
     try:
-        key0 = mod.object_key(date, hour, 0)
-        want = "gfs.20261103/12/atmos/gfs.t12z.pgrb2.1p00.f000"
-        if key0 != want:
-            problems.append(f"{path}: object_key(lead 0) is {key0!r}, expected {want!r}")
-        for lead, suffix in ((3, "f003"), (12, "f012")):
-            key = mod.object_key(date, hour, lead)
-            if not key.endswith(suffix):
-                problems.append(f"{path}: object_key(lead {lead}) is {key!r}, must end {suffix}")
-        url = mod.url_for(date, hour, 0)
         bucket = "https://noaa-gfs-bdp-pds.s3.amazonaws.com/"
-        if not (url.startswith(bucket) and url.endswith(key0)):
-            problems.append(f"{path}: url_for(lead 0) is {url!r}, expected {bucket}{key0}")
         with tempfile.TemporaryDirectory() as tmpdir:
-            gp = Path(mod.grib_path(tmpdir, date, hour, 0))
-            if Path(tmpdir) not in gp.parents:
-                problems.append(f"{path}: grib_path() {gp} is not under the cache dir")
+            for lead in (0, 3, 12):
+                name = f"gfs.t12z.pgrb2.1p00.f{lead:03d}"
+                want_key = f"gfs.20261103/12/atmos/{name}"
+                key = mod.object_key(date, hour, lead)
+                if key != want_key:
+                    problems.append(f"{path}: object_key(lead {lead}) is {key!r}, expected {want_key!r}")
+                url = mod.url_for(date, hour, lead)
+                if url != bucket + want_key:
+                    problems.append(f"{path}: url_for(lead {lead}) is {url!r}, expected {bucket + want_key!r}")
+                gp = Path(mod.grib_path(tmpdir, date, hour, lead))
+                want_gp = Path(tmpdir) / want_key.replace("/", "_")
+                if gp != want_gp:
+                    problems.append(f"{path}: grib_path(lead {lead}) is {str(gp)!r}, expected {str(want_gp)!r}")
             if mod.parse_leads("0, 3, 6, 12") != [0, 3, 6, 12]:
                 problems.append(f"{path}: parse_leads('0, 3, 6, 12') != [0, 3, 6, 12]")
             if not hasattr(mod, "_fetch"):
