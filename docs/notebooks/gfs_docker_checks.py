@@ -178,39 +178,48 @@ def render_ipynb(py_path: str):
         "language": "python",
     }
     nb.metadata["jupytext"] = {"formats": "ipynb,py:percent"}
-    for kind, source in parse_cells(py_path):
+    for idx, (kind, source) in enumerate(parse_cells(py_path)):
         source = source if source.endswith("\n") else source + "\n"
+        cell_id = f"{kind}-{idx:03d}"
         if kind == "markdown":
-            nb.cells.append(nbformat.v4.new_markdown_cell(source))
+            nb.cells.append(nbformat.v4.new_markdown_cell(source, id=cell_id))
         else:
-            nb.cells.append(nbformat.v4.new_code_cell(source))
+            nb.cells.append(nbformat.v4.new_code_cell(source, id=cell_id))
     return nb
 
 
-def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
-    """Regenerate the .ipynb from the .py unless cell sources and kernelspec already match.
+def _rendered_notebook_text(py_path: str) -> str:
+    import nbformat
 
-    Executing the notebook (Task 7) adds outputs; outputs are not compared, so a run does not
-    make the pair "out of sync" — only an edited source does.
+    return nbformat.writes(render_ipynb(py_path))
+
+
+def _current_notebook_text(nb_path: str) -> str:
+    import nbformat
+
+    current = nbformat.read(nb_path, as_version=4)
+    return nbformat.writes(current)
+
+
+def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
+    """Write the exact notebook image rendered from the percent script.
+
+    "unchanged" is returned iff the notebook already matches byte-for-byte what this
+    function would write, which is exactly the same predicate used by --check-sync.
     """
     import nbformat
 
-    rendered = render_ipynb(py_path)
+    rendered_text = nbformat.writes(render_ipynb(py_path))
     os.makedirs(os.path.dirname(nb_path) or ".", exist_ok=True)
     if os.path.exists(nb_path):
-        current = nbformat.read(nb_path, as_version=4)
-        same = [(c.cell_type, c.source) for c in current.cells] == [
-            (c.cell_type, c.source) for c in rendered.cells
-        ]
-        if same and current.metadata.get("kernelspec", {}).get("name") == KERNEL_NAME:
-            return "unchanged"
+        try:
+            if _current_notebook_text(nb_path) == rendered_text:
+                return "unchanged"
+        except Exception:
+            pass
     with open(nb_path, "w") as fh:
-        nbformat.write(rendered, fh)
+        fh.write(rendered_text)
     return "written"
-
-
-def normalize_cell_trailing_newline(source: str) -> str:
-    return source[:-1] if source.endswith("\n") else source
 
 
 def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
@@ -220,20 +229,15 @@ def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
     if not os.path.exists(nb_path):
         return [f"{nb_path}: missing (run --sync)"]
     try:
-        from_nb = parse_cells(nb_path)
-    except Exception as exc:  # nbformat raises several unrelated types
-        return [f"{nb_path}: unreadable notebook for sync check: {exc}"]
-    try:
-        from_py = parse_cells(py_path)
+        rendered_text = _rendered_notebook_text(py_path)
     except Exception as exc:
         return [f"{py_path}: unreadable notebook script for sync check: {exc}"]
-    if len(from_nb) != len(from_py):
-        problems.append(f"{nb_path}: {len(from_nb)} cells vs {len(from_py)} in {py_path} — run --sync")
-        return problems
-    for i, ((ka, sa), (kb, sb)) in enumerate(zip(from_nb, from_py)):
-        if ka != kb or normalize_cell_trailing_newline(sa) != normalize_cell_trailing_newline(sb):
-            problems.append(f"cell {i} differs from {py_path} ({ka} vs {kb}) — run --sync")
-            break
+    try:
+        current_text = _current_notebook_text(nb_path)
+    except Exception as exc:
+        return [f"{nb_path}: unreadable notebook for sync check: {exc}"]
+    if current_text != rendered_text:
+        problems.append(f"{nb_path}: differs from {py_path} render output — run --sync")
     return problems
 
 
@@ -253,6 +257,32 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
     code = [src for kind, src in cells if kind == "code"]
     md = "\n".join(src for kind, src in cells if kind == "markdown")
     joined = "\n".join(code)
+
+    assert_count = 0
+    case_keys: set[str] | None = None
+    for idx, src in enumerate(code):
+        try:
+            tree = ast.parse(src)
+        except SyntaxError as exc:
+            problems.append(f"{path}: code cell {idx} has syntax error: {exc}")
+            continue
+        assert_count += sum(isinstance(n, ast.Assert) for n in ast.walk(tree))
+        for stmt in tree.body:
+            value_node = None
+            if isinstance(stmt, ast.Assign):
+                for t in stmt.targets:
+                    if isinstance(t, ast.Name) and t.id == "CASE":
+                        value_node = stmt.value
+                        break
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) and stmt.target.id == "CASE":
+                value_node = stmt.value
+            if isinstance(value_node, ast.Dict):
+                parsed_keys = set()
+                for k in value_node.keys:
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                        parsed_keys.add(k.value)
+                case_keys = parsed_keys
+
     if "kernelspec" in requires:
         spec = nb.metadata.get("kernelspec", {})
         if spec.get("name") != KERNEL_NAME or spec.get("display_name") != KERNEL_DISPLAY:
@@ -264,13 +294,16 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
         if "sys.path.insert" not in joined or "build/src/python" not in joined:
             problems.append(f"{path}: no sys.path bootstrap to the volume-built cece bindings")
     if "case" in requires:
-        missing = [k for k in CASE_KEYS if not re.search(rf'"{k}"\s*:', joined)]
+        expected = set(CASE_KEYS)
+        found = case_keys or set()
+        missing = sorted(expected - found)
+        unexpected = sorted(found - expected)
         if missing:
             problems.append(f"{path}: CASE is missing keys {missing}")
-    if "asserts" in requires and joined.count("assert ") < MIN_ASSERTS:
-        problems.append(
-            f"{path}: {joined.count('assert ')} runtime asserts, expected at least {MIN_ASSERTS}"
-        )
+        if unexpected:
+            problems.append(f"{path}: CASE has unexpected keys {unexpected}")
+    if "asserts" in requires and assert_count < MIN_ASSERTS:
+        problems.append(f"{path}: {assert_count} runtime asserts, expected at least {MIN_ASSERTS}")
     if "cells" in requires and len(code) < MIN_CODE_CELLS:
         problems.append(f"{path}: {len(code)} code cells, expected at least {MIN_CODE_CELLS}")
     if "report" in requires and joined.count("build_report(") < 2:
@@ -282,6 +315,34 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
             if phrase not in md:
                 problems.append(f"{path}: caveats text omits {phrase!r}")
     return problems
+
+
+def _strip_inline_comment_outside_quotes(line: str) -> str:
+    out = []
+    in_single = False
+    in_double = False
+    escaped = False
+    for ch in line:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\" and in_double:
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            out.append(ch)
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            out.append(ch)
+            continue
+        if ch == "#" and not in_single and not in_double:
+            return "".join(out).rstrip()
+        out.append(ch)
+    return "".join(out).rstrip()
 
 
 SH_STAGES = [
@@ -310,16 +371,34 @@ SH_STAGES = [
 
 def strip_shell_comments(src: str) -> str:
     out = []
+    heredoc_end = None
     for i, line in enumerate(src.splitlines()):
+        if heredoc_end is not None:
+            out.append(line)
+            if line.strip() == heredoc_end:
+                heredoc_end = None
+            continue
         stripped = line.lstrip()
         if stripped.startswith("#") and not (i == 0 and stripped.startswith("#!")):
             continue
-        out.append(line)
+        clean = _strip_inline_comment_outside_quotes(line)
+        if clean.strip() == "" and not (i == 0 and stripped.startswith("#!")):
+            continue
+        out.append(clean)
+        import re as _re
+        m = _re.search(r'<<\s*([\'\"]?)([A-Za-z_][A-Za-z0-9_]*)\1', clean)
+        if m:
+            heredoc_end = m.group(2)
     return "\n".join(out) + ("\n" if src.endswith("\n") else "")
 
 
 def branch_block(src: str, label: str) -> str:
-    m = re.search(rf"^\s*{re.escape(label)}\)\n(.*?)(?=^\s*;;&?\s*$|^\s*esac\s*$)", src, re.M | re.S)
+    label_pat = r"\s*\|\s*".join(re.escape(part.strip()) for part in label.split("|"))
+    m = re.search(
+        rf"^\s*{label_pat}\s*\)\s*\n(.*?)(?=^\s*;;&?\s*$|^\s*esac\s*$)",
+        src,
+        re.M | re.S,
+    )
     return m.group(1) if m else ""
 
 
