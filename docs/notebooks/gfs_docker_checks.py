@@ -405,6 +405,8 @@ SH_STAGES = [
     (r"-DCECE_FETCH_DEPS=OFF", "use the image-provided dependencies instead of downloading them"),
     (r"-DBUILD_PYTHON_BINDINGS=ON", "the notebook imports _cece_core"),
     (r"micromamba run -n", "cmake and pip must run inside the env or the .so links against the wrong python"),
+    (r"MAMBA_ROOT_PREFIX=/env", "micromamba must create the env under the volume, not the container home"),
+    (r"export PATH=/env/bin", "the stage calls bare micromamba, which only exists in the volume"),
     (r"gfs_docker_data\.py", "GRIB staging must reuse the shared helper, not duplicate the URL"),
     (r'git -C /work archive HEAD', "a dirty worktree snapshot breaks the build (deleted cmake/*.cmake)"),
     (r"--skip-build", "escape hatch documented in the usage header"),
@@ -941,6 +943,51 @@ def quoted_stage_body(src: str) -> str:
     return head[: m.start()] if m else ""
 
 
+def interactive_flag_present(scope: str) -> bool:
+    """True when -i/--interactive appears as its own argument in *scope*.
+
+    Tokenised on whitespace instead of matched as a substring: ``-e OPT="-i x"`` carries `-i`
+    inside a value, and `--init`/`-init` merely start with it, neither of which attaches stdin.
+    """
+    for line in scope.splitlines():
+        for tok in re.split(r"[ \t]+", line.strip()):
+            if tok.strip("\"'") in ("-i", "--interactive"):
+                return True
+    return False
+
+
+def docker_arg_scope(clean: str, cmd_text: str) -> str:
+    """The docker run command plus every shell array it interpolates ("${RUN_ARGS[@]}").
+
+    Flags are commonly assembled in an array rather than on the ``docker run`` line, so a
+    requirement on the command must look at those assignments too -- but only the arrays this
+    command actually expands, so an unrelated ``-i`` elsewhere in the file cannot satisfy it.
+    """
+    parts = [cmd_text]
+    for name in sorted(set(re.findall(r"\$\{(\w+)\[@\]\}", cmd_text))):
+        for m in re.finditer(r"(?<![\w])" + re.escape(name) + r"\+?=\(", clean):
+            depth, i, quote = 0, m.end() - 1, ""
+            while i < len(clean):
+                ch = clean[i]
+                if quote:
+                    if ch == "\\":
+                        i += 2
+                        continue
+                    if ch == quote:
+                        quote = ""
+                elif ch in "\"'":
+                    quote = ch
+                elif ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            parts.append(clean[m.start() : i + 1])
+    return "\n".join(parts)
+
+
 def check_script(path: str = SH_PATH) -> list[str]:
     problems: list[str] = []
     try:
@@ -985,6 +1032,16 @@ def check_script(path: str = SH_PATH) -> list[str]:
             problems.append(f"{path}: docker stage must be a quoted heredoc on docker run (<<'STAGE' ... STAGE)")
         elif not re.search(r"^STAGE\s*$", src[after:], re.M):
             problems.append(f"{path}: docker stage heredoc from docker run is missing its STAGE terminator")
+        if hd:
+            # The stage reaches the container on stdin, and Docker only wires stdin up when -i
+            # (--interactive) is given. Without it the heredoc is discarded unread, the container
+            # exits 0, and every later "verified" claim rests on a run that did nothing at all.
+            if not interactive_flag_present(docker_arg_scope(clean, text)):
+                problems.append(
+                    f"{path}: docker run must pass -i (or --interactive): the quoted STAGE heredoc is "
+                    "read from stdin by the container, and without -i Docker never attaches stdin, so the "
+                    "stage is discarded and the run exits 0 having done nothing"
+                )
 
     # Port publishing is lab-only, however the script spells the lab condition (a
     # "lab)" case branch or an [ "$MODE" = lab ] test on the RUN_ARGS line itself).

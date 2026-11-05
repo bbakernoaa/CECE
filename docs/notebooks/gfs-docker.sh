@@ -13,6 +13,9 @@
 # Cold start is ~15 min (conda solve + bindings build); warm starts are seconds.
 #
 # Load-bearing choices, each of them bought with a failed build:
+#   * -i on docker run: the stage is fed to `bash -s` through stdin, and without -i Docker
+#     leaves stdin detached, so the whole heredoc is discarded and the container exits 0
+#     having run nothing at all -- a silent, successful-looking no-op;
 #   * the platform flag must match the image arch, or the mount fails with an exec-format error;
 #   * -DCECE_PYTHON_SIMULATION=OFF because the image ships a *static* Kokkos, which
 #     src/python/CMakeLists.txt refuses for that target (bindings themselves are unaffected);
@@ -46,7 +49,7 @@ WANT_BUILD=1
 SKIP_BUILD=0
 REBUILD=0
 
-usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -83,7 +86,7 @@ if [ "$SKIP_BUILD" = 1 ] && [ "$REBUILD" = 1 ]; then
     exit 2
 fi
 
-RUN_ARGS=(--rm --platform linux/arm64
+RUN_ARGS=(--rm -i --platform linux/arm64
     -v "$REPO":/work -v "$VOL_ENV":/env -v "$VOL_CACHE":/cache
     -e ENV_NAME="$ENV_NAME" -e MONETIO_REMOTE="$MONETIO_REMOTE" -e MONETIO_SHA="$MONETIO_SHA"
     -e CASE_DATE="$CASE_DATE" -e CASE_HOUR="$CASE_HOUR" -e CASE_LEADS="$CASE_LEADS"
@@ -97,6 +100,12 @@ if [ "$MODE" = lab ]; then RUN_ARGS+=(-p "$PORT:8888"); fi
 
 docker run "${RUN_ARGS[@]}" \
     "$IMAGE" bash -euo pipefail -s <<'STAGE'
+# Both lines are load-bearing: -n resolves to "$MAMBA_ROOT_PREFIX/envs/$ENV_NAME" (which is
+# where $PY points), and micromamba is downloaded into the volume rather than installed, so it
+# is not on PATH. Without them `micromamba create` silently builds an env under $HOME and every
+# later RUN fails with "micromamba: command not found".
+export MAMBA_ROOT_PREFIX=/env
+export PATH=/env/bin:"${PATH}"
 RUN() { micromamba run -n "${ENV_NAME}" "$@"; }
 PY=/env/envs/"${ENV_NAME}"/bin/python
 
@@ -115,6 +124,8 @@ if [ ! -d /env/envs/"${ENV_NAME}" ]; then
         python=3.12 'numpy<3' grib2io xarray netcdf4 pandas scipy pyyaml matplotlib-base \
         ipykernel jupyterlab nbconvert pip pybind11 >/dev/null
 fi
+# Tripwire for the failure class above: an env that landed somewhere else looks like success.
+[ -x "$PY" ] || { echo "[env] FATAL: $PY missing after create (root prefix ${MAMBA_ROOT_PREFIX})" >&2; exit 1; }
 
 if ! RUN "$PY" -c 'import axis' 2>/dev/null; then
     echo "[env] axis-regrid (sanctioned regrid_rectilinear backend)"
@@ -131,10 +142,9 @@ if ! RUN "$PY" -c 'import monetio' 2>/dev/null; then
 fi
 RUN "$PY" -m ipykernel install --name "${ENV_NAME}" --display-name "Python 3 (CECE GFS)" >/dev/null
 
-SO=$(echo /cache/build/src/python/cece/_cece_core*.so)
 if [ "${REBUILD}" = 1 ]; then rm -rf /cache/src /cache/build /cache/build.stamp; fi
 if [ "${SKIP_BUILD}" = 1 ]; then
-    echo "[cece] --skip-build: reusing ${SO}"
+    echo "[cece] --skip-build: reusing the cached bindings"
 elif [ ! -f /cache/build.stamp ] || [ "$(cat /cache/build.stamp)" != "${DIRTY_HASH}" ]; then
     echo "[cece] snapshot + _cece_core"
     rm -rf /cache/src /cache/build && mkdir -p /cache/src
@@ -150,6 +160,9 @@ elif [ ! -f /cache/build.stamp ] || [ "$(cat /cache/build.stamp)" != "${DIRTY_HA
 else
     echo "[cece] bindings current"
 fi
+# Resolved *after* the build: a glob expanded while /cache/build is still empty keeps the
+# literal pattern, so the early spelling made a successful build look like a missing .so.
+SO=$(echo /cache/build/src/python/cece/_cece_core*.so)
 ls "${SO}" >/dev/null
 
 echo "[data] GRIB leads ${CASE_LEADS} for ${CASE_DATE} t${CASE_HOUR}z"

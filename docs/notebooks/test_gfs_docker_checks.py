@@ -70,7 +70,9 @@ def minimal_good_script() -> str:
         '    PORT="-p 8888:8888"',
         "    ;;&",
         "esac",
-        "docker run --platform linux/arm64 $PORT $EXTRA_ARGS \"$IMAGE\" bash <<'STAGE'",
+        "docker run -i --platform linux/arm64 $PORT $EXTRA_ARGS \"$IMAGE\" bash <<'STAGE'",
+        "export MAMBA_ROOT_PREFIX=/env",
+        "export PATH=/env/bin:$PATH",
         'micromamba create -n "$ENV_NAME" python=3.12 --override-channels',
         "micromamba run -n \"$ENV_NAME\" \"$PY\" -m pip install --no-deps extern/helm/libs/axis git+https://github.com/noaa-oar-arl/monetio@67b1071e30bbcbf2f8853b1c6ecc432c430a8df3 'numpy<3'",
         "git -C /work archive HEAD",
@@ -477,7 +479,7 @@ def plan_shaped_script(stage_extra: str = "", host_tail: str = "") -> str:
             "MODE=lab",
             "NOTEBOOK=/work/docs/notebooks/fengsha_gfs.ipynb",
             "DATA_HELPER=/work/docs/notebooks/gfs_docker_data.py",
-            "RUN_ARGS=(--rm --platform linux/arm64",
+            "RUN_ARGS=(--rm -i --platform linux/arm64",
             '    -e ENV_NAME="$ENV_NAME" -e NOTEBOOK="$NOTEBOOK"',
             '    -e MONETIO_REMOTE="https://github.com/noaa-oar-arl/monetio.git"',
             "    -e MONETIO_SHA=67b1071e30bbcbf2f8853b1c6ecc432c430a8df3",
@@ -493,6 +495,8 @@ def plan_shaped_script(stage_extra: str = "", host_tail: str = "") -> str:
             "esac",
             'docker run "${RUN_ARGS[@]}" \\',
             "    \"$IMAGE\" bash -euo pipefail -s <<'STAGE'",
+            "export MAMBA_ROOT_PREFIX=/env",
+            'export PATH=/env/bin:"${PATH}"',
             *stage,
             "STAGE",
             host_tail,
@@ -883,3 +887,56 @@ def test_unquoted_heredoc_expands_command_substitution_only():
     assert sites("cat <<'A'\n$(docker run --rm evil true)\ndocker run x\nA\n") == 0
     # the body of the plan-style STAGE heredoc is not host code either
     assert sites("docker run img <<'STAGE'\necho $(date)\nSTAGE\n") == 1
+
+
+def test_stdin_stage_needs_interactive_stdin(tmp_path):
+    """Without -i Docker never attaches stdin, so the quoted STAGE heredoc is discarded and
+    the container exits 0 having run nothing -- the silent no-op the first cold run hit."""
+    no_i = plan_shaped_script().replace("RUN_ARGS=(--rm -i --platform", "RUN_ARGS=(--rm --platform")
+    sh = tmp_path / "no-i.sh"
+    sh.write_text(no_i)
+    found = C.check_script(str(sh))
+    assert any("docker run must pass -i" in x for x in found), found
+    good = tmp_path / "good.sh"
+    good.write_text(plan_shaped_script())
+    assert C.check_script(str(good)) == []
+
+
+def test_interactive_flag_spellings_and_non_qualifying_ones(tmp_path):
+    """--interactive and a literal -i on the docker line both qualify; an -i that is not a
+    standalone flag (in a value, or a longer word) must not satisfy the check."""
+    base = plan_shaped_script()
+    long_form = base.replace("RUN_ARGS=(--rm -i --platform", "RUN_ARGS=(--rm --interactive --platform")
+    on_line = base.replace('    "$IMAGE" bash -euo pipefail -s', '    "$IMAGE" -i bash -euo pipefail -s')
+    for variant in (long_form, on_line):
+        sh = tmp_path / "v.sh"
+        sh.write_text(variant)
+        assert C.check_script(str(sh)) == [], C.check_script(str(sh))
+        assert len(C.docker_run_call_sites(variant)) == 1
+    decoys = (
+        # a balanced -e assignment whose *value* contains -i is not the flag being asked for
+        base.replace("RUN_ARGS=(--rm -i --platform", 'RUN_ARGS=(--rm -e OPT="-i x" --platform'),
+        base.replace("RUN_ARGS=(--rm -i --platform", "RUN_ARGS=(--rm --init-x --platform"),
+        base.replace("RUN_ARGS=(--rm -i --platform", "RUN_ARGS=(--rm -init --platform"),
+    )
+    for variant in decoys:
+        sh = tmp_path / "d.sh"
+        sh.write_text(variant)
+        problems = C.check_script(str(sh))
+        assert C.docker_run_call_sites(variant), (variant, problems)
+        assert any("docker run must pass -i" in x for x in problems), (variant, problems)
+
+
+def test_interactive_required_for_bare_stdin_stage_too(tmp_path):
+    """The minimal fixture spells the stage as a bare ``bash <<'STAGE'`` (no -s), which reads
+    stdin exactly the same way, so the requirement cannot depend on the -s spelling."""
+    no_i = minimal_good_script().replace("docker run -i --platform", "docker run --platform")
+    sh = tmp_path / "bare.sh"
+    sh.write_text(no_i)
+    assert any("docker run must pass -i" in x for x in C.check_script(str(sh)))
+
+
+def test_minimal_fixture_still_passes(tmp_path):
+    sh = tmp_path / "m.sh"
+    sh.write_text(minimal_good_script())
+    assert C.check_script(str(sh)) == []
