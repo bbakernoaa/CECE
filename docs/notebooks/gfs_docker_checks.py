@@ -520,6 +520,21 @@ CHECKS = {
 
 
 def main(argv: list[str]) -> int:
+    # Handle --print PATH specially since it takes an argument
+    if "--print" in argv:
+        try:
+            print_idx = argv.index("--print")
+            if print_idx + 1 >= len(argv):
+                print("FAIL --print requires a PATH argument", file=sys.stderr)
+                return 1
+            path = argv[print_idx + 1]
+            with open(path, "r") as f:
+                print(f.read(), end="")
+            return 0
+        except (IOError, OSError) as e:
+            print(f"FAIL --print {path}: {e}", file=sys.stderr)
+            return 1
+    
     flags = [a for a in argv if a.startswith("--")]
     selectors = [a for a in argv if not a.startswith("--")]
     if "--sync" in flags or "--check-sync" in flags or "--self-test" in flags:
