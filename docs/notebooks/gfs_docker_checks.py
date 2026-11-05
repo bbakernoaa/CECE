@@ -486,14 +486,21 @@ _DOCKER_RUN_RE = re.compile(
 )
 
 
-def _shell_word_view(text: str) -> str:
-    """Rebuild the words bash would see: quotes and escapes vanish, spaces survive.
+_QUOTE_FILLER = "\x01"  # not matched by \s, so quoted prose cannot form a command boundary
+_OP_FILLER = "x"
 
-    Quoting is *not* invisible to the command word: bash runs ``d''ocker run``,
-    ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so blanking the
-    quoted spans (an earlier attempt) hid real invocations. Dropping only the quote and
-    escape characters keeps the word intact, while whitespace inside quotes still cannot
-    fabricate an argument boundary -- ``echo "uses docker run once"`` stays one word.
+
+def _shell_word_view(text: str) -> str:
+    """Rebuild the words bash would see, keeping quote *context*.
+
+    Quoting is not invisible to a command word: bash runs ``d''ocker run``,
+    ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so the quote
+    delimiters themselves are dropped and adjacent fragments join into one word.
+    But characters *inside* quotes are literal, never operators or word breaks:
+    ``echo "docker run; docker run"`` starts no container. So inside a quoted span
+    whitespace becomes a non-space filler and shell operators become an ordinary
+    letter, which keeps separators, redirections and substitutions available only
+    where bash would honour them.
     """
     out = []
     quote = None
@@ -509,15 +516,19 @@ def _shell_word_view(text: str) -> str:
                 quote = ch
             else:
                 out.append(ch)
-        elif ch == "\\" and quote == '"':
-            if i + 1 < len(text):
+        else:
+            if ch == "\\" and quote == '"' and i + 1 < len(text):
                 out.append(text[i + 1])
                 i += 2
                 continue
-        elif ch == quote:
-            quote = None
-        else:
-            out.append(ch)
+            if ch == quote:
+                quote = None
+            elif ch.isspace():
+                out.append(_QUOTE_FILLER)
+            elif ch in "&|;<>()$`":
+                out.append(_OP_FILLER)
+            else:
+                out.append(ch)
         i += 1
     return "".join(out)
 

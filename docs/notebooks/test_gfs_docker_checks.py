@@ -706,3 +706,27 @@ def test_fragmented_docker_run_is_not_two_invocations_when_only_one_exists(tmp_p
     sh2 = tmp_path / "two.sh"
     sh2.write_text(frag)
     assert any("exactly one docker run" in x for x in C.check_script(str(sh2)))
+
+
+def test_operators_inside_quotes_are_not_command_separators(tmp_path):
+    """`echo "docker run; docker run"` starts no container.
+
+    Reconstructing quote fragments must not resurrect the operators that were literal
+    characters inside the quotes, or a compliant script gets rejected for prose.
+    """
+    for line in (
+        'echo "docker run; docker run"',
+        'printf %s "x && docker run"',
+        'echo "a; docker run b"',
+        "echo 'docker run | sh'",
+    ):
+        assert not C.docker_run_in_line(line), line
+    script = plan_shaped_script().replace(
+        "MODE=lab",
+        'usage() { echo "this script wraps: docker run; docker run again"; }',
+        1,
+    )
+    assert script != plan_shaped_script()
+    sh = tmp_path / "quoted-ops.sh"
+    sh.write_text(script)
+    assert C.check_script(str(sh)) == []
