@@ -867,3 +867,19 @@ def test_parameter_expansion_and_trap_strings_are_counted():
     assert sites("trap 'docker run --rm evil true' EXIT\n") == 1
     # a double-quoted expansion value is data, not a command line
     assert sites('cmd="${y:+docker run --rm evil}"\nexec bash -c "$cmd"\n') == 0
+
+
+def test_multiple_heredocs_on_one_line_are_all_data():
+    # cat <<A <<B reads body A then body B; neither line is a host command
+    two = "cat <<A <<B\ndocker run 1\nA\ndocker run 2\nB\ndocker run 3\n"
+    assert sites(two) == 1
+    assert sites("cat <<A\nx\nA\ndocker run real\n") == 1
+
+
+def test_unquoted_heredoc_expands_command_substitution_only():
+    assert sites("cat <<A\n$(docker run --rm evil true)\nA\n") == 1
+    assert sites("cat <<A\n`docker run --rm evil true`\nA\n") == 1
+    # a quoted delimiter keeps the whole body literal
+    assert sites("cat <<'A'\n$(docker run --rm evil true)\ndocker run x\nA\n") == 0
+    # the body of the plan-style STAGE heredoc is not host code either
+    assert sites("docker run img <<'STAGE'\necho $(date)\nSTAGE\n") == 1

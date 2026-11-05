@@ -644,7 +644,18 @@ def docker_run_in_line(line: str, quote: str | None = None,
 _CODE_WRAPPER_RE = re.compile(
     r"\b(?:eval|exec|trap|(?:ba|z|da|k|a)sh|sh|python3?(?:[ \t]+-c)?|node|perl|ruby)\b"
 )
-_HEREDOC_OP_RE = re.compile(r"<<(?P<dash>[-~]?)[ \t]*(?P<delim>\w+)")
+def _ends_continuation(text: str) -> bool:
+    """True if a physical line ends in an odd run of backslashes (bash continues)."""
+    body = text.rstrip("\r\n")
+    return body.endswith("\\") and (len(body) - len(body.rstrip("\\"))) % 2 == 1
+
+
+_HEREDOC_OP_RE = re.compile(
+    r"<<(?P<dash>[-~]?)[ \t]*(?P<quote>['\x22]?)(?P<esc>\\?)(?P<delim>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)"
+)
+_SUBSTITUTION_RE = re.compile(r"\$\(([^)]*)\)|`([^`]*)`")
+
+
 _QUOTED_ARG_RE = re.compile(r"'([^']*)'|" + '"([^"]*)"' + r"|`([^`]*)`")
 
 
@@ -690,20 +701,60 @@ def _close_code_string(pending: str, line: str) -> tuple[str, bool]:
     return joined + line[:end], True
 
 
-def _ends_continuation(text: str) -> bool:
-    """True if a physical line ends in an odd run of backslashes (bash continues)."""
-    body = text.rstrip("\r\n")
-    return body.endswith("\\") and (len(body) - len(body.rstrip("\\"))) % 2 == 1
+def _heredoc_queue(text: str) -> list[tuple[str, bool, bool]]:
+    r"""Heredoc bodies opened on ``text``: (delimiter, tab-strip, delimiter-was-quoted).
+
+    ``cat <<A <<B`` opens two bodies, read in the order the redirections appear, so they
+    must be consumed as a queue -- remembering one delimiter at a time made the second
+    body look like commands, a false positive that would reject a compliant script.
+    Whether the delimiter was quoted decides if the body is inert data or still expands
+    ``$( )``, so this walks the raw text with its own quote/comment tracking instead of
+    reading the blanked view (where ``<<'A'`` and ``<<A`` are indistinguishable).
+    """
+    found: list[tuple[str, bool, bool]] = []
+    quote = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if ch == "#" and (i == 0 or text[i - 1] in " \t\n"):
+            break  # the rest of the line is a comment, no redirection here
+        if ch in "'\"":
+            quote = ch
+            i += 1
+            continue
+        if ch == "<" and i + 1 < n and text[i + 1] == "<":
+            m = _HEREDOC_OP_RE.match(text, i)
+            if m:
+                found.append((m.group("delim"), bool(m.group("dash")),
+                              m.group("quote") != "" or m.group("esc") != ""))
+                i = m.end()
+                continue
+        i += 1
+    return found
 
 
-def _scan_units(src: str) -> list[tuple[int, str]]:
-    """(offset, text) code units of ``src``: continuations joined, heredoc bodies dropped.
+def _scan_units(src: str) -> list[tuple[int, str, str]]:
+    r"""(offset, text, kind) units of ``src``: "code", "data" or "expand" heredoc body.
 
-    Bash joins a line ending in ``\\`` with the next one before splitting words, so
-    ``doc\\`` + ``ker run x`` really is a ``docker run``. Conversely the body of a
-    heredoc is data handed to a command's stdin -- never parsed as this shell's
-    commands -- so an unquoted ``cat <<EOF`` body mentioning ``docker run`` must not be
-    counted (and its unbalanced quotes must not poison the scan of later lines).
+    Bash joins a line ending in ``\`` with the next one before splitting words, so
+    ``doc\`` + ``ker run x`` really is a ``docker run``. A heredoc body is stdin data,
+    never parsed as commands by this shell, so an unquoted ``cat <<EOF`` body naming
+    ``docker run`` is not a call and its unbalanced quotes must not poison later lines --
+    that is a "data"/"expand" unit. With an *unquoted* delimiter bash still expands
+    ``$( )`` inside the body ("expand"), which can start a command; a quoted ``<<'EOF'``
+    body stays wholly literal ("data").
     """
     lines = src.splitlines(keepends=True)
     offsets = []
@@ -711,15 +762,17 @@ def _scan_units(src: str) -> list[tuple[int, str]]:
     for line in lines:
         offsets.append(pos)
         pos += len(line)
-    units: list[tuple[int, str]] = []
-    skip_delim: str | None = None
-    skip_dash = False
+    units: list[tuple[int, str, str]] = []
+    queue: list[tuple[str, bool, bool]] = []
     i = 0
     while i < len(lines):
-        if skip_delim is not None:
-            body = lines[i].lstrip("\t") if skip_dash else lines[i]
-            if body.rstrip("\r\n").strip("\t") == skip_delim:
-                skip_delim = None
+        if queue:
+            delim, dash, quoted = queue[0]
+            body = lines[i].lstrip("\t") if dash else lines[i]
+            closed = body.rstrip("\r\n").strip("\t") == delim
+            units.append((offsets[i], lines[i], "data" if quoted else "expand"))
+            if closed:
+                queue.pop(0)
             i += 1
             continue
         j = i
@@ -728,13 +781,8 @@ def _scan_units(src: str) -> list[tuple[int, str]]:
             # bash deletes the backslash and the newline, joining the two words
             text = text.rstrip("\r\n")[:-1] + lines[j + 1]
             j += 1
-        view = _shell_word_view(text)
-        view = view[0] if isinstance(view, tuple) else view
-        units.append((offsets[i], text))
-        m = _HEREDOC_OP_RE.search(view)
-        if m:
-            skip_delim = m.group("delim")
-            skip_dash = bool(m.group("dash"))
+        units.append((offsets[i], text, "code"))
+        queue = _heredoc_queue(text)
         i = j + 1
     return units
 
@@ -746,14 +794,22 @@ def docker_run_call_sites(src: str) -> list[int]:
     carrying their quote context, so a call is counted where bash would execute it --
     at a line start, mid-line behind a wrapper (``sudo``/``env``/``xargs``), a keyword,
     a redirection, a substitution, group/case punctuation, a ``${x:+...}`` expansion, or
-    twice on one line -- while quoted prose and heredoc bodies stay invisible. The
-    argument of ``eval``/``trap``/``-c`` is scanned as code, including when that string
-    continues over several lines.
+    twice on one line -- while quoted prose and heredoc bodies stay invisible. Inside an
+    unquoted-delimiter body only ``$( )``/backtick text is scanned, since that is all bash
+    expands there. The argument of ``eval``/``trap``/``-c`` is scanned as code, including
+    when that string continues over several lines.
     """
     sites: list[int] = []
     quote, stack = None, []
     pending: str | None = None  # eval/-c string still open from an earlier unit
-    for offset, chunk in _scan_units(src):
+    for offset, chunk, kind in _scan_units(src):
+        if kind != "code":
+            if kind == "expand" and pending is None:
+                for m in _SUBSTITUTION_RE.finditer(chunk):
+                    frag = m.group(1) or m.group(2) or ""
+                    if _docker_calls_in_code(frag):
+                        sites.append(offset + m.start())
+            continue
         result = _shell_word_view(chunk, quote=quote, stack=stack)
         view, quote, stack = result if isinstance(result, tuple) else (result, None, [])
         if pending is None:  # an eval/-c interior is scanned once, as code
