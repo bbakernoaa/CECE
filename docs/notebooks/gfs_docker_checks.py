@@ -477,14 +477,23 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
-_DOCKER_RUN_RE = re.compile(r"(?<![-\w])docker\s+run\b(?![-\w])")
+_DOCKER_RUN_RE = re.compile(
+    r"(?:^[ \t]*|[;&|]\s*|\(\s*|\$\(\s*"
+    r"|(?:(?:^|(?<=\s))(?:if|then|else|elif|while|until|for|do|time|!)\s+)"
+    r"|(?:(?:^|(?<=\s))\w+=\S*\s+))"
+    r"(?:[\w.$@/-]+/)?docker\s+run\b(?![-\w])",
+    re.M,
+)
 
 
-def _unquoted_view(text: str) -> str:
-    """Blank out quoted spans so words inside quotes cannot look like commands.
+def _shell_word_view(text: str) -> str:
+    """Rebuild the words bash would see: quotes and escapes vanish, spaces survive.
 
-    Escaped characters inside double quotes are kept in step so `\"docker` does not
-    flip the quote state.
+    Quoting is *not* invisible to the command word: bash runs ``d''ocker run``,
+    ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so blanking the
+    quoted spans (an earlier attempt) hid real invocations. Dropping only the quote and
+    escape characters keeps the word intact, while whitespace inside quotes still cannot
+    fabricate an argument boundary -- ``echo "uses docker run once"`` stays one word.
     """
     out = []
     quote = None
@@ -492,23 +501,23 @@ def _unquoted_view(text: str) -> str:
     while i < len(text):
         ch = text[i]
         if quote is None:
+            if ch == "\\" and i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 2
+                continue
             if ch in ("'", '"'):
                 quote = ch
-                out.append(" ")
             else:
                 out.append(ch)
+        elif ch == "\\" and quote == '"':
+            if i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 2
+                continue
+        elif ch == quote:
+            quote = None
         else:
-            if ch == "\\" and quote == '"':
-                out.append(" ")
-                if i + 1 < len(text) and text[i + 1] == '"':
-                    out.append(" ")
-                    i += 2
-                    continue
-            elif ch == quote:
-                quote = None
-                out.append(" ")
-            else:
-                out.append(" ")
+            out.append(ch)
         i += 1
     return "".join(out)
 
@@ -522,7 +531,7 @@ def docker_run_in_line(line: str) -> bool:
     exactly-one rule while the compliant call satisfied every requirement. Quoted
     text is blanked first, so usage prose that merely names the command does not count.
     """
-    return bool(_DOCKER_RUN_RE.search(_unquoted_view(line)))
+    return bool(_DOCKER_RUN_RE.search(_shell_word_view(line)))
 
 
 def docker_run_command(src: str) -> tuple[str, int, int] | None:

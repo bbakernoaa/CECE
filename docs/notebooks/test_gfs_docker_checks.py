@@ -661,3 +661,48 @@ def test_quoted_mention_of_docker_run_is_not_an_invocation(tmp_path):
     sh = tmp_path / "quoted-docker-mention.sh"
     sh.write_text(script)
     assert C.check_script(str(sh)) == []
+
+
+def test_fragmented_spellings_of_docker_run_are_counted(tmp_path):
+    """`d''ocker run` / `do"cker" run` are the same command to bash; blanking quoted
+    spans made them invisible, so a second invocation could hide behind fragmentation."""
+    for line in (
+        "d''ocker run --rm image true",
+        'do"cker" run --rm image true',
+        '"docker" run --rm image true',
+        "/usr/bin/docker run --rm image true",
+        "if docker run --rm image true; then :; fi",
+        "x=1 docker run --rm image true",
+        "ignored=$(d''ocker run --rm evil sh -c 'x')",
+    ):
+        assert C.docker_run_in_line(line), line
+    # Quoted *prose* and non-words must stay invisible, and indirection (an alias, a
+    # variable holding the command name) is documented as out of scope.
+    for line in (
+        'echo "this script uses docker run once"',
+        "echo 'literal docker run in single quotes'",
+        "echo docker-running-status",
+        "my-docker-run-helper",
+        "docker runner img",
+        "sudo docker run img",
+        "D=docker; $D run img",
+    ):
+        assert not C.docker_run_in_line(line), line
+
+
+def test_fragmented_docker_run_is_not_two_invocations_when_only_one_exists(tmp_path):
+    """Counting must stay honest: the compliant script has one call even though its
+    quoted arguments contain words, and a fragmented second call pushes it to two."""
+    script = plan_shaped_script()
+    sh = tmp_path / "one.sh"
+    sh.write_text(script)
+    assert len([x for x in C.check_script(str(sh)) if "exactly one docker run" in x]) == 0
+    frag = script.replace(
+        'docker run "${RUN_ARGS[@]}" \\',
+        "d''ocker run --rm evil true\ndocker run \"${RUN_ARGS[@]}\" \\",
+        1,
+    )
+    assert frag != script
+    sh2 = tmp_path / "two.sh"
+    sh2.write_text(frag)
+    assert any("exactly one docker run" in x for x in C.check_script(str(sh2)))
