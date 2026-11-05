@@ -244,4 +244,149 @@ print(f"invalid share of the 1-degree grid: {100 * float(INVALID.mean()):5.2f}% 
 print(f"clay {float(CLAY.min()):.3f}-{float(CLAY.max()):.3f}  sand {float(SAND.min()):.3f}-{float(SAND.max()):.3f}  "
       f"uthres {float(UTHRES.min()):.3f}-{float(UTHRES.max()):.3f}  feff {float(FEFF.min()):.3f}-{float(FEFF.max()):.3f}")
 
+# %% [markdown]
+# ## 4. From GFS fields to FENGSHA inputs
+#
+# | CECE input | source | transform |
+# |---|---|---|
+# | `friction_velocity` | GFS `FRICV` | roll to −180…179; **`u*` used directly**, not recomputed from the 10 m wind |
+# | `threshold_velocity` | climatology `uthres` or `uthres_sg` | nearest alignment |
+# | `soil_moisture` | GFS `SOILL` level 0 (0–0.1 m) | volume fraction, units are already `Proportion` |
+# | `soil_temperature` | GFS `TSOIL` level 0 (0–0.1 m) | K; switches the frozen-soil cap on or off |
+# | `pbl_height` | GFS `HPBL` | m; FENGSHA caps it at 3 km internally |
+# | `clay_fraction`, `sand_fraction` | climatology `clayfrac`, `sandfrac` | nearest alignment |
+# | `silt_fraction` | derived | `clip(1 − clay − sand, 0, 1)` |
+# | `erodibility` | constant `1.0` | documented limitation, see §7 |
+# | `drag_partition` | Baker climatology `feff` | nearest alignment, month of the case |
+# | `air_density` | derived | `pressure / (287.04 × temperature)` — ideal gas for **dry** air |
+# | `snow_fraction` | GFS `SNOD` | binary: `SNOD > 0` |
+# | `lake_fraction` | constant `0.0` | no lake field in this path |
+# | `land_mask` | GFS `LAND` **and** climatology coverage | `0` where soil data is unusable, else `LAND > 0.5` |
+#
+# Units are set here because `field_adapter` compares them exactly (it maps `m/s` to `m s-1`), and every
+# value must be finite: CECE rejects NaN outright, so ocean NaN is zeroed and the column is masked out
+# instead of left as a hole.
+
 # %%
+KDRY = 287.04  # J kg-1 K-1, dry-air gas constant, matching the FENGSHA source
+R_EARTH = 6.371e6  # m
+
+
+def labelled(da, expected_units):
+    """Attach the units string `field_adapter` requires, without touching the data."""
+    out = da.copy()
+    out.attrs["units"] = expected_units
+    return out
+
+
+def to_grid_raw(value):
+    """The same longitude roll as `to_grid`, but NaN is preserved (needed for masks)."""
+    array = np.asarray(value, dtype=float)
+    array = np.concatenate([array[:, ROLL:], array[:, :ROLL]], axis=-1)
+    return xr.DataArray(array, dims=("latitude", "longitude"),
+                        coords={"latitude": LAT1, "longitude": LON1})
+
+
+def area_weights():
+    """Cell area in m^2 on the 1° grid: cos(lat) · dlat · dlon · R², zero at the poles."""
+    dlat = abs(float(np.diff(LAT1).mean())) * np.pi / 180.0
+    dlon = abs(float(np.diff(LON1).mean())) * np.pi / 180.0
+    w = np.cos(np.deg2rad(LAT1))[:, None] * (dlat * dlon * R_EARTH**2)
+    return np.broadcast_to(w, (len(LAT1), len(LON1))).copy()
+
+
+WEIGHT = area_weights()
+# A sign slip in dlat, or cos(deg) instead of cos(rad), shows up here as a wrong total rather than as
+# a wrong-looking map, which is exactly why the sum is checked against 4*pi*R^2.
+assert float(WEIGHT.min()) >= 0.0
+assert abs(float(WEIGHT.sum()) - 4.0 * np.pi * R_EARTH**2) / (4.0 * np.pi * R_EARTH**2) < 0.02, \
+    "grid area must integrate to ~4 pi R^2"
+print(f"cell area {float(WEIGHT.max()):.4e} m^2 at the equator, global total {float(WEIGHT.sum()):.4e} m^2")
+
+
+def build_inputs(lead, threshold="uthres"):
+    """All fourteen FENGSHA inputs for one lead, plus the numbers that justify the masks."""
+    surf, soil, valid = LEADS[lead]["surf"], LEADS[lead]["soil"], LEADS[lead]["valid"]
+    pressure, temperature = to_grid(surf.pressure), to_grid(surf.temperature)
+    u_star, hpbl, snod = to_grid(surf.FRICV), to_grid(surf.HPBL), to_grid(surf.SNOD)
+    moisture = to_grid(soil.SOILL.isel(level=0))
+    soil_temperature = to_grid(soil.TSOIL.isel(level=0))
+    land_01 = (to_grid_raw(surf.LAND) > 0.5).astype(float)
+    mask = land_01.where(~INVALID, 0.0)  # a climatology gap wins over GFS land
+    threshold_field = {"uthres": UTHRES, "uthres_sg": UTHRES_SG}[threshold]
+    rho = pressure / (KDRY * temperature)
+
+    fields = {
+        "friction_velocity": labelled(u_star, "m s-1"),
+        "threshold_velocity": labelled(threshold_field, "m s-1"),
+        "soil_moisture": labelled(moisture, "1"),
+        "soil_temperature": labelled(soil_temperature, "K"),
+        "pbl_height": labelled(hpbl, "m"),
+        "clay_fraction": labelled(CLAY, "1"),
+        "sand_fraction": labelled(SAND, "1"),
+        "silt_fraction": labelled((1.0 - CLAY - SAND).clip(0.0, 1.0), "1"),
+        "erodibility": labelled(xr.full_like(land_01, 1.0), "1"),
+        "drag_partition": labelled(FEFF, "1"),
+        "air_density": labelled(rho, "kg m-3"),
+        "lake_fraction": labelled(xr.zeros_like(land_01), "1"),
+        "snow_fraction": labelled((snod > 0).astype(float), "1"),
+        "land_mask": labelled(mask, "1"),
+    }
+    for name, da in fields.items():
+        assert da.dims == GRID.dims and da.shape == (181, 360), (name, da.dims, da.shape)
+        assert bool(np.isfinite(da).all()), f"{name}: non-finite value reached the adapter boundary"
+
+    on_land = np.asarray(mask, dtype=float) > 0.5
+    gfs_land = np.asarray(to_grid_raw(surf.LAND), dtype=float) > 0.5
+    stats = {
+        "valid": valid,
+        "gfs_land_cols": int(gfs_land.sum()),
+        "land_cols": int(on_land.sum()),
+        "snow_cols": int((np.asarray(fields["snow_fraction"], dtype=float) > 0)[gfs_land].sum()),
+        "frozen_cols": int((soil_temperature.values[gfs_land] <= 273.15).sum()),
+        "ustar_p50": float(np.percentile(u_star.values[gfs_land], 50)),
+        "ustar_p90": float(np.percentile(u_star.values[gfs_land], 90)),
+        "ustar_max": float(u_star.values[gfs_land].max()),
+        "rho_min": float(rho.values[gfs_land].min()),
+        "rho_max": float(rho.values[gfs_land].max()),
+        "uthres_max": float(threshold_field.max()),
+    }
+    assert set(np.unique(fields["snow_fraction"].values)) <= {0.0, 1.0}
+    assert set(np.unique(fields["land_mask"].values)) <= {0.0, 1.0}
+    assert 0.5 < float(fields["air_density"].min()) < float(fields["air_density"].max()) < 1.6
+    assert float(fields["erodibility"].min()) == float(fields["erodibility"].max()) == 1.0
+    assert float(fields["lake_fraction"].max()) == 0.0
+    assert float(threshold_field.max()) < 2.0, "uthres above 2 m/s means the alignment mixed in a sentinel"
+    return fields, stats
+
+
+def build_report(rows, title):
+    """Two-column table of the provenance numbers; §4 calls it for inputs, §5 for emissions."""
+    print(f"\n{title}")
+    print(f"{'quantity':<26}{'value':>18}")
+    for key, value in rows.items():
+        text = f"{value:.3f}" if isinstance(value, float) else str(value)
+        print(f"{key:<26}{text:>18}")
+
+
+FIELDS, STATS = build_inputs(CASE["leads"][0], CASE["thresholds"][0])
+assert set(FIELDS) == {
+    "friction_velocity", "threshold_velocity", "soil_moisture", "soil_temperature", "pbl_height",
+    "clay_fraction", "sand_fraction", "silt_fraction", "erodibility", "drag_partition",
+    "air_density", "lake_fraction", "snow_fraction", "land_mask",
+}, sorted(FIELDS)
+build_report({
+    "lead": f"f{CASE['leads'][0]:03d}",
+    "valid time": f"{STATS['valid']:%Y-%m-%dT%H:%M}",
+    "GFS land columns": STATS["gfs_land_cols"],
+    "masked by climatology": STATS["gfs_land_cols"] - STATS["land_cols"],
+    "columns run": STATS["land_cols"],
+    "snow columns (of GFS land)": STATS["snow_cols"],
+    "frozen top soil (of GFS land)": STATS["frozen_cols"],
+    "u* p50 m/s": STATS["ustar_p50"],
+    "u* p90 m/s": STATS["ustar_p90"],
+    "u* max m/s": STATS["ustar_max"],
+    "air density min kg/m3": STATS["rho_min"],
+    "air density max kg/m3": STATS["rho_max"],
+    "threshold max m/s": STATS["uthres_max"],
+}, title=f"f{CASE['leads'][0]:03d} input provenance ({CASE['thresholds'][0]})")
