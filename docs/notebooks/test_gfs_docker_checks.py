@@ -674,6 +674,13 @@ def test_fragmented_spellings_of_docker_run_are_counted(tmp_path):
         "if docker run --rm image true; then :; fi",
         "x=1 docker run --rm image true",
         "ignored=$(d''ocker run --rm evil sh -c 'x')",
+        "sudo docker run img",
+        "docker container run img",
+        "docker --debug run img",
+        "{ docker run --rm evil true; }",
+        "case 1 in 1) docker run --rm evil true;; esac",
+        "2>/dev/null docker run --rm evil true",
+        "nohup docker run --rm evil true &",
     ):
         assert C.docker_run_in_line(line), line
     # Quoted *prose* and non-words must stay invisible, and indirection (an alias, a
@@ -684,7 +691,7 @@ def test_fragmented_spellings_of_docker_run_are_counted(tmp_path):
         "echo docker-running-status",
         "my-docker-run-helper",
         "docker runner img",
-        "sudo docker run img",
+        "echo hi docker run img",
         "D=docker; $D run img",
     ):
         assert not C.docker_run_in_line(line), line
@@ -757,3 +764,76 @@ def test_docker_run_text_inside_double_quotes_is_not_a_call(tmp_path):
         sh.write_text(minimal_good_script() + "\n" + prose + "\n")
         problems = C.check_script(str(sh))
         assert problems == [], (prose, problems)
+
+
+COUNTEDFormS = None  # placeholder to keep the diff readable
+
+
+def _count_calls(text: str) -> int:
+    return sum(1 for _ in C.docker_run_call_sites(text))
+
+
+def test_wrapper_and_flag_forms_are_counted(tmp_path):
+    sh = tmp_path / "gfs-docker.sh"
+    forms = [
+        "{ docker run --rm evil true; }",
+        "case 1 in 1) docker run --rm evil true;; esac",
+        ">/tmp/out docker run --rm evil true",
+        "2>/dev/null docker run --rm evil true",
+        "sudo docker run --rm evil true",
+        "env A=1 docker run --rm evil true",
+        "echo a | xargs docker run --rm evil",
+        "docker --debug run --rm evil true",
+        "docker -H unix:///var/run/docker.sock run --rm evil true",
+        "docker container run --rm evil true",
+        'bash -c \'docker run --rm evil true\'',
+        'eval "docker run --rm evil true"',
+        "docker run y; docker run x",  # two calls on one line
+    ]
+    for form in forms:
+        sh.write_text(minimal_good_script() + "\n" + form + "\n")
+        problems = C.check_script(str(sh))
+        assert any("exactly one docker run" in p for p in problems), (form, problems)
+
+
+def test_non_invocations_stay_invisible(tmp_path):
+    sh = tmp_path / "gfs-docker.sh"
+    prose = [
+        'echo "we use docker run once"',
+        'echo "docker run; docker run"',
+        'printf %s "x && docker run"',
+        'echo hi docker run img',  # echo's argument, not a command
+        "echo docker-running-status",
+        "my-docker-run-helper",
+        "docker runner img",
+        'x="${DOCKER:-docker} run ${IMAGE:-img}"',  # quoted text, inert
+        '# the docker run call publishes the port',
+        # a real multi-line double quoted string: bash keeps the state per line
+        'x="\ntwo\nlines\n',
+    ]
+    for text in prose:
+        sh.write_text(minimal_good_script() + "\n" + text + "\n")
+        problems = C.check_script(str(sh))
+        assert problems == [], (text, problems)
+
+
+def test_call_sites_counted_per_line_not_per_file(tmp_path):
+    sh = tmp_path / "gfs-docker.sh"
+    sh.write_text(minimal_good_script())
+    assert C.check_script(str(sh)) == []
+    # the same script with a second call added on its own line fails shut
+    sh.write_text(minimal_good_script() + "\nnohup docker run --rm evil true &\n")
+    assert any("exactly one docker run" in p for p in C.check_script(str(sh)))
+
+
+def test_quoted_multiline_strings_and_comments_do_not_leak_state():
+    # bash really does continue a quote across newlines, so a call after one is hidden
+    hidden = 'x="\nfoo\ndocker run --rm evil true\n"\n'
+    assert len(C.docker_run_call_sites(hidden)) == 0
+    # ... and the next real call after it is still found
+    assert len(set(C.docker_run_call_sites(hidden + "\ndocker run --rm real true\n"))) == 1
+    # an apostrophe inside a comment must not swallow the rest of the file
+    commented = "# it's a comment\nif [ -n \"x\" ]; then :; fi\ndocker run --rm real true\n"
+    assert len(set(C.docker_run_call_sites(commented))) == 1
+    # a real call inside a comment is not a call
+    assert len(set(C.docker_run_call_sites("# docker run --rm evil true\n"))) == 0

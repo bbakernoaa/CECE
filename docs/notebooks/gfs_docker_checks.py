@@ -477,11 +477,20 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
+# Command-word boundaries bash honours before `docker`: line start, operators, group/
+# subshell/case-arm punctuation, redirections, shell keywords, prefix wrappers and a
+# `VAR=value` assignment. Between the binary and `run` bash accepts global options
+# (`--debug`, `-H tcp://x`, `-D value`) and the `container` subcommand, so ``docker
+# container run``, ``docker --debug run`` and two calls on one line are invocations too.
 _DOCKER_RUN_RE = re.compile(
-    r"(?:^[ \t]*|[;&|]\s*|\(\s*|\$\(\s*|`\s*"
+    r"(?:^[ \t]*|[;&|]\s*|\(\s*|\$\(\s*|`\s*|\{[ \t]*|\}[ \t]*|\)[ \t]*"
+    r"|[<>][^\s]*[ \t]+"
     r"|(?:(?:^|(?<=\s))(?:if|then|else|elif|while|until|for|do|time|!)\s+)"
+    r"|(?:(?:^|(?<=\s))(?:sudo|nohup|env|exec|command|xargs)\s+)"
     r"|(?:(?:^|(?<=\s))\w+=\S*\s+))"
-    r"(?:[\w.$@/-]+/)?docker\s+run\b(?![-\w])",
+    r"(?:[\w.$@/-]+/)?docker"
+    r"(?:[ \t]+(?:--?[A-Za-z][\w-]*(?:[= ][^ \t]+)?|container))*"
+    r"[ \t]+run\b(?![-\w])",
     re.M,
 )
 
@@ -490,8 +499,15 @@ _QUOTE_FILLER = "\x01"  # not matched by \s, so quoted prose cannot form a comma
 _OP_FILLER = "x"
 
 
-def _shell_word_view(text: str) -> str:
+def _shell_word_view(text: str, quote: str | None = None, stack: list | None = None,
+                     no_opaque: bool = False) -> str | tuple[str, str | None, list]:
     """Rebuild the words bash would see, honouring each quoting level.
+
+    With an initial ``quote``/``stack`` the scan continues a context opened on an
+    earlier line, which is what bash does for a valid multi-line double-quoted string:
+    ``x="\n...\ndocker run IMG"`` is one inert word, not a call. ``no_opaque`` drops
+    the blanking of quoted text for callers that rescan a string known to be executed
+    by an ``eval``/``-c`` wrapper.
 
     Quoting is not invisible to a command word: bash runs ``d''ocker run``,
     ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so quote
@@ -505,9 +521,10 @@ def _shell_word_view(text: str) -> str:
       ``echo "$(docker run --rm evil true)"`` is a real second invocation and the
       interior of the substitution is scanned with normal word splitting.
     """
+    initial_quote = quote
     out = []
-    stack = []          # quote state per open nesting level ('", "'", or None)
-    quote = None
+    if stack is None:
+        stack = []      # quote state per open nesting level ('", "'", or None)
     i = 0
     n = len(text)
     while i < n:
@@ -518,6 +535,13 @@ def _shell_word_view(text: str) -> str:
             continue
         if quote == "`" and ch != "`":
             out.append(ch)  # inside a backtick substitution anything can start a command
+            i += 1
+            continue
+        if no_opaque:
+            if quote is not None and ch == quote:
+                quote = stack.pop() if stack else None
+            else:
+                out.append(ch)
             i += 1
             continue
         if quote == "'" and ch != "'":
@@ -541,6 +565,13 @@ def _shell_word_view(text: str) -> str:
                     stack.append(quote)
                 quote = ch
             i += 1
+            continue
+        if ch == "#" and (i == 0 or text[i - 1] in " \t"):
+            # a comment runs to end of line: bash never parses it, so it must neither
+            # start a command nor leave a quote open for the next line
+            nl = text.find("\n", i)
+            i = n if nl == -1 else nl
+            out.append(" ")
             continue
         if ch == "$" and i + 1 < n and text[i + 1] == "(":
             if quote is not None:
@@ -566,19 +597,123 @@ def _shell_word_view(text: str) -> str:
             continue
         out.append(ch)
         i += 1
-    return "".join(out)
+    view = "".join(out)
+    if quote is None and not stack and initial_quote is None:
+        return view
+    return view, quote, stack
 
 
-def docker_run_in_line(line: str) -> bool:
+def docker_run_in_line(line: str, quote: str | None = None,
+                       stack: list | None = None) -> bool | tuple[bool, str | None, list]:
     """True if the line contains an *executable* ``docker run``, not just the words.
 
-    A line-start match is not enough: `ignored=$(docker run --rm evil ...)` starts a
-    container from mid-line, and `if docker run ...; then` hides one behind a shell
-    keyword. Either would let a second, unreviewed invocation slip past the
-    exactly-one rule while the compliant call satisfied every requirement. Quoted
-    text is blanked first, so usage prose that merely names the command does not count.
+    A line-start match is not enough: bash also runs the command from mid-line
+    (``ignored=$(docker run ...)``), behind a keyword (``if docker run ...; then``), a
+    wrapper (``sudo``/``env``/``xargs``/``nohup``), punctuation (``{ docker run; }``,
+    ``case 1 in 1) docker run ...``), a leading redirection, or with global options
+    between the binary and ``run`` (``docker container run``, ``docker --debug run``).
+    Quoted text is blanked first, so usage prose that merely names the command does not
+    count, and a quote left open by an earlier line keeps blanking this one.
     """
-    return bool(_DOCKER_RUN_RE.search(_shell_word_view(line)))
+    result = _shell_word_view(line, quote=quote, stack=stack)
+    if isinstance(result, tuple):
+        view, quote, stack = result
+    else:
+        view, quote, stack = result, None, []
+    if _shell_word_view(line + "\n", quote=quote, stack=stack)[1:] != (None, []):
+        # an unterminated quote reaching a later line (also a bash syntax error) would
+        # otherwise hide a call that follows it: rescan without that context instead.
+        view = _shell_word_view(line)
+    found = bool(_DOCKER_RUN_RE.search(view))
+    if quote is None:
+        return found
+    return found, quote, stack
+
+
+_CODE_WRAPPER_RE = re.compile(
+    r"\b(?:eval|exec|(?:ba|z|da|k|a)sh|sh|python3?(?:[ \t]+-c)?|node|perl|ruby)\b"
+)
+_QUOTED_ARG_RE = re.compile(r"'([^']*)'|" + '"([^"]*)"' + r"|`([^`]*)`")
+
+
+def _docker_calls_in_code(text: str) -> int:
+    """Number of ``docker [flags] run`` calls in text bash would execute as code.
+
+    Used for the string argument of ``eval``/``sh -c`` wrappers, where quoting hides
+    nothing: bash reparses the string as a command line, so the command-boundary
+    requirement only applies where a call could actually sit at a word boundary.
+    """
+    return len(_DOCKER_RUN_RE.findall("( " + text)) + len(_DOCKER_RUN_RE.findall(text))
+
+
+def _code_string_parts(line: str) -> tuple[list[str], str | None]:
+    """Quoted arguments of an eval/``-c`` wrapper on ``line``, plus any string left open.
+
+    Returns ([fragments], pending_open_string_or_None). A wrapper that is merely quoted
+    inside another command's argument is not a wrapper here, because the outer command
+    would only print it; the scan runs on the raw line, whose first word is checked.
+    """
+    first = line.strip().split(" ", 1)[0] if line.strip() else ""
+    if not _CODE_WRAPPER_RE.search(rf"{re.escape(first)}") or first in ("echo", "printf"):
+        return [], None
+    if not re.search(r"\b(?:eval|exec)\b|[ \t]-(?:c|e)[ \t]", line):
+        return [], None
+    frags = [g for m in _QUOTED_ARG_RE.finditer(line) for g in m.groups() if g]
+    pending = None
+    for q in ('"', "'"):
+        if line.count(q) % 2 == 1:
+            tail = line.rsplit(q, 1)[1]
+            pending = q + tail
+            break
+    return frags, pending
+
+
+def _close_code_string(pending: str, line: str) -> tuple[str, bool]:
+    """Append ``line`` to an open eval/-c string; return (content, closed_here)."""
+    q, body = pending[0], pending[1:]
+    end = line.find(q)
+    joined = q + body + "\n" if body else q + body
+    if end == -1:
+        return joined + line.rstrip("\r\n"), False
+    return joined + line[:end], True
+
+
+def docker_run_call_sites(src: str) -> list[int]:
+    """Offsets of every executable ``docker run`` in ``src``, one entry per invocation.
+
+    The scan walks lines carrying its quote context, so a call is counted where bash
+    would execute it -- at a line start, mid-line behind a wrapper (``sudo``/``env``/
+    ``xargs``), keyword, redirection, substitution, group/case punctuation, or twice on
+    one line -- while quoted prose stays invisible. The argument of an ``eval``/``-c``
+    wrapper is scanned as code, including when that string continues over several lines.
+    """
+    sites: list[int] = []
+    quote, stack = None, []
+    pending: str | None = None  # eval/-c string still open from an earlier line
+    offset = 0
+    for line in src.splitlines(keepends=True):
+        result = _shell_word_view(line, quote=quote, stack=stack)
+        view, quote, stack = result if isinstance(result, tuple) else (result, None, [])
+        if pending is None:  # an eval/-c interior is scanned once, as code
+            for m in _DOCKER_RUN_RE.finditer(view):
+                sites.append(offset + m.start())
+        if pending is not None:
+            content, closed = _close_code_string(pending, line)
+            added = content[len(pending):]  # only this line can introduce a new call
+            if _docker_calls_in_code(added) or (
+                pending and _docker_calls_in_code(pending[-1:] + added)
+            ):
+                sites.append(offset)
+            pending = None if closed else content
+        else:
+            frags, opened = _code_string_parts(line)
+            if any(_docker_calls_in_code(f) for f in frags) or (
+                opened and _docker_calls_in_code(opened)
+            ):
+                sites.append(offset)
+            pending = opened
+        offset += len(line)
+    return sites
 
 
 def docker_run_command(src: str) -> tuple[str, int, int] | None:
@@ -587,7 +722,7 @@ def docker_run_command(src: str) -> tuple[str, int, int] | None:
 
     Shell line continuations are followed, so a heredoc operator written on a
     continuation line (the usual formatting) still belongs to the container call.
-    Returns None unless there is *exactly* one ``docker run`` line in the script —
+    Returns None unless there is *exactly* one ``docker run`` call in the script --
     zero is obviously wrong, but more than one is equally dangerous: a second,
     unchecked invocation could run anything while every requirement below is
     satisfied by the first. Treating "not exactly one" as "no sole call exists"
@@ -595,11 +730,13 @@ def docker_run_command(src: str) -> tuple[str, int, int] | None:
     scoping, host-side env vars) fails shut instead of silently checking only the
     first of several invocations.
     """
-    lines = src.splitlines(keepends=True)
-    starts = [i for i, ln in enumerate(lines) if docker_run_in_line(ln)]
-    if len(starts) != 1:
+    sites = sorted(set(docker_run_call_sites(src)))
+    if len(sites) != 1:
         return None
-    i = starts[0]
+    start = sites[0]
+    lines = src.splitlines(keepends=True)
+    i = next(k for k, ln in enumerate(lines) if sum(len(p) for p in lines[:k]) <= start
+             < sum(len(p) for p in lines[:k + 1]))
     start = sum(len(ln) for ln in lines[:i])
     text = ""
     while i < len(lines):
@@ -607,8 +744,7 @@ def docker_run_command(src: str) -> tuple[str, int, int] | None:
         if not lines[i].rstrip("\r\n").rstrip().endswith("\\"):
             break
         i += 1
-    end = start + len(text)
-    return text, start, end
+    return text, start, start + len(text)
 
 
 def _balanced_paren_assignment(text: str, assign_start: int) -> str:
