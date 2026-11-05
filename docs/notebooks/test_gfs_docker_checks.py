@@ -557,3 +557,27 @@ def test_missing_host_uid_env_is_rejected(tmp_path):
     sh = tmp_path / "noid.sh"
     sh.write_text(script)
     assert any("HOST_UID/HOST_GID" in x for x in C.check_script(str(sh)))
+
+
+def test_markdown_cells_render_as_markdown_not_commented_text(tmp_path):
+    """The percent format comments every markdown line; the notebook must not keep that '#'.
+
+    Otherwise the rendered notebook shows literal '#' characters instead of headings --
+    the notebook IS the deliverable, invisible to substring gates but ruinous to read.
+    """
+    py = tmp_path / "nb.py"
+    py.write_text(
+        "# %% [markdown]\n# # Title\n#\n# ## Section one\n\n"
+        + "# %%\nx = 1\n"
+    )
+    nb_path = tmp_path / "nb.ipynb"
+    assert C.sync_notebook(str(py), str(nb_path)) == "written"
+    cells = nbformat.read(str(nb_path), as_version=4).cells
+    md = [c for c in cells if c.cell_type == "markdown"]
+    assert [c.source for c in md] == ["# Title\n\n## Section one\n\n"], md[0].source
+    assert C.check_sync(str(py), str(nb_path)) == []
+    # The committed skeleton must be clean too: no markdown line may start with '# #'.
+    if os.path.exists(C.PY_PATH):
+        for kind, src in C.parse_cells(C.PY_PATH):
+            if kind == "markdown":
+                assert not any(ln.startswith("# #") for ln in src.splitlines()), src[:60]

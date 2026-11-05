@@ -161,7 +161,23 @@ def parse_cells(path: str) -> list[tuple[str, str]]:
                 buf.append(line)
     if kind is not None:
         cells.append((kind, "".join(buf)))
-    return cells
+    return [(kind_, percent_markdown_to_text(src) if kind_ == "markdown" else src) for kind_, src in cells]
+
+
+def percent_markdown_to_text(source: str) -> str:
+    """Turn a percent-format markdown cell (every line commented with ``#``) into markdown.
+
+    Without this the generated notebook renders literal ``#`` characters instead of
+    headings, and the .py/.ipynb pair is no longer comparable cell-for-cell.
+    """
+    out = []
+    for line in source.splitlines():
+        if line.startswith("#"):
+            out.append(line[1:].removeprefix(" "))
+        else:
+            out.append(line)
+    text = "\n".join(out)
+    return text + "\n" if source.endswith("\n") and text else text
 
 
 def code_kind() -> str:
