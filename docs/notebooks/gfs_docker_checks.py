@@ -487,7 +487,8 @@ _DOCKER_RUN_RE = re.compile(
     r"|[<>][^\s]*[ \t]+"
     r"|(?:(?:^|(?<=\s))(?:if|then|else|elif|while|until|for|do|time|!)\s+)"
     r"|(?:(?:^|(?<=\s))(?:sudo|nohup|env|exec|command|xargs)\s+)"
-    r"|(?:(?:^|(?<=\s))\w+=\S*\s+))"
+    r"|(?:(?:^|(?<=\s))\w+=\S*\s+)"
+    r"|(?:\$\{[^}]*[=+?]))"
     r"(?:[\w.$@/-]+/)?docker"
     r"(?:[ \t]+(?:--?[A-Za-z][\w-]*(?:[= ][^ \t]+)?|container))*"
     r"[ \t]+run\b(?![-\w])",
@@ -529,7 +530,7 @@ def _shell_word_view(text: str, quote: str | None = None, stack: list | None = N
     n = len(text)
     while i < n:
         ch = text[i]
-        if ch == "\\" and i + 1 < n and not (quote == "'"):
+        if ch == "\\" and i + 1 < n and quote != "'":
             out.append(text[i + 1])
             i += 2
             continue
@@ -545,6 +546,10 @@ def _shell_word_view(text: str, quote: str | None = None, stack: list | None = N
             i += 1
             continue
         if quote == "'" and ch != "'":
+            if ch == "\\":  # $'a\'b': the escaped quote does not close the string
+                out.append(_QUOTE_FILLER * 2)
+                i += 2
+                continue
             out.append(_QUOTE_FILLER if (ch.isspace() or ch in "&|;<>!$`()") else ch)
             i += 1
             continue
@@ -556,6 +561,12 @@ def _shell_word_view(text: str, quote: str | None = None, stack: list | None = N
             else:
                 out.append(ch)
             i += 1
+            continue
+        if ch == "$" and i + 1 < n and text[i + 1] == "'" and quote is None:
+            stack.append(None)
+            quote = "'"  # ANSI-C: behaves like single quotes but honours backslash escapes
+            out.append("''")  # keeps it a word character, never a command boundary
+            i += 2
             continue
         if ch in ("'", '"'):
             if quote == ch:
@@ -631,8 +642,9 @@ def docker_run_in_line(line: str, quote: str | None = None,
 
 
 _CODE_WRAPPER_RE = re.compile(
-    r"\b(?:eval|exec|(?:ba|z|da|k|a)sh|sh|python3?(?:[ \t]+-c)?|node|perl|ruby)\b"
+    r"\b(?:eval|exec|trap|(?:ba|z|da|k|a)sh|sh|python3?(?:[ \t]+-c)?|node|perl|ruby)\b"
 )
+_HEREDOC_OP_RE = re.compile(r"<<(?P<dash>[-~]?)[ \t]*(?P<delim>\w+)")
 _QUOTED_ARG_RE = re.compile(r"'([^']*)'|" + '"([^"]*)"' + r"|`([^`]*)`")
 
 
@@ -656,7 +668,7 @@ def _code_string_parts(line: str) -> tuple[list[str], str | None]:
     first = line.strip().split(" ", 1)[0] if line.strip() else ""
     if not _CODE_WRAPPER_RE.search(rf"{re.escape(first)}") or first in ("echo", "printf"):
         return [], None
-    if not re.search(r"\b(?:eval|exec)\b|[ \t]-(?:c|e)[ \t]", line):
+    if not re.search(r"\b(?:eval|exec|trap)\b|[ \t]-(?:c|e)[ \t]", line):
         return [], None
     frags = [g for m in _QUOTED_ARG_RE.finditer(line) for g in m.groups() if g]
     pending = None
@@ -678,41 +690,90 @@ def _close_code_string(pending: str, line: str) -> tuple[str, bool]:
     return joined + line[:end], True
 
 
+def _ends_continuation(text: str) -> bool:
+    """True if a physical line ends in an odd run of backslashes (bash continues)."""
+    body = text.rstrip("\r\n")
+    return body.endswith("\\") and (len(body) - len(body.rstrip("\\"))) % 2 == 1
+
+
+def _scan_units(src: str) -> list[tuple[int, str]]:
+    """(offset, text) code units of ``src``: continuations joined, heredoc bodies dropped.
+
+    Bash joins a line ending in ``\\`` with the next one before splitting words, so
+    ``doc\\`` + ``ker run x`` really is a ``docker run``. Conversely the body of a
+    heredoc is data handed to a command's stdin -- never parsed as this shell's
+    commands -- so an unquoted ``cat <<EOF`` body mentioning ``docker run`` must not be
+    counted (and its unbalanced quotes must not poison the scan of later lines).
+    """
+    lines = src.splitlines(keepends=True)
+    offsets = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line)
+    units: list[tuple[int, str]] = []
+    skip_delim: str | None = None
+    skip_dash = False
+    i = 0
+    while i < len(lines):
+        if skip_delim is not None:
+            body = lines[i].lstrip("\t") if skip_dash else lines[i]
+            if body.rstrip("\r\n").strip("\t") == skip_delim:
+                skip_delim = None
+            i += 1
+            continue
+        j = i
+        text = lines[j]
+        while _ends_continuation(text) and j + 1 < len(lines):
+            # bash deletes the backslash and the newline, joining the two words
+            text = text.rstrip("\r\n")[:-1] + lines[j + 1]
+            j += 1
+        view = _shell_word_view(text)
+        view = view[0] if isinstance(view, tuple) else view
+        units.append((offsets[i], text))
+        m = _HEREDOC_OP_RE.search(view)
+        if m:
+            skip_delim = m.group("delim")
+            skip_dash = bool(m.group("dash"))
+        i = j + 1
+    return units
+
+
 def docker_run_call_sites(src: str) -> list[int]:
     """Offsets of every executable ``docker run`` in ``src``, one entry per invocation.
 
-    The scan walks lines carrying its quote context, so a call is counted where bash
-    would execute it -- at a line start, mid-line behind a wrapper (``sudo``/``env``/
-    ``xargs``), keyword, redirection, substitution, group/case punctuation, or twice on
-    one line -- while quoted prose stays invisible. The argument of an ``eval``/``-c``
-    wrapper is scanned as code, including when that string continues over several lines.
+    The scan walks code units (continuation-joined lines outside heredoc bodies)
+    carrying their quote context, so a call is counted where bash would execute it --
+    at a line start, mid-line behind a wrapper (``sudo``/``env``/``xargs``), a keyword,
+    a redirection, a substitution, group/case punctuation, a ``${x:+...}`` expansion, or
+    twice on one line -- while quoted prose and heredoc bodies stay invisible. The
+    argument of ``eval``/``trap``/``-c`` is scanned as code, including when that string
+    continues over several lines.
     """
     sites: list[int] = []
     quote, stack = None, []
-    pending: str | None = None  # eval/-c string still open from an earlier line
-    offset = 0
-    for line in src.splitlines(keepends=True):
-        result = _shell_word_view(line, quote=quote, stack=stack)
+    pending: str | None = None  # eval/-c string still open from an earlier unit
+    for offset, chunk in _scan_units(src):
+        result = _shell_word_view(chunk, quote=quote, stack=stack)
         view, quote, stack = result if isinstance(result, tuple) else (result, None, [])
         if pending is None:  # an eval/-c interior is scanned once, as code
             for m in _DOCKER_RUN_RE.finditer(view):
                 sites.append(offset + m.start())
         if pending is not None:
-            content, closed = _close_code_string(pending, line)
-            added = content[len(pending):]  # only this line can introduce a new call
+            content, closed = _close_code_string(pending, chunk)
+            added = content[len(pending):]  # only this chunk can introduce a new call
             if _docker_calls_in_code(added) or (
                 pending and _docker_calls_in_code(pending[-1:] + added)
             ):
                 sites.append(offset)
             pending = None if closed else content
         else:
-            frags, opened = _code_string_parts(line)
+            frags, opened = _code_string_parts(chunk)
             if any(_docker_calls_in_code(f) for f in frags) or (
                 opened and _docker_calls_in_code(opened)
             ):
                 sites.append(offset)
             pending = opened
-        offset += len(line)
     return sites
 
 

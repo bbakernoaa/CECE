@@ -837,3 +837,33 @@ def test_quoted_multiline_strings_and_comments_do_not_leak_state():
     assert len(set(C.docker_run_call_sites(commented))) == 1
     # a real call inside a comment is not a call
     assert len(set(C.docker_run_call_sites("# docker run --rm evil true\n"))) == 0
+
+
+def sites(text: str) -> int:
+    return len(set(C.docker_run_call_sites(text)))
+
+
+def test_ansi_c_quoting_does_not_hide_later_calls():
+    # $'...' treats \' as an escaped quote, so the string closes on this line
+    assert sites("x=$'a\\'b'\ndocker run x\n") == 1
+    assert sites("echo $'it\\'s' docker run x\n") == 0  # echo argument is inert text
+    assert sites("$'a\\'b'\nnohup docker run --rm evil true &\n") == 1
+
+
+def test_command_split_by_line_continuation_is_counted():
+    assert sites("doc\\\nker run x\n") == 1
+    assert sites("doc\\\nker run a; docker run b\n") == 2
+
+
+def test_heredoc_bodies_are_data_not_commands():
+    assert sites("cat <<EOF\ndocker run x\nEOF\n") == 0
+    assert sites("docker run img <<'STAGE'\necho hi\nSTAGE\n") == 1
+    assert sites("cat <<-EOF\n\tdocker run x\n\tEOF\ndocker run real\n") == 1
+
+
+def test_parameter_expansion_and_trap_strings_are_counted():
+    assert sites("ignored=${x:+docker run --rm evil true}\n") == 1
+    assert sites("x=1 ${y:+docker run --rm evil true}\n") == 1
+    assert sites("trap 'docker run --rm evil true' EXIT\n") == 1
+    # a double-quoted expansion value is data, not a command line
+    assert sites('cmd="${y:+docker run --rm evil}"\nexec bash -c "$cmd"\n') == 0
