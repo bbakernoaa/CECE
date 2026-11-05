@@ -78,8 +78,12 @@ docker volume create "$VOL_CACHE" >/dev/null
 # Rebuild when HEAD moves *or* tracked source/notebook files differ from HEAD: a pure worktree
 # snapshot cannot work here (this repo can have tracked files deleted locally), so the tree is
 # git -C /work archive HEAD plus an overlay of the current src/ and include/.
-DIRTY_HASH="$( { git -C "$REPO" rev-parse HEAD;
-                 git -C "$REPO" status --porcelain -- src include docs/notebooks; } | sha1sum | cut -d' ' -f1 )"
+# Only what the bindings actually compile, and *content* rather than commit: HEAD:src etc. are
+# tree object ids, so a commit that touches nothing under src/include/cmake (every notebook edit
+# in Tasks 5-7) leaves the stamp alone instead of forcing a ~4 min C++ rebuild. Watching HEAD
+# itself rebuilt on literally every commit; watching docs/notebooks rebuilt on every notebook edit.
+DIRTY_HASH="$( { git -C "$REPO" rev-parse "HEAD:src" "HEAD:include" "HEAD:cmake";
+                 git -C "$REPO" status --porcelain -- src include cmake; } | sha1sum | cut -d' ' -f1 )"
 
 if [ "$SKIP_BUILD" = 1 ] && [ "$REBUILD" = 1 ]; then
     echo "--skip-build and --rebuild contradict each other" >&2
@@ -122,7 +126,7 @@ if [ ! -d /env/envs/"${ENV_NAME}" ]; then
     echo "[env] conda solve (minutes)"
     /env/bin/micromamba create -y -q -n "${ENV_NAME}" -c conda-forge --override-channels \
         python=3.12 'numpy<3' grib2io xarray netcdf4 pandas scipy pyyaml matplotlib-base \
-        ipykernel jupyterlab nbconvert pip pybind11 >/dev/null
+        ipykernel jupyterlab nbconvert pip pybind11 fsspec >/dev/null
 fi
 # Tripwire for the failure class above: an env that landed somewhere else looks like success.
 [ -x "$PY" ] || { echo "[env] FATAL: $PY missing after create (root prefix ${MAMBA_ROOT_PREFIX})" >&2; exit 1; }
@@ -130,6 +134,12 @@ fi
 if ! RUN "$PY" -c 'import axis' 2>/dev/null; then
     echo "[env] axis-regrid (sanctioned regrid_rectilinear backend)"
     RUN "$PY" -m pip install -q --no-deps /work/extern/helm/libs/axis
+fi
+if ! RUN "$PY" -c 'import fsspec' 2>/dev/null; then
+    # MONETIO's reader registry imports fsspec at module scope even for local-file reads, and
+    # `pip install --no-deps` deliberately skipped it.
+    echo "[env] fsspec (MONETIO reader registry imports it even for local files)"
+    micromamba install -y -q -n "${ENV_NAME}" -c conda-forge --override-channels fsspec >/dev/null
 fi
 if ! RUN "$PY" -c 'import monetio' 2>/dev/null; then
     echo "[env] MONETIO ${MONETIO_SHA:0:7}"
@@ -194,7 +204,10 @@ case "${MODE}" in
         ;;
     cmd)
         echo "[run] ${RUN_CMD}"
-        exec bash -c "${RUN_CMD}"
+        # micromamba run, not bare bash: the env's python is on PATH only inside the env, so a
+        # one-off `-c 'python ...'` otherwise dies with "python: command not found" (measured).
+        # No `exec` here: `RUN` is a shell function and bash cannot exec a function.
+        micromamba run -n "${ENV_NAME}" bash -c "${RUN_CMD}"
         ;;
     lab)
         echo "[run] Jupyter Lab on port 8888 (host ${GFS_PORT_HOST:-8888})"
