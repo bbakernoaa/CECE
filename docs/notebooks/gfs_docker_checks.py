@@ -477,26 +477,93 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
-def docker_run_command(src: str) -> tuple[str, int] | None:
-    """The single ``docker run`` invocation and the offset just after its last line.
+def docker_run_command(src: str) -> tuple[str, int, int] | None:
+    """The single ``docker run`` invocation: its text, start offset, and the offset
+    just after its last line.
 
     Shell line continuations are followed, so a heredoc operator written on a
     continuation line (the usual formatting) still belongs to the container call.
-    Returns None when no docker run line exists at all.
+    Returns None unless there is *exactly* one ``docker run`` line in the script —
+    zero is obviously wrong, but more than one is equally dangerous: a second,
+    unchecked invocation could run anything while every requirement below is
+    satisfied by the first. Treating "not exactly one" as "no sole call exists"
+    means every Docker-bound check (heredoc ownership, STAGE terminator, stage-body
+    scoping, host-side env vars) fails shut instead of silently checking only the
+    first of several invocations.
     """
     lines = src.splitlines(keepends=True)
     starts = [i for i, ln in enumerate(lines) if re.match(r"^\s*docker\s+run\b", ln)]
-    if not starts:
+    if len(starts) != 1:
         return None
     i = starts[0]
+    start = sum(len(ln) for ln in lines[:i])
     text = ""
     while i < len(lines):
         text += lines[i]
         if not lines[i].rstrip("\r\n").rstrip().endswith("\\"):
             break
         i += 1
-    end = sum(len(ln) for ln in lines[: i + 1])
-    return text, end
+    end = start + len(text)
+    return text, start, end
+
+
+def _balanced_paren_assignment(text: str, assign_start: int) -> str:
+    """From the position of a ``NAME=(`` / ``NAME+=(`` match, return through the
+    matching close paren, tracking depth so a nested ``$(...)`` command substitution
+    (e.g. ``-e HOST_UID="$(id -u)"``) doesn't end the match early."""
+    idx = text.index("(", assign_start)
+    depth = 0
+    for i in range(idx, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[assign_start : i + 1]
+    return text[assign_start:]
+
+
+def _assignment_value(text: str, assign_start: int) -> str:
+    """From the position of a ``NAME=`` match, return the whole assignment: a
+    parenthesised array (depth-balanced), a quoted string, or a bare word."""
+    eq_idx = text.index("=", assign_start)
+    after = eq_idx + 1
+    if after < len(text) and text[after] == "(":
+        return _balanced_paren_assignment(text, assign_start)
+    if after < len(text) and text[after] in "\"'":
+        quote = text[after]
+        end = text.find(quote, after + 1)
+        if end == -1:
+            return text[assign_start:]
+        return text[assign_start : end + 1]
+    end = after
+    while end < len(text) and text[end] not in " \t\r\n\\":
+        end += 1
+    return text[assign_start:end]
+
+
+def docker_host_scope(src: str) -> str:
+    """The ``docker run`` command text plus any variable or bash array it expands
+    (e.g. a ``RUN_ARGS=( ... -e HOST_UID=... )`` array referenced as
+    ``"${RUN_ARGS[@]}"``, or a plain ``EXTRA_ARGS="-e HOST_UID=..."`` string
+    referenced as ``$EXTRA_ARGS``), restricted to text that precedes the container
+    call.
+
+    This is the only text host-side requirements (like forwarding HOST_UID/HOST_GID
+    into the container) may be satisfied from. A heredoc stage line that merely
+    echoes ``-e HOST_UID=...`` is never part of the host invocation and must not
+    count: the container never actually receives it.
+    """
+    cmd = docker_run_command(src)
+    if cmd is None:
+        return ""
+    text, start, _end = cmd
+    preamble = src[:start]
+    scope = text
+    for name in set(re.findall(r"\$\{?(\w+)(?:\[@\])?\}?", text)):
+        for m in re.finditer(rf"^[ \t]*{re.escape(name)}\+?=", preamble, re.M):
+            scope += "\n" + _assignment_value(preamble, m.start())
+    return scope
 
 
 def quoted_stage_body(src: str) -> str:
@@ -509,7 +576,7 @@ def quoted_stage_body(src: str) -> str:
     cmd = docker_run_command(src)
     if cmd is None:
         return ""
-    text, after = cmd
+    text, _start, after = cmd
     if re.search(r"<<\s*'STAGE'", text) is None:
         return ""
     head = src[max(after, text.find("STAGE") if False else after):]
@@ -555,7 +622,7 @@ def check_script(path: str = SH_PATH) -> list[str]:
     if cmd is None:
         problems.append(f"{path}: must contain exactly one docker run invocation")
     else:
-        text, after = cmd
+        text, _start, after = cmd
         hd = re.search(r"<<(?!-)(\s*)(?P<delim>'STAGE'|\"STAGE\"|\\STAGE|STAGE)(?![A-Za-z0-9_])", text)
         if not hd or hd.group("delim") == "STAGE":
             problems.append(f"{path}: docker stage must be a quoted heredoc on docker run (<<'STAGE' ... STAGE)")
@@ -577,7 +644,8 @@ def check_script(path: str = SH_PATH) -> list[str]:
                 problems.append(f"{path}: -p 8888:8888 must not be set in --nb/-c|--cmd branches")
             else:
                 problems.append(f"{path}: -p 8888:8888 may only be published for lab mode: {line.strip()}")
-    if "-e HOST_UID=" not in requirement_clean or "-e HOST_GID=" not in requirement_clean:
+    host_scope = docker_host_scope(requirement_clean)
+    if "-e HOST_UID=" not in host_scope or "-e HOST_GID=" not in host_scope:
         problems.append(f"{path}: docker run must pass HOST_UID/HOST_GID environment variables")
     if not re.search(r"chown\s+\S*\$\{?HOST_UID\}?:\$\{?HOST_GID\}?", stage_text):
         problems.append(f"{path}: stage must chown the executed notebook with HOST_UID/HOST_GID")
@@ -612,7 +680,26 @@ CHECKS = {
 }
 
 
+KNOWN_FLAGS = ("--sync", "--check-sync", "--self-test", "--print")
+
+
 def main(argv: list[str]) -> int:
+    # Reject any flag outside the documented contract, and reject combining more than
+    # one mode flag, before anything else runs — a typo must never silently fall
+    # through to a passing selector-only invocation (e.g. "data --bogus" => PASS data).
+    flags = [a for a in argv if a.startswith("--")]
+    unknown = [f for f in flags if f not in KNOWN_FLAGS]
+    if unknown:
+        print(f"FAIL unknown flag {unknown[0]!r}; choices: {sorted(KNOWN_FLAGS)}", file=sys.stderr)
+        return 2
+    mode_flags = sorted(set(f for f in flags if f in KNOWN_FLAGS))
+    if len(mode_flags) > 1:
+        print(
+            f"FAIL at most one of {sorted(KNOWN_FLAGS)} may be given, got {mode_flags}",
+            file=sys.stderr,
+        )
+        return 2
+
     # Handle --print PATH specially since it takes an argument
     if "--print" in argv:
         try:
@@ -627,8 +714,7 @@ def main(argv: list[str]) -> int:
         except (IOError, OSError) as e:
             print(f"FAIL --print {path}: {e}", file=sys.stderr)
             return 1
-    
-    flags = [a for a in argv if a.startswith("--")]
+
     selectors = [a for a in argv if not a.startswith("--")]
     if "--sync" in flags or "--check-sync" in flags or "--self-test" in flags:
         import test_gfs_docker_checks as fixture

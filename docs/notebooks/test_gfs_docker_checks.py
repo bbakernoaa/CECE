@@ -581,3 +581,53 @@ def test_markdown_cells_render_as_markdown_not_commented_text(tmp_path):
         for kind, src in C.parse_cells(C.PY_PATH):
             if kind == "markdown":
                 assert not any(ln.startswith("# #") for ln in src.splitlines()), src[:60]
+
+
+def test_second_docker_run_invocation_is_rejected(tmp_path):
+    """A second, unchecked docker run call must not slip through just because the
+    first one looks fine: every requirement before this fix was only ever evaluated
+    against the first match, so a smuggled second call was invisible."""
+    script = plan_shaped_script() + '\ndocker run bad bash <<\'STAGE\'\necho bad\nSTAGE\n'
+    sh = tmp_path / "two-docker-runs.sh"
+    sh.write_text(script)
+    found = C.check_script(str(sh))
+    assert found
+    assert any("exactly one docker run" in x for x in found), found
+
+
+def test_host_uid_forged_inside_stage_is_rejected(tmp_path):
+    """HOST_UID/HOST_GID must come from the host-side RUN_ARGS array that docker run
+    actually expands, not from a stage line that merely echoes the same text: the
+    container never receives an echoed value, and the stage's own chown then fails
+    under 'set -u', leaving the executed notebook root-owned."""
+    script = plan_shaped_script().replace(
+        '    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)")', ")"
+    ).replace(
+        f'    chown "${{HOST_UID}}:${{HOST_GID}}" "${{NOTEBOOK}}" 2>/dev/null || true',
+        '    echo "-e HOST_UID=1 -e HOST_GID=1"\n'
+        f'    chown "${{HOST_UID}}:${{HOST_GID}}" "${{NOTEBOOK}}" 2>/dev/null || true',
+    )
+    sh = tmp_path / "forged-hostuid.sh"
+    sh.write_text(script)
+    found = C.check_script(str(sh))
+    assert any("HOST_UID/HOST_GID" in x for x in found), found
+
+
+def test_main_rejects_unknown_flag(capsys):
+    assert C.main(["data", "--bogus"]) == 2
+    err = capsys.readouterr().err
+    assert "unknown flag" in err and "--bogus" in err
+
+
+def test_main_rejects_unknown_flag_after_print(tmp_path, capsys):
+    path = tmp_path / "f.txt"
+    path.write_text("hello")
+    assert C.main(["--print", str(path), "--bogus"]) == 2
+    err = capsys.readouterr().err
+    assert "unknown flag" in err and "--bogus" in err
+
+
+def test_main_rejects_conflicting_mode_flags(capsys):
+    assert C.main(["--sync", "--check-sync"]) == 2
+    err = capsys.readouterr().err
+    assert "at most one of" in err
