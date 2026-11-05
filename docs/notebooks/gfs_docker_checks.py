@@ -477,18 +477,52 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
-_DOCKER_RUN_RE = re.compile(r"(?:^|[;&|`(]|\$\()\s*docker\s+run\b")
+_DOCKER_RUN_RE = re.compile(r"(?<![-\w])docker\s+run\b(?![-\w])")
+
+
+def _unquoted_view(text: str) -> str:
+    """Blank out quoted spans so words inside quotes cannot look like commands.
+
+    Escaped characters inside double quotes are kept in step so `\"docker` does not
+    flip the quote state.
+    """
+    out = []
+    quote = None
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote is None:
+            if ch in ("'", '"'):
+                quote = ch
+                out.append(" ")
+            else:
+                out.append(ch)
+        else:
+            if ch == "\\" and quote == '"':
+                out.append(" ")
+                if i + 1 < len(text) and text[i + 1] == '"':
+                    out.append(" ")
+                    i += 2
+                    continue
+            elif ch == quote:
+                quote = None
+                out.append(" ")
+            else:
+                out.append(" ")
+        i += 1
+    return "".join(out)
 
 
 def docker_run_in_line(line: str) -> bool:
     """True if the line contains an *executable* ``docker run``, not just the words.
 
-    A line-start match is not enough: `ignored=$(docker run --rm evil sh -c '...')`
-    starts a container from the middle of a line, and a second unchecked invocation
-    would let every requirement below be satisfied by the first. Comments and quoted
-    text are excluded by the caller, which passes comment-stripped source.
+    A line-start match is not enough: `ignored=$(docker run --rm evil ...)` starts a
+    container from mid-line, and `if docker run ...; then` hides one behind a shell
+    keyword. Either would let a second, unreviewed invocation slip past the
+    exactly-one rule while the compliant call satisfied every requirement. Quoted
+    text is blanked first, so usage prose that merely names the command does not count.
     """
-    return bool(_DOCKER_RUN_RE.search(line))
+    return bool(_DOCKER_RUN_RE.search(_unquoted_view(line)))
 
 
 def docker_run_command(src: str) -> tuple[str, int, int] | None:
