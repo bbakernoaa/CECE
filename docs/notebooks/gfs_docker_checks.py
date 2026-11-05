@@ -398,6 +398,7 @@ SH_STAGES = [
     (r"'numpy<3'", "numpy 3 breaks grib2io and xarray here"),
     (r"pybind11", "conda pybind11 avoids the FetchContent /usr/include/python3.12 failure"),
     (r"fsspec", "MONETIO reader registry imports fsspec even for local files, and --no-deps will not pull it"),
+    (r"cartopy", "§6 draws Natural Earth coastlines/borders behind the dust so the geography is readable"),
     (r"extern/helm/libs/axis", "axis-regrid provides regrid_rectilinear"),
     (r"--no-deps.*monetio|monetio.*--no-deps", "MONETIO must not upgrade numpy under the bindings"),
     (r"noaa-oar-arl/monetio", "the only clonable MONETIO remote (NOAA-EMC prompts for credentials)"),

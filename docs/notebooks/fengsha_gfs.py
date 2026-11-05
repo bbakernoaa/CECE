@@ -365,7 +365,12 @@ def build_report(rows, title):
     print(f"\n{title}")
     print(f"{'quantity':<26}{'value':>18}")
     for key, value in rows.items():
-        text = f"{value:.3f}" if isinstance(value, float) else str(value)
+        # Exponential for the small physically-interesting quantities: a dust flux of 1.68e-06
+        # kg m-2 s-1 printed with %.3f is "0.000", which reads as "no emission" instead.
+        if isinstance(value, float) and 0.0 < abs(value) < 1e-3:
+            text = f"{value:.3e}"
+        else:
+            text = f"{value:.3f}" if isinstance(value, float) else str(value)
         print(f"{key:<26}{text:>18}")
 
 
@@ -390,3 +395,197 @@ build_report({
     "air density max kg/m3": STATS["rho_max"],
     "threshold max m/s": STATS["uthres_max"],
 }, title=f"f{CASE['leads'][0]:03d} input provenance ({CASE['thresholds'][0]})")
+
+# %% [markdown]
+# ## 5. FENGSHA runs: four leads × two threshold sets
+#
+# Eight independent column loads — the scheme is single-column, so a lead change is only a change of
+# GFS forcing, and the two threshold sets differ only in which climatology supplies `threshold_velocity`.
+# Each run uses a fresh `Model`, because CECE keeps scheme state between steps.
+
+# %%
+import time
+
+
+def run_case(lead, threshold):
+    """One Model(["fengsha"]) step on one lead. Returns (emissions, per-bin kg/s, seconds)."""
+    fields, stats = build_inputs(lead, threshold)
+    with Model(["fengsha"], grid=GRID, options={"fengsha": dict(KOK)}) as model:
+        model.set_inputs(fields)
+        started = time.perf_counter()
+        out = model.step(time=float(LEADS[lead]["lead_s"]), dt=CASE["dt"])
+        elapsed = time.perf_counter() - started
+    em = out["fengsha_dust_emissions"]
+    arr = np.asarray(em, dtype=float)
+    assert arr.shape == (181, 360, len(KOK["particle_radii"])), arr.shape
+    assert bool(np.isfinite(arr).all()) and float(arr.min()) >= 0.0, "emissions must be finite and >= 0"
+    weighted = arr * WEIGHT[..., None]  # kg/s per (column, size)
+    per_bin = weighted.sum(axis=(0, 1))  # kg/s per size bin
+    flux_col = arr.sum(axis=2)  # kg m-2 s-1 per column, all sizes summed
+    colsum = weighted.sum(axis=2)  # kg/s per column
+    total = float(per_bin.sum())
+    run_stats = dict(stats)
+    run_stats.update(
+        total_kg_s=total,
+        emitting_cols=int((colsum > 0).sum()),
+        # The peak *flux* (per area) is what the column label claims; the peak load (per column)
+        # is the area-weighted sibling. Reporting colsum.max() under a kg m-2 s-1 label gave a
+        # four-digit number that no dust emission can be.
+        peak_kg_m2_s=float(flux_col.max()),
+        peak_kg_s=float(colsum.max()),
+        seconds=elapsed,
+    )
+    index = int(np.argmax(flux_col))
+    run_stats["peak_lat"] = float(LAT1[index // len(LON1)])
+    run_stats["peak_lon"] = float(LON1[index % len(LON1)])
+    return arr, per_bin, run_stats
+
+
+# %%
+RESULTS = {}
+for threshold in CASE["thresholds"]:
+    for lead in CASE["leads"]:
+        RESULTS[(threshold, lead)] = run_case(lead, threshold)
+
+em0, bins0, st0 = RESULTS[(CASE["thresholds"][0], CASE["leads"][0])]
+build_report({
+    "threshold set": CASE["thresholds"][0],
+    "total kg/s": st0["total_kg_s"],
+    "emitting columns": st0["emitting_cols"],
+    "peak flux kg m-2 s-1": st0["peak_kg_m2_s"],
+    "peak load kg/s": st0["peak_kg_s"],
+    "peak latitude": st0["peak_lat"],
+    "peak longitude": st0["peak_lon"],
+    "column load s": st0["seconds"],
+    "bin 1 kg/s": float(bins0[0]),
+    "bin 5 kg/s": float(bins0[-1]),
+}, title=f"f{CASE['leads'][0]:03d} emission report ({CASE['thresholds'][0]})")
+
+# The two threshold sets must actually differ — if they do not, the climatology variable was ignored.
+IDENTICAL = all(
+    np.array_equal(RESULTS[(CASE["thresholds"][0], lead)][0], RESULTS[(CASE["thresholds"][1], lead)][0])
+    for lead in CASE["leads"]
+)
+assert not IDENTICAL, "uthres and uthres_sg gave identical emissions"
+
+print(f"\n{'set':<10}{'lead':>6}{'total kg/s':>14}{'emitting':>10}{'peak kg m-2 s-1':>18}{'s':>7}")
+for (threshold, lead), (_, _, st) in RESULTS.items():
+    print(f"{threshold:<10}{f'f{lead:03d}':>6}{st['total_kg_s']:>14.3e}{st['emitting_cols']:>10}"
+          f"{st['peak_kg_m2_s']:>18.3e}{st['seconds']:>7.2f}")
+
+# %% [markdown]
+# ## 6. Maps
+#
+# Geography, not magnitude: this path is a data-pipeline demonstration. The Sahel column that lights up
+# in the emissions panel is the same one the climatology flags as the most erodible in the world.
+#
+# Overlays use Cartopy's Natural Earth shapefiles (cached under $XDG_DATA_HOME/cartopy on the
+# `/cache` volume after the first run). Coastlines and political borders are drawn with the
+# 50 m dataset: crisp enough at 1°/°subpanel scale and ~1 MB, so no ~60 MB 10 m download.
+
+# %%
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import matplotlib.pyplot as plt
+
+# The launcher runs the kernel with MPLBACKEND=Agg so a headless `python file.py` works, but Agg
+# alone never *displays* a figure: nbconvert captures nothing. Switch to inline when there is a
+# shell, and stay on Agg when the file is executed as a plain script.
+try:
+    get_ipython().run_line_magic("matplotlib", "inline")  # noqa: F821
+    _INLINE = True
+except NameError:
+    _INLINE = False
+
+FIGSIZE = (11, 8)
+WEST, EAST, SOUTH, NORTH = -25.0, 15.0, 10.0, 32.0  # the Sahel band FENGSHA cares about in November
+PC = ccrs.PlateCarree()  # the model grid is already lon/lat, so the plot CRS = the data CRS
+
+
+def extent():
+    """Pixel edges for imshow on a node-centred 1-degree grid."""
+    return [float(LON1[0]) - 0.5, float(LON1[-1]) + 0.5, float(LAT1[-1]) - 0.5, float(LAT1[0]) + 0.5]
+
+
+def geo_overlays(ax, *, borders=False, labels=False):
+    """Natural Earth coastlines (+ optionally country borders) over a PlateCarree panel.
+
+    Coast white with a dark underlay so they read on any cmap, from Greys land-mask (light) to
+    magma (dark). Called on each panel once; shapefiles are lazily loaded from the volume cache.
+    """
+    ax.coastlines(resolution="50m", linewidth=0.9, color="0.1", zorder=3)
+    ax.coastlines(resolution="50m", linewidth=0.4, color="white", zorder=4)
+    if borders:
+        ax.add_feature(cfeature.BORDERS.with_scale("50m"), linewidth=0.4,
+                       edgecolor="0.3", facecolor="none", zorder=3)
+    gl = ax.gridlines(crs=PC, linewidth=0.3, color="0.5", alpha=0.35, linestyle=(0, (2, 3)),
+                      draw_labels=labels, x_inline=False, y_inline=False, zorder=2)
+    if labels:
+        gl.top_labels = False
+        gl.right_labels = False
+        # leave gl.xformatter / gl.yformatter alone so cartopy's default degrees Formatter stays.
+        # Assigning None here looks harmless but crashes draw(): geoaxes calls formatter.set_locs().
+
+
+fig, axes = plt.subplots(2, 2, figsize=FIGSIZE, subplot_kw={"projection": PC})
+panels = (
+    ("threshold velocity m/s", np.asarray(UTHRES), "magma", None),
+    ("friction velocity m/s", np.asarray(FIELDS["friction_velocity"]), "turbo", 0.0),
+    ("snow fraction", np.asarray(FIELDS["snow_fraction"]), "Blues", None),
+    ("land mask used", np.asarray(FIELDS["land_mask"]), "Greys", None),
+)
+for ax, (title, array, cmap, clip) in zip(axes.ravel(), panels):
+    shown = np.ma.masked_where(array <= clip, array) if clip is not None else array
+    # `origin="upper"` still matters here: LAT1 descends from +90, so row 0 of `shown` must be
+    # drawn at the top or the whole panel mirrors north-south. Cartopy only fixes the projection;
+    # pixel row order is still imshow's, and the extent() pair is (lon-, lat+) top-left in LAT1[0].
+    ax.imshow(shown, origin="upper", extent=extent(), transform=PC, cmap=cmap, aspect="auto")
+    ax.set_global()
+    geo_overlays(ax, labels=True)
+    ax.set_title(title, pad=1)
+fig.tight_layout()
+if _INLINE:  # a bare `fig` expression would ALSO emit an execute_result next to the image
+    plt.show()
+
+# %%
+fig2, axes2 = plt.subplots(
+    2, 4, figsize=(15, 7), sharex=True, sharey=True, subplot_kw={"projection": PC}
+)
+LON_MESH, LAT_MESH = np.meshgrid(LON1, LAT1)
+for row, threshold in enumerate(CASE["thresholds"]):
+    for col, lead in enumerate(CASE["leads"]):
+        ax = axes2[row, col]
+        array = RESULTS[(threshold, lead)][0].sum(axis=-1)
+        mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
+                             cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
+        ax.set_extent([WEST, EAST, SOUTH, NORTH], crs=PC)
+        # one graticule per column, one label set per edge — a 2x4 of labelled panels is noise
+        geo_overlays(ax, borders=True, labels=(col == 0 and row == 1))
+        ax.set_title(f"{threshold} f{lead:03d}  {array.max():.1e} kg m-2 s-1", pad=1)
+fig2.suptitle("FENGSHA dust emissions, Sahel zoom (Natural Earth 50 m coastlines + borders)")
+# tight_layout *before* the colourbar: with the colourbar axes already present matplotlib warns
+# "Axes that are not compatible with tight_layout", and the warning lands in the committed output.
+fig2.tight_layout()
+fig2.colorbar(mesh, ax=axes2, fraction=0.03, pad=0.02)
+print(f"{len(RESULTS)} cases mapped; peak Sahel cell is where the climatology threshold is lowest")
+if _INLINE:
+    plt.show()
+
+# %% [markdown]
+# ## 7. Known limitations of this path
+#
+# - **`erodibility = 1` everywhere.** The BES/dry-deposition erodibility field is not available here, so
+#   every soil-defined land cell is treated as fully erodible. The relative geography is right; the
+#   absolute flux is an upper bound for the grid cell.
+# - **Frozen soil is a cliff, not a threshold.** About two thirds of the land columns have a top soil
+#   layer at or below 273.15 K, and the scheme suppresses emission in frozen columns; the 1° GFS soil
+#   level cannot resolve the diurnal skin/soil split that a 12z desert column actually has.
+# - **`lake_fraction = 0`.** Great Salt Lake / Caspian-type sources are not masked out.
+# - **Nearest, not conservative.** A model cell is described by one 0.1° climatology cell; the desert
+#   edges therefore step instead of blending. `land_mask` is zeroed wherever the 15 km sheet has no soil
+#   data, so roughly two thirds of the GFS land columns never run.
+# - **`u*` comes from GFS `FRICV`.** It is not recomputed from the 10 m wind, so this notebook cannot
+#   exercise the scheme's internal friction-velocity inversion.
+# - **The atmosphere is ideal gas and `pressure`/`temperature` are the GFS surface fields.** No moisture
+#   correction, so `air_density` is a few tenths of a percent low over humid oceans — those columns are masked.
+# - **`time = lead seconds`** is passed to the step, not to the clock; FENGSHA ignores it.

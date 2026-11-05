@@ -98,6 +98,10 @@ RUN_ARGS=(--rm -i --platform linux/arm64
     -e NOTEBOOK="$NOTEBOOK" -e DATA_HELPER="$DATA_HELPER"
     -e CECE_PYTHONPATH=/cache/build/src/python -e PYTHONPATH=/cache/build/src/python
     -e GFS_CACHE=/cache/gfs -e MPLBACKEND=Agg -e OMP_NUM_THREADS="${OMP_NUM_THREADS:-10}"
+    # Cartopy downloads the Natural Earth shapefiles lazily into $XDG_DATA_HOME/cache/cartopy.
+    # Default points at /root/.local/share, which dies with the container; /cache is a volume, so
+    # one warm run populates it and every subsequent run draws offline.
+    -e XDG_DATA_HOME=/cache/xdg
     -e REBUILD="$REBUILD" -e SKIP_BUILD="$SKIP_BUILD"
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)")
 if [ "$MODE" = lab ]; then RUN_ARGS+=(-p "$PORT:8888"); fi
@@ -126,7 +130,7 @@ if [ ! -d /env/envs/"${ENV_NAME}" ]; then
     echo "[env] conda solve (minutes)"
     /env/bin/micromamba create -y -q -n "${ENV_NAME}" -c conda-forge --override-channels \
         python=3.12 'numpy<3' grib2io xarray netcdf4 pandas scipy pyyaml matplotlib-base \
-        ipykernel jupyterlab nbconvert pip pybind11 fsspec >/dev/null
+        ipykernel jupyterlab nbconvert pip pybind11 fsspec cartopy >/dev/null
 fi
 # Tripwire for the failure class above: an env that landed somewhere else looks like success.
 [ -x "$PY" ] || { echo "[env] FATAL: $PY missing after create (root prefix ${MAMBA_ROOT_PREFIX})" >&2; exit 1; }
@@ -140,6 +144,12 @@ if ! RUN "$PY" -c 'import fsspec' 2>/dev/null; then
     # `pip install --no-deps` deliberately skipped it.
     echo "[env] fsspec (MONETIO reader registry imports it even for local files)"
     micromamba install -y -q -n "${ENV_NAME}" -c conda-forge --override-channels fsspec >/dev/null
+fi
+if ! RUN "$PY" -c 'import cartopy' 2>/dev/null; then
+    # §6 draws Natural Earth coastlines/borders behind the dust so the geography is readable;
+    # an env built before cartopy was in the create list needs it added in place.
+    echo "[env] cartopy (land boundaries on the dust maps)"
+    micromamba install -y -q -n "${ENV_NAME}" -c conda-forge --override-channels cartopy >/dev/null
 fi
 if ! RUN "$PY" -c 'import monetio' 2>/dev/null; then
     echo "[env] MONETIO ${MONETIO_SHA:0:7}"
