@@ -730,3 +730,30 @@ def test_operators_inside_quotes_are_not_command_separators(tmp_path):
     sh = tmp_path / "quoted-ops.sh"
     sh.write_text(script)
     assert C.check_script(str(sh)) == []
+
+
+def test_docker_run_in_double_quoted_substitution_is_counted(tmp_path):
+    # bash expands and runs $( ) / backticks inside double quotes
+    sh = tmp_path / "gfs-docker.sh"
+    for hidden in (
+        'echo "$(docker run --rm evil true)"',
+        'echo "`docker run --rm evil true`"',
+        'ignored=$(docker run --rm evil sh -c "x")',
+        'X="$(docker run --rm evil true)"',
+    ):
+        sh.write_text(minimal_good_script() + "\n" + hidden + "\n")
+        problems = C.check_script(str(sh))
+        assert any("exactly one docker run" in p for p in problems), (hidden, problems)
+
+
+def test_docker_run_text_inside_double_quotes_is_not_a_call(tmp_path):
+    sh = tmp_path / "gfs-docker.sh"
+    for prose in (
+        'echo "we use docker run once"',
+        'echo "docker run; docker run"',
+        'printf %s "x && docker run"',
+        'echo "a; docker run b"',
+    ):
+        sh.write_text(minimal_good_script() + "\n" + prose + "\n")
+        problems = C.check_script(str(sh))
+        assert problems == [], (prose, problems)

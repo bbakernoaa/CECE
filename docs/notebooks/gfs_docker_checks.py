@@ -478,7 +478,7 @@ def branch_block(src: str, label: str) -> str:
 
 
 _DOCKER_RUN_RE = re.compile(
-    r"(?:^[ \t]*|[;&|]\s*|\(\s*|\$\(\s*"
+    r"(?:^[ \t]*|[;&|]\s*|\(\s*|\$\(\s*|`\s*"
     r"|(?:(?:^|(?<=\s))(?:if|then|else|elif|while|until|for|do|time|!)\s+)"
     r"|(?:(?:^|(?<=\s))\w+=\S*\s+))"
     r"(?:[\w.$@/-]+/)?docker\s+run\b(?![-\w])",
@@ -491,44 +491,80 @@ _OP_FILLER = "x"
 
 
 def _shell_word_view(text: str) -> str:
-    """Rebuild the words bash would see, keeping quote *context*.
+    """Rebuild the words bash would see, honouring each quoting level.
 
     Quoting is not invisible to a command word: bash runs ``d''ocker run``,
-    ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so the quote
-    delimiters themselves are dropped and adjacent fragments join into one word.
-    But characters *inside* quotes are literal, never operators or word breaks:
-    ``echo "docker run; docker run"`` starts no container. So inside a quoted span
-    whitespace becomes a non-space filler and shell operators become an ordinary
-    letter, which keeps separators, redirections and substitutions available only
-    where bash would honour them.
+    ``do"cker" run`` and ``"docker" run`` exactly like ``docker run``, so quote
+    delimiters are dropped and adjacent fragments join into one word. What each level
+    hides differs:
+
+    * inside single quotes nothing is active, so ``echo 'docker run; docker run'``
+      starts no container: whitespace and every operator become fillers;
+    * inside double quotes whitespace still cannot split a word and ``;``/``|``/``&&``
+      stay literal, but ``$( )`` and backtick substitutions *do* execute, so
+      ``echo "$(docker run --rm evil true)"`` is a real second invocation and the
+      interior of the substitution is scanned with normal word splitting.
     """
     out = []
+    stack = []          # quote state per open nesting level ('", "'", or None)
     quote = None
     i = 0
-    while i < len(text):
+    n = len(text)
+    while i < n:
         ch = text[i]
-        if quote is None:
-            if ch == "\\" and i + 1 < len(text):
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if ch in ("'", '"'):
-                quote = ch
-            else:
-                out.append(ch)
-        else:
-            if ch == "\\" and quote == '"' and i + 1 < len(text):
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-            elif ch.isspace():
+        if ch == "\\" and i + 1 < n and not (quote == "'"):
+            out.append(text[i + 1])
+            i += 2
+            continue
+        if quote == "`" and ch != "`":
+            out.append(ch)  # inside a backtick substitution anything can start a command
+            i += 1
+            continue
+        if quote == "'" and ch != "'":
+            out.append(_QUOTE_FILLER if (ch.isspace() or ch in "&|;<>!$`()") else ch)
+            i += 1
+            continue
+        if quote == '"' and ch not in('"', "$", "`"):
+            if ch.isspace():
                 out.append(_QUOTE_FILLER)
-            elif ch in "&|;<>()$`":
+            elif ch in "&|;<>!":
                 out.append(_OP_FILLER)
             else:
                 out.append(ch)
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            if quote == ch:
+                quote = stack.pop() if stack else None
+            else:
+                if quote is not None:
+                    stack.append(quote)
+                quote = ch
+            i += 1
+            continue
+        if ch == "$" and i + 1 < n and text[i + 1] == "(":
+            if quote is not None:
+                stack.append(quote)
+            quote = None
+            out.append("$( ")  # becomes a command opener for the regex, spaces matter not
+            i += 2
+            continue
+        if ch == "`":
+            if quote == "`":
+                quote = stack.pop() if stack else None
+            else:
+                if quote is not None:
+                    stack.append(quote)
+                quote = "`"
+                out.append("` ")  # substitution interior: normal word splitting
+            i += 1
+            continue
+        if ch == ")" and stack:
+            quote = stack.pop()
+            out.append(ch)
+            i += 1
+            continue
+        out.append(ch)
         i += 1
     return "".join(out)
 
