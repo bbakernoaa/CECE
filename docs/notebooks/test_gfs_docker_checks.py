@@ -124,6 +124,47 @@ def script_with_unquoted_docker_and_quoted_decoy() -> str:
     )
 
 
+
+
+def script_with_commented_stage_body() -> str:
+    lines = minimal_good_script().splitlines()
+    out: list[str] = []
+    in_stage = False
+    for line in lines:
+        if "docker run" in line and "<<'STAGE'" in line:
+            in_stage = True
+            out.append(line)
+            continue
+        if in_stage and line.strip() == "STAGE":
+            in_stage = False
+            out.append(line)
+            continue
+        if in_stage:
+            out.append(f"# {line}" if line else "#")
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def script_with_noop_stage_body() -> str:
+    lines = minimal_good_script().splitlines()
+    out: list[str] = []
+    in_stage = False
+    for line in lines:
+        if "docker run" in line and "<<'STAGE'" in line:
+            in_stage = True
+            out.append(line)
+            continue
+        if in_stage and line.strip() == "STAGE":
+            in_stage = False
+            out.append(line)
+            continue
+        if in_stage and line.strip() and not line.lstrip().startswith("#"):
+            out.append(f": {line}   # kept for the checker")
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
 def check_self_test_contracts(tmp: str) -> list[str]:
     import json
 
@@ -160,10 +201,14 @@ def check_self_test_contracts(tmp: str) -> list[str]:
     sh_comment_only = os.path.join(tmp, "comment-only.sh")
     sh_spaced_ok = os.path.join(tmp, "spaced-ok.sh")
     sh_spaced_bad = os.path.join(tmp, "spaced-bad.sh")
+    sh_stage_commented = os.path.join(tmp, "stage-commented.sh")
+    sh_stage_noop = os.path.join(tmp, "stage-noop.sh")
     write(sh_good, minimal_good_script())
     write(sh_comment_only, comments_only_script())
     write(sh_spaced_ok, spaced_branch_script(False))
     write(sh_spaced_bad, spaced_branch_script(True))
+    write(sh_stage_commented, script_with_commented_stage_body())
+    write(sh_stage_noop, script_with_noop_stage_body())
 
     if C.check_script(sh_good):
         problems.append("minimal structurally-correct script was rejected")
@@ -173,6 +218,10 @@ def check_self_test_contracts(tmp: str) -> list[str]:
         problems.append("spaced branch labels were not accepted")
     if not C.check_script(sh_spaced_bad):
         problems.append("spaced cmd branch with port was not rejected")
+    if not C.check_script(sh_stage_commented):
+        problems.append("commented-out stage body script was not rejected")
+    if not C.check_script(sh_stage_noop):
+        problems.append("no-op neutered stage body script was not rejected")
 
     aonly_py = os.path.join(tmp, "assert-comments.py")
     aonly_nb = os.path.join(tmp, "assert-comments.ipynb")
@@ -378,3 +427,23 @@ def test_unquoted_docker_heredoc_is_not_accepted_by_decoy_quoted_block(tmp_path)
     sh.write_text(script_with_unquoted_docker_and_quoted_decoy())
     found = C.check_script(str(sh))
     assert any("docker stage" in p for p in found)
+
+
+def test_commented_stage_body_is_rejected(tmp_path):
+    sh = tmp_path / "commented-stage.sh"
+    sh.write_text(script_with_commented_stage_body())
+    found = C.check_script(str(sh))
+    assert found
+
+
+def test_noop_neutered_stage_body_is_rejected(tmp_path):
+    sh = tmp_path / "noop-stage.sh"
+    sh.write_text(script_with_noop_stage_body())
+    found = C.check_script(str(sh))
+    assert found
+
+
+def test_minimal_good_script_still_passes(tmp_path):
+    sh = tmp_path / "good.sh"
+    sh.write_text(minimal_good_script())
+    assert C.check_script(str(sh)) == []

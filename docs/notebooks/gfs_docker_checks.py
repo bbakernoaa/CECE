@@ -397,12 +397,16 @@ SH_STAGES = [
 ]
 
 
-def strip_shell_comments(src: str) -> str:
+def strip_shell_comments(src: str, *, strip_heredoc_body_comments: bool = False) -> str:
     out = []
     heredoc_end = None
     for i, line in enumerate(src.splitlines()):
         if heredoc_end is not None:
-            out.append(line)
+            body_clean = _strip_inline_comment_outside_quotes(line) if strip_heredoc_body_comments else line
+            if body_clean.lstrip().startswith("#"):
+                body_clean = ""
+            if body_clean.strip() != "" or line.strip() == heredoc_end:
+                out.append(body_clean if line.strip() != heredoc_end else line.strip())
             if line.strip() == heredoc_end:
                 heredoc_end = None
             continue
@@ -419,6 +423,15 @@ def strip_shell_comments(src: str) -> str:
             heredoc_end = m.group(2)
     return "\n".join(out) + ("\n" if src.endswith("\n") else "")
 
+
+def drop_noop_prefixed_lines(src: str) -> str:
+    kept = []
+    for line in src.splitlines():
+        stripped = line.lstrip()
+        if re.match(r"^(?::|true|false)(?:\s|$)", stripped):
+            continue
+        kept.append(line)
+    return "\n".join(kept) + ("\n" if src.endswith("\n") else "")
 
 def branch_block(src: str, label: str) -> str:
     label_pat = r"\s*\|\s*".join(re.escape(part.strip()) for part in label.split("|"))
@@ -437,6 +450,7 @@ def check_script(path: str = SH_PATH) -> list[str]:
     except OSError:
         return [f"{path}: missing"]
     clean = strip_shell_comments(src)
+    requirement_clean = drop_noop_prefixed_lines(strip_shell_comments(src, strip_heredoc_body_comments=True))
     if not src.startswith("#!/usr/bin/env bash"):
         problems.append(f"{path}: must start with #!/usr/bin/env bash")
     if "set -euo pipefail" not in clean:
@@ -445,13 +459,13 @@ def check_script(path: str = SH_PATH) -> list[str]:
         if flag.replace(" ", "") not in clean.replace(" ", ""):
             problems.append(f"{path}: flag {flag} is not dispatched")
     for pat, why in SH_STAGES:
-        if not re.search(pat, clean, re.M):
+        if not re.search(pat, requirement_clean, re.M):
             problems.append(f"{path}: missing required stage: {pat} — {why}")
-    if re.search(r'python3? -m pip', clean):
+    if re.search(r'python3? -m pip', requirement_clean):
         problems.append(
             f"{path}: system python3 must not pip-install into the conda env — use \"$PY\" -m pip"
         )
-    docker_lines = list(re.finditer(r"^\s*docker\s+run\b.*$", clean, re.M))
+    docker_lines = list(re.finditer(r"^\s*docker\s+run\b.*$", src, re.M))
     if len(docker_lines) != 1:
         problems.append(f"{path}: must contain exactly one docker run invocation")
     else:
@@ -461,7 +475,7 @@ def check_script(path: str = SH_PATH) -> list[str]:
             problems.append(f"{path}: docker stage must be a quoted heredoc on docker run (<<'STAGE' ... STAGE)")
         else:
             docker_start = docker_lines[0].end()
-            trailing = clean[docker_start:]
+            trailing = src[docker_start:]
             if not re.search(r"^STAGE\s*$", trailing, re.M):
                 problems.append(f"{path}: docker stage heredoc from docker run is missing its STAGE terminator")
 
@@ -474,7 +488,7 @@ def check_script(path: str = SH_PATH) -> list[str]:
         problems.append(f"{path}: lab branch must publish -p 8888:8888")
     if "-e HOST_UID=" not in nb_block or "-e HOST_GID=" not in nb_block:
         problems.append(f"{path}: --nb branch must pass HOST_UID/HOST_GID environment variables")
-    if not re.search(r"chown\s+.*\$HOST_UID:\$HOST_GID.*ipynb", clean):
+    if not re.search(r"chown\s+.*\$HOST_UID:\$HOST_GID.*ipynb", requirement_clean):
         problems.append(f"{path}: stage must chown the executed notebook with HOST_UID/HOST_GID")
     return problems
 
