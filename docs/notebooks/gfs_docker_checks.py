@@ -477,6 +477,20 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
+_DOCKER_RUN_RE = re.compile(r"(?:^|[;&|`(]|\$\()\s*docker\s+run\b")
+
+
+def docker_run_in_line(line: str) -> bool:
+    """True if the line contains an *executable* ``docker run``, not just the words.
+
+    A line-start match is not enough: `ignored=$(docker run --rm evil sh -c '...')`
+    starts a container from the middle of a line, and a second unchecked invocation
+    would let every requirement below be satisfied by the first. Comments and quoted
+    text are excluded by the caller, which passes comment-stripped source.
+    """
+    return bool(_DOCKER_RUN_RE.search(line))
+
+
 def docker_run_command(src: str) -> tuple[str, int, int] | None:
     """The single ``docker run`` invocation: its text, start offset, and the offset
     just after its last line.
@@ -492,7 +506,7 @@ def docker_run_command(src: str) -> tuple[str, int, int] | None:
     first of several invocations.
     """
     lines = src.splitlines(keepends=True)
-    starts = [i for i, ln in enumerate(lines) if re.match(r"^\s*docker\s+run\b", ln)]
+    starts = [i for i, ln in enumerate(lines) if docker_run_in_line(ln)]
     if len(starts) != 1:
         return None
     i = starts[0]
@@ -579,7 +593,7 @@ def quoted_stage_body(src: str) -> str:
     text, _start, after = cmd
     if re.search(r"<<\s*'STAGE'", text) is None:
         return ""
-    head = src[max(after, text.find("STAGE") if False else after):]
+    head = src[after:]
     m = re.search(r"^[ \t]*STAGE[ \t]*\r?\n?", head, re.M)
     return head[: m.start()] if m else ""
 

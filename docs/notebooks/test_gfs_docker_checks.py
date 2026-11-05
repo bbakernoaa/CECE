@@ -631,3 +631,33 @@ def test_main_rejects_conflicting_mode_flags(capsys):
     assert C.main(["--sync", "--check-sync"]) == 2
     err = capsys.readouterr().err
     assert "at most one of" in err
+
+
+def test_docker_run_inside_command_substitution_is_rejected(tmp_path):
+    """`ignored=$(docker run ...)` starts a container from mid-line.
+
+    Anchoring the "exactly one docker run" count to line starts let a second
+    invocation hide inside a substitution while the first, compliant call absorbed
+    every requirement.
+    """
+    script = plan_shaped_script().replace(
+        'docker run "${RUN_ARGS[@]}" \\',
+        'ignored=$(docker run --rm evil sh -c "unreviewed")\ndocker run "${RUN_ARGS[@]}" \\',
+        1,
+    )
+    assert script != plan_shaped_script()
+    sh = tmp_path / "sub-docker-run.sh"
+    sh.write_text(script)
+    found = C.check_script(str(sh))
+    assert any("exactly one docker run" in x for x in found), found
+
+
+def test_quoted_mention_of_docker_run_is_not_an_invocation(tmp_path):
+    """Usage/help prose may name `docker run` without being counted as a call."""
+    script = plan_shaped_script().replace(
+        "MODE=lab", 'usage() { echo "this script uses docker run once"; }', 1
+    )
+    assert script != plan_shaped_script()
+    sh = tmp_path / "quoted-docker-mention.sh"
+    sh.write_text(script)
+    assert C.check_script(str(sh)) == []
