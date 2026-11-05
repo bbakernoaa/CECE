@@ -49,18 +49,23 @@ print(f"cache   {CACHE}")
 # %% [markdown]
 # ## 1. Configuration
 #
-# The cycle is the one used to design this notebook, so the printed output of a fresh run can be
-# compared with the design's recorded numbers. `monetio.load` needs both filter keys: without
-# `productDefinitionTemplateNumber` the GRIB reader refuses a cube that mixes instantaneous and
-# accumulation records. One file per read because merged files keep the first file's scalar
-# `validDate`/`leadTime`.
+# `gfs-docker.sh` passes `CASE_DATE` / `CASE_HOUR` / `CASE_LEADS` through as environment
+# variables, and the launcher's `--case YYYYMMDD HH LEADS` sets them, so the notebook and the
+# pre-fetch agree on a cycle. The defaults below are the cycle the design was recorded against,
+# which keeps the committed outputs stable when the notebook runs without the launcher.
+# `monetio.load` needs both filter keys: without `productDefinitionTemplateNumber` the GRIB
+# reader refuses a cube that mixes instantaneous and accumulation records. One file per read
+# because merged files keep the first file's scalar `validDate`/`leadTime`.
 
 # %%
+_LEADS_DEFAULT = [0, 3, 6, 12]
+_leads_env = os.environ.get("CASE_LEADS", "")
+_leads = [int(v) for v in _leads_env.split(",") if v.strip()] or _LEADS_DEFAULT
 CASE = {
-    "date": "20261103",
-    "hour": 12,
+    "date": os.environ.get("CASE_DATE", "20261103"),
+    "hour": int(os.environ.get("CASE_HOUR", "12")),
     "product": "pgrb2.1p00",
-    "leads": [0, 3, 6, 12],
+    "leads": _leads,
     "thresholds": ["uthres", "uthres_sg"],
     "dt": 3600.0,
     "cache_dir": CACHE,
@@ -77,6 +82,7 @@ assert CASE["hour"] in (0, 6, 12, 18), "GFS is delivered at 6-hourly cycle hours
 assert set(CASE["thresholds"]) <= {"uthres", "uthres_sg"}, "unknown threshold set"
 assert CASE["dt"] > 0, "dt must be positive seconds"
 assert CASE["product"] == "pgrb2.1p00", "only the 1-degree product is in scope here"
+print(f"case    {CASE['date']} t{CASE['hour']:02d}z leads={','.join(str(v) for v in CASE['leads'])}")
 
 KOK = {
     "particle_radii": [2.15e-6, 4.875e-6, 9.575e-6, 1.375e-4, 6.25e-4],
@@ -577,13 +583,14 @@ if _INLINE:
 # - **`erodibility = 1` everywhere.** The BES/dry-deposition erodibility field is not available here, so
 #   every soil-defined land cell is treated as fully erodible. The relative geography is right; the
 #   absolute flux is an upper bound for the grid cell.
-# - **Frozen soil is a cliff, not a threshold.** About two thirds of the land columns have a top soil
-#   layer at or below 273.15 K, and the scheme suppresses emission in frozen columns; the 1° GFS soil
-#   level cannot resolve the diurnal skin/soil split that a 12z desert column actually has.
+# - **Frozen soil is a cliff, not a threshold.** 11,456 of the 22,071 GFS land columns (52 %)
+#   have a top soil layer at or below 273.15 K, and the scheme suppresses emission in frozen
+#   columns; the 1° GFS soil level cannot resolve the diurnal skin/soil split that a 12z desert
+#   column actually has.
 # - **`lake_fraction = 0`.** Great Salt Lake / Caspian-type sources are not masked out.
-# - **Nearest, not conservative.** A model cell is described by one 0.1° climatology cell; the desert
-#   edges therefore step instead of blending. `land_mask` is zeroed wherever the 15 km sheet has no soil
-#   data, so roughly two thirds of the GFS land columns never run.
+# - **Nearest, not conservative.** A model cell is described by one 0.1° climatology cell; the
+#   desert edges therefore step instead of blending. `land_mask` is zeroed wherever the 10 km
+#   (0.1°) sheet has no soil data, so 9,248 of the 22,071 GFS land columns (42 %) never run.
 # - **`u*` comes from GFS `FRICV`.** It is not recomputed from the 10 m wind, so this notebook cannot
 #   exercise the scheme's internal friction-velocity inversion.
 # - **The atmosphere is ideal gas and `pressure`/`temperature` are the GFS surface fields.** No moisture

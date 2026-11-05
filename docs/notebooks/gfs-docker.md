@@ -9,15 +9,18 @@ image on Apple silicon; the launcher is [gfs-docker.sh](./gfs-docker.sh).
 ## What the path does
 
 1. GRIB2 files for a chosen forecast cycle are downloaded once and cached in the `/cache/gfs`
-   named volume. `--case YYYYMMDD HH LEADS` re-points the download at a different cycle; the
-   current case is 2026-11-03 t12z, leads 0, 3, 6, 12.
+   named volume. The launcher's `--case YYYYMMDD HH LEADS` exports `CASE_DATE` / `CASE_HOUR` /
+   `CASE_LEADS` into the container; the notebook's §1 reads them (§2 pre-fetches from the same
+   values), so a fresh cycle ends-to-end replaces the design case. The default is still the
+   recorded case used to write everything here — 20261103 t12z, leads 0, 3, 6, 12 — so the
+   committed notebook outputs stay reproducible without the launcher.
 2. [MONETIO](https://github.com/noaa-oar-arl/monetio)'s `gfsreader` (via `grib2io`) decodes
    them into xarray. MONETIO itself is a pinned git checkout (`67b1071e`, from
    `tests/data/interfaces/compatibility-lock.json`), installed `pip --no-deps` inside the
    env so it cannot upgrade numpy under the compiled bindings.
-3. Two NESDIS 15 km dust-source climatologies (`uthres` and `uthres_sg` for threshold
-   velocity, plus clay/sand/silt, snow, frozen-soil, lakes) are aligned onto the 1° GFS
-   grid with `axis-regrid`'s `regrid_rectilinear`, `method="nearest"`. Nearest is *not*
+3. Two NESDIS dust-source climatologies on a 0.1° (~10 km) grid — `uthres` and `uthres_sg` for
+   threshold velocity, plus clay/sand/silt, snow, frozen-soil, lakes — are aligned onto the 1°
+   GFS grid with `axis-regrid`'s `regrid_rectilinear`, `method="nearest"`. Nearest is *not*
    conservative; land edges step instead of blending — this is called out in the notebook.
 4. Fourteen FENGSHA inputs are derived per lead and stepped through `Model(["fengsha"])`.
 5. Two figures render: a 2×2 world panel of the inputs and a 2×4 Sahel emission zoom.
@@ -44,8 +47,8 @@ Additional flags can be combined with any of the above:
 | Flag | Meaning |
 |---|---|
 | `--rebuild` | discard `/cache/build`, `/cache/src`, and the stamp, and recompile `_cece_core` |
-| `--skip-build` | reuse the cached bindings (the notebook path uses this) |
-| `--case YYYYMMDD HH LEADS` | change the forecast cycle / lead list |
+| `--skip-build` | explicitly reuse the cached bindings; the default `--nb` path already skips a rebuild when the content-hash stamp matches, this makes it unconditional |
+| `--case YYYYMMDD HH LEADS` | change the forecast cycle / lead list exported to the container |
 | `--reset` | remove both named volumes next run; slow, but reproduces a fresh machine |
 
 The rebuild trigger is a content hash over `git rev-parse HEAD:src HEAD:include HEAD:cmake`
@@ -60,9 +63,9 @@ Apple silicon from measured runs:
 
 | Stage | Cold | Warm |
 |---|---|---|
-| conda solve (grib2io, xarray, MONETIO, cartopy, …) | ≈ 3 min | skipped |
+| conda solve (grib2io, xarray, cartopy, numpy<3, …) | ≈ 3 min | skipped |
 | apt + micromamba download | ≈ 20 s | skipped |
-| pip install of `axis-regrid` and pinned MONETIO | ≈ 15 s | skipped |
+| pip install of `axis-regrid` + `fsspec` + pinned MONETIO checkout | ≈ 20 s | skipped when the git SHA matches |
 | GRIB header / lead download per lead file (42–45 MB) | ≈ 15 s per lead | cached |
 | `_cece_core` cmake + ninja build | ≈ 7 min | skipped when stamp matches |
 | Cartopy Natural Earth shapefile download (50 m coast + borders) | ≈ 5 s once | cached in `/cache/xdg/cartopy` |

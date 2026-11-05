@@ -19,7 +19,6 @@ import sys
 DATA_PATH = "docs/notebooks/gfs_docker_data.py"
 KERNEL_NAME = "cece-gfs"
 CASE_KEYS = ("date", "hour", "product", "leads", "thresholds", "dt", "cache_dir", "climo_dir")
-EXPECTED_PROBLEMS = 4
 
 
 def strip_marks(text: str) -> str:
@@ -399,6 +398,7 @@ SH_STAGES = [
     (r"pybind11", "conda pybind11 avoids the FetchContent /usr/include/python3.12 failure"),
     (r"fsspec", "MONETIO reader registry imports fsspec even for local files, and --no-deps will not pull it"),
     (r"cartopy", "§6 draws Natural Earth coastlines/borders behind the dust so the geography is readable"),
+    (r"-e XDG_DATA_HOME=/cache/xdg", "Natural Earth shapefiles must cache under the volume, not the container's /root/.local/share"),
     (r"extern/helm/libs/axis", "axis-regrid provides regrid_rectilinear"),
     (r"--no-deps.*monetio|monetio.*--no-deps", "MONETIO must not upgrade numpy under the bindings"),
     (r"noaa-oar-arl/monetio", "the only clonable MONETIO remote (NOAA-EMC prompts for credentials)"),
@@ -431,6 +431,7 @@ SH_FILE_SCOPED = frozenset(
         r"--skip-build",
         r"--rebuild",
         r"gfs_docker_data\.py",
+        r"-e XDG_DATA_HOME=/cache/xdg",
     }
 )
 
