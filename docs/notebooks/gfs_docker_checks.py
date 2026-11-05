@@ -396,6 +396,24 @@ SH_STAGES = [
     (r"-m jupyter", "Lab and nbconvert must run from the env python, not apt's jupyter"),
 ]
 
+# These describe how the host invokes Docker (image, platform, env name, MONETIO pin
+# passed with -e, and the CLI escape hatches), so they legitimately live outside the
+# bootstrap heredoc. Every other stage requirement is a container instruction and is
+# checked inside the heredoc body only: scanning the whole file would let a host-side
+# decoy satisfy a requirement that the container never executes.
+SH_FILE_SCOPED = frozenset(
+    {
+        r'^IMAGE="\$\{CECE_IMAGE:-cece/cece-dev:latest\}"$',
+        r'--platform linux/arm64',
+        r'^ENV_NAME="\$\{GFS_ENV_NAME:-cece-gfs\}"$',
+        r"noaa-oar-arl/monetio",
+        r"67b1071e30bbcbf2f8853b1c6ecc432c430a8df3",
+        r"--skip-build",
+        r"--rebuild",
+        r"gfs_docker_data\.py",
+    }
+)
+
 
 def strip_shell_comments(src: str, *, strip_heredoc_body_comments: bool = False) -> str:
     out = []
@@ -443,6 +461,46 @@ def branch_block(src: str, label: str) -> str:
     return m.group(1) if m else ""
 
 
+def docker_run_command(src: str) -> tuple[str, int] | None:
+    """The single ``docker run`` invocation and the offset just after its last line.
+
+    Shell line continuations are followed, so a heredoc operator written on a
+    continuation line (the usual formatting) still belongs to the container call.
+    Returns None when no docker run line exists at all.
+    """
+    lines = src.splitlines(keepends=True)
+    starts = [i for i, ln in enumerate(lines) if re.match(r"^\s*docker\s+run\b", ln)]
+    if not starts:
+        return None
+    i = starts[0]
+    text = ""
+    while i < len(lines):
+        text += lines[i]
+        if not lines[i].rstrip("\r\n").rstrip().endswith("\\"):
+            break
+        i += 1
+    end = sum(len(ln) for ln in lines[: i + 1])
+    return text, end
+
+
+def quoted_stage_body(src: str) -> str:
+    """Body of the quoted ``STAGE`` heredoc fed to the container, or "".
+
+    An empty result means the container instructions are not inside a quoted heredoc
+    belonging to the docker run call, so every container-scoped requirement fails
+    instead of being satisfied by a host-side decoy.
+    """
+    cmd = docker_run_command(src)
+    if cmd is None:
+        return ""
+    text, after = cmd
+    if re.search(r"<<\s*'STAGE'", text) is None:
+        return ""
+    head = src[max(after, text.find("STAGE") if False else after):]
+    m = re.search(r"^[ \t]*STAGE[ \t]*\r?\n?", head, re.M)
+    return head[: m.start()] if m else ""
+
+
 def check_script(path: str = SH_PATH) -> list[str]:
     problems: list[str] = []
     try:
@@ -451,6 +509,11 @@ def check_script(path: str = SH_PATH) -> list[str]:
         return [f"{path}: missing"]
     clean = strip_shell_comments(src)
     requirement_clean = drop_noop_prefixed_lines(strip_shell_comments(src, strip_heredoc_body_comments=True))
+    # Comment/no-op stripping happens first for the whole file, then the heredoc body is
+    # sliced out, so a commented-out or ``:``-neutered container command cannot satisfy
+    # a stage requirement from inside the body either.
+    stage_body = quoted_stage_body(requirement_clean)
+    stage_text = " ".join(stage_body.splitlines())
     if not src.startswith("#!/usr/bin/env bash"):
         problems.append(f"{path}: must start with #!/usr/bin/env bash")
     if "set -euo pipefail" not in clean:
@@ -459,37 +522,51 @@ def check_script(path: str = SH_PATH) -> list[str]:
         if flag.replace(" ", "") not in clean.replace(" ", ""):
             problems.append(f"{path}: flag {flag} is not dispatched")
     for pat, why in SH_STAGES:
-        if not re.search(pat, requirement_clean, re.M):
-            problems.append(f"{path}: missing required stage: {pat} — {why}")
-    if re.search(r'python3? -m pip', requirement_clean):
+        if pat in SH_FILE_SCOPED:
+            if not re.search(pat, requirement_clean, re.M):
+                problems.append(f"{path}: missing required stage: {pat} — {why}")
+            continue
+        if not stage_text and pat not in SH_FILE_SCOPED:
+            problems.append(f"{path}: quoted docker STAGE heredoc is missing or empty, cannot check {pat}")
+            continue
+        if not re.search(pat, stage_text):
+            problems.append(f"{path}: missing required stage in the docker heredoc: {pat} — {why}")
+    if stage_body and re.search(r"python3? -m pip", stage_text):
         problems.append(
             f"{path}: system python3 must not pip-install into the conda env — use \"$PY\" -m pip"
         )
-    docker_lines = list(re.finditer(r"^\s*docker\s+run\b.*$", src, re.M))
-    if len(docker_lines) != 1:
+    cmd = docker_run_command(src)
+    if cmd is None:
         problems.append(f"{path}: must contain exactly one docker run invocation")
     else:
-        docker_line = docker_lines[0].group(0)
-        hd = re.search(r"<<(?!-)(\s*)(?P<delim>'STAGE'|\"STAGE\"|\\STAGE|STAGE)(?![A-Za-z0-9_])", docker_line)
+        text, after = cmd
+        hd = re.search(r"<<(?!-)(\s*)(?P<delim>'STAGE'|\"STAGE\"|\\STAGE|STAGE)(?![A-Za-z0-9_])", text)
         if not hd or hd.group("delim") == "STAGE":
             problems.append(f"{path}: docker stage must be a quoted heredoc on docker run (<<'STAGE' ... STAGE)")
-        else:
-            docker_start = docker_lines[0].end()
-            trailing = src[docker_start:]
-            if not re.search(r"^STAGE\s*$", trailing, re.M):
-                problems.append(f"{path}: docker stage heredoc from docker run is missing its STAGE terminator")
+        elif not re.search(r"^STAGE\s*$", src[after:], re.M):
+            problems.append(f"{path}: docker stage heredoc from docker run is missing its STAGE terminator")
 
+    # Port publishing is lab-only, however the script spells the lab condition (a
+    # "lab)" case branch or an [ "$MODE" = lab ] test on the RUN_ARGS line itself).
+    port_lines = [ln for ln in clean.splitlines() if re.search(r"-p\s+\S*8888", ln)]
+    if not port_lines:
+        problems.append(f"{path}: lab mode must publish -p 8888:8888")
     nb_block = branch_block(clean, "--nb")
     cmd_block = branch_block(clean, "-c|--cmd")
     lab_block = branch_block(clean, "lab")
-    if "-p 8888:8888" in nb_block or "-p 8888:8888" in cmd_block:
-        problems.append(f"{path}: -p 8888:8888 must not be set in --nb/-c|--cmd branches")
-    if "-p 8888:8888" not in lab_block:
-        problems.append(f"{path}: lab branch must publish -p 8888:8888")
-    if "-e HOST_UID=" not in nb_block or "-e HOST_GID=" not in nb_block:
-        problems.append(f"{path}: --nb branch must pass HOST_UID/HOST_GID environment variables")
-    if not re.search(r"chown\s+.*\$HOST_UID:\$HOST_GID.*ipynb", requirement_clean):
+    for line in port_lines:
+        lab_scoped = bool(re.search(r'[=!\[]\s*"?lab\b', line)) or line in lab_block
+        if not lab_scoped:
+            if line in nb_block or line in cmd_block:
+                problems.append(f"{path}: -p 8888:8888 must not be set in --nb/-c|--cmd branches")
+            else:
+                problems.append(f"{path}: -p 8888:8888 may only be published for lab mode: {line.strip()}")
+    if "-e HOST_UID=" not in requirement_clean or "-e HOST_GID=" not in requirement_clean:
+        problems.append(f"{path}: docker run must pass HOST_UID/HOST_GID environment variables")
+    if not re.search(r"chown\s+\S*\$\{?HOST_UID\}?:\$\{?HOST_GID\}?", stage_text):
         problems.append(f"{path}: stage must chown the executed notebook with HOST_UID/HOST_GID")
+    elif "ipynb" not in requirement_clean:
+        problems.append(f"{path}: stage must hand back the executed notebook (an .ipynb path)")
     return problems
 
 

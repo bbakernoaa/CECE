@@ -447,3 +447,113 @@ def test_minimal_good_script_still_passes(tmp_path):
     sh = tmp_path / "good.sh"
     sh.write_text(minimal_good_script())
     assert C.check_script(str(sh)) == []
+
+
+def plan_shaped_script(stage_extra: str = "", host_tail: str = "") -> str:
+    """The layout Task 4 actually writes: RUN_ARGS array, lab-conditional port, heredoc."""
+    stage = [
+        'RUN() { micromamba run -n "${ENV_NAME}" "$@"; }',
+        'PY=/env/envs/"${ENV_NAME}"/bin/python',
+        '    /env/bin/micromamba create -y -n "${ENV_NAME}" -c conda-forge --override-channels \\',
+        "        python=3.12 'numpy<3' pybind11 grib2io >/dev/null",
+        '    RUN "$PY" -m pip install -q --no-deps /work/extern/helm/libs/axis',
+        '    RUN "$PY" -m pip install -q --no-deps /cache/monetio  # noaa-oar-arl/monetio',
+        "    git -C /work archive HEAD | tar -x -C /cache/src",
+        '    RUN cmake -S /cache/src -B /cache/build -DBUILD_PYTHON_BINDINGS=ON \\',
+        "        -DCECE_PYTHON_SIMULATION=OFF -DCECE_FETCH_DEPS=OFF",
+        "    RUN cmake --build /cache/build --target _cece_core",
+        '    RUN "$PY" -m ipykernel install --name "${ENV_NAME}"',
+        '    RUN "$PY" -m jupyter nbconvert --to notebook --execute "${NOTEBOOK}"',
+        '    RUN "$PY" -m jupyter kernelspec list >/dev/null',
+        f'    chown "${{HOST_UID}}:${{HOST_GID}}" "${{NOTEBOOK}}" 2>/dev/null || true{stage_extra}',
+    ]
+    return "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            'IMAGE="${CECE_IMAGE:-cece/cece-dev:latest}"',
+            'ENV_NAME="${GFS_ENV_NAME:-cece-gfs}"',
+            'PORT="${GFS_PORT:-8888}"',
+            "MODE=lab",
+            "NOTEBOOK=/work/docs/notebooks/fengsha_gfs.ipynb",
+            "DATA_HELPER=/work/docs/notebooks/gfs_docker_data.py",
+            "RUN_ARGS=(--rm --platform linux/arm64",
+            '    -e ENV_NAME="$ENV_NAME" -e NOTEBOOK="$NOTEBOOK"',
+            '    -e MONETIO_REMOTE="https://github.com/noaa-oar-arl/monetio.git"',
+            "    -e MONETIO_SHA=67b1071e30bbcbf2f8853b1c6ecc432c430a8df3",
+            '    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)")',
+            'if [ "$MODE" = lab ]; then RUN_ARGS+=(-p "$PORT:8888"); fi',
+            'case "$1" in',
+            "    --help|-h) usage; exit 0 ;;",
+            "    --skip-build) SKIP_BUILD=1 ;;",
+            "    --rebuild) REBUILD=1 ;;",
+            "    --reset) docker volume rm $VOL_ENV ;;",
+            "    --nb) MODE=nb ;;",
+            '    -c|--cmd) MODE=cmd ;;',
+            "esac",
+            'docker run "${RUN_ARGS[@]}" \\',
+            "    \"$IMAGE\" bash -euo pipefail -s <<'STAGE'",
+            *stage,
+            "STAGE",
+            host_tail,
+        ]
+    )
+
+
+def test_plan_shaped_script_passes(tmp_path):
+    sh = tmp_path / "plan.sh"
+    sh.write_text(plan_shaped_script())
+    assert C.check_script(str(sh)) == []
+
+
+def test_stage_requirements_cannot_be_moved_to_the_host(tmp_path):
+    """A container stage emptied of its work must not pass by repeating it host-side."""
+    import re
+
+    emptied = re.sub(
+        r"(<<'STAGE'\n).*?(\nSTAGE)",
+        r"\1    echo nothing\n\2",
+        plan_shaped_script(),
+        flags=re.S,
+    )
+    host_decoy = (
+        "\nmicromamba run -n x cmake -S . -B build -DBUILD_PYTHON_BINDINGS=ON "
+        "-DCECE_PYTHON_SIMULATION=OFF -DCECE_FETCH_DEPS=OFF\n"
+        "micromamba run -n x /env/bin/python -m pip install --no-deps "
+        "git+https://github.com/noaa-oar-arl/monetio@67b1071e30bbcbf2f8853b1c6ecc432c430a8df3 'numpy<3'\n"
+        "micromamba create -n x -c conda-forge --override-channels python=3.12 pybind11\n"
+        "micromamba run -n x python -m jupyter nbconvert --to notebook fengsha_gfs.ipynb\n"
+        'chown "$HOST_UID:$HOST_GID" fengsha_gfs.ipynb\n'
+    )
+    sh = tmp_path / "decoy.sh"
+    sh.write_text(emptied + host_decoy)
+    found = C.check_script(str(sh))
+    assert len([x for x in found if "heredoc" in x]) >= 8, found
+
+
+def test_port_published_for_nb_mode_is_rejected(tmp_path):
+    script = plan_shaped_script().replace(
+        'if [ "$MODE" = lab ]; then RUN_ARGS+=(-p "$PORT:8888"); fi',
+        'if [ "$MODE" = nb ]; then RUN_ARGS+=(-p "$PORT:8888"); fi',
+    )
+    sh = tmp_path / "nbport.sh"
+    sh.write_text(script)
+    assert any("only be published for lab" in x for x in C.check_script(str(sh)))
+
+
+def test_neutered_chown_is_rejected(tmp_path):
+    script = plan_shaped_script().replace(
+        '    chown "${HOST_UID}:${HOST_GID}"', '    : chown "${HOST_UID}:${HOST_GID}"'
+    )
+    sh = tmp_path / "nochown.sh"
+    sh.write_text(script)
+    assert any("chown" in x for x in C.check_script(str(sh)))
+
+
+def test_missing_host_uid_env_is_rejected(tmp_path):
+    script = plan_shaped_script().replace(
+        '    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)")', '    -e MPLBACKEND=Agg)'
+    )
+    sh = tmp_path / "noid.sh"
+    sh.write_text(script)
+    assert any("HOST_UID/HOST_GID" in x for x in C.check_script(str(sh)))
