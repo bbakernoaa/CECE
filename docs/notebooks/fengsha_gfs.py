@@ -498,6 +498,12 @@ for threshold in CASE["thresholds"]:
         on = RESULTS[("brittle", threshold, lead)][2]["total_kg_s"]
         off = RESULTS[("webb", threshold, lead)][2]["total_kg_s"]
         assert on >= 0.0 and off >= 0.0, (threshold, lead)
+        # The forcing and every other option are identical (proved in section 1), so equal totals
+        # would mean `use_brittle_impaction` never reached the C++ branch selector (cpp:598) and the
+        # comparison would be comparing one formulation with itself.
+        assert on != off or on == 0.0, (
+            f"brittle and Webb gave the same total for {threshold} f{lead:03d} "
+            "— use_brittle_impaction did not change the computed flux")
         RESULTS[("brittle", threshold, lead)][2]["off_ratio"] = on / off if off > 0 else float("inf")
 
 em0, bins0, st0 = RESULTS[("brittle", CASE["thresholds"][0], CASE["leads"][0])]
