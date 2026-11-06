@@ -132,7 +132,8 @@ NB_PATH = "docs/notebooks/fengsha_gfs.ipynb"
 SH_PATH = "docs/notebooks/gfs-docker.sh"
 MIN_CODE_CELLS = 12
 MIN_ASSERTS = 5
-ALL_TOKENS = ("kernelspec", "bootstrap", "configs", "case", "asserts", "cells", "report", "maps",
+ALL_TOKENS = ("kernelspec", "bootstrap", "configs", "case", "asserts", "cells", "comparison",
+              "report", "maps",
               "caveats")
 KERNEL_DISPLAY = "Python 3 (CECE GFS)"
 
@@ -415,6 +416,10 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
         problems.append(f"{path}: {assert_count} runtime asserts, expected at least {MIN_ASSERTS}")
     if "cells" in requires and len(code) < MIN_CODE_CELLS:
         problems.append(f"{path}: {len(code)} code cells, expected at least {MIN_CODE_CELLS}")
+    if "comparison" in requires:
+        for phrase in ("FLUXES", "off_ratio"):
+            if phrase not in joined:
+                problems.append(f"{path}: brittle-on/off comparison must define {phrase!r}")
     if "report" in requires and joined.count("build_report(") < 2:
         problems.append(f"{path}: build_report() must be defined and called")
     if "maps" in requires and "pcolormesh" not in joined:

@@ -432,36 +432,44 @@ build_report({
 }, title=f"f{CASE['leads'][0]:03d} input provenance ({CASE['thresholds'][0]})")
 
 # %% [markdown]
-# ## 5. FENGSHA runs: four leads × two threshold sets
+# ## 5. FENGSHA runs: two flux formulations × two threshold sets × four leads
 #
-# Eight independent column loads — the scheme is single-column, so a lead change is only a change of
-# GFS forcing, and the two threshold sets differ only in which climatology supplies `threshold_velocity`.
-# Each run uses a fresh `Model`, because CECE keeps scheme state between steps.
+# Sixteen independent column loads. The scheme is single-column, so a lead change is only a
+# change of GFS forcing; the two threshold sets differ only in which climatology supplies
+# `threshold_velocity`; and the two flux columns differ only in `use_brittle_impaction`, which
+# selects between the Kok et al. (2014a) brittle-fragmentation flux and the Webb et al. (2020)
+# saltation flux (see docs/fengsha.md §Algorithm step 6). Every run uses a fresh `Model`,
+# because CECE keeps scheme state between steps, and every run takes its options from a loaded
+# config, never from a dict built here.
 
 # %%
 import time
 
 
-def run_case(lead, threshold):
-    """One Model(["fengsha"]) step on one lead. Returns (emissions, per-bin kg/s, seconds)."""
+FLUXES = ("brittle", "webb")
+
+
+def run_case(lead, threshold, flux):
+    """One Model(["fengsha"]) step on one lead/flux pair. Returns (emissions, per-bin kg/s, stats)."""
+    options = dict(SCHEME_OPTIONS[flux])
     fields, stats = build_inputs(lead, threshold)
-    with Model(["fengsha"], grid=GRID, options={"fengsha": dict(SCHEME_OPTIONS["brittle"])}) as model:
+    with Model(["fengsha"], grid=GRID, options={"fengsha": options}) as model:
         model.set_inputs(fields)
         started = time.perf_counter()
         out = model.step(time=float(LEADS[lead]["lead_s"]), dt=DT)
         elapsed = time.perf_counter() - started
     em = out["fengsha_dust_emissions"]
     arr = np.asarray(em, dtype=float)
-    assert arr.shape == (181, 360, len(SCHEME_OPTIONS["brittle"]["particle_radii"])), arr.shape
+    assert arr.shape == (181, 360, len(options["particle_radii"])), arr.shape
     assert bool(np.isfinite(arr).all()) and float(arr.min()) >= 0.0, "emissions must be finite and >= 0"
     weighted = arr * WEIGHT[..., None]  # kg/s per (column, size)
     per_bin = weighted.sum(axis=(0, 1))  # kg/s per size bin
     flux_col = arr.sum(axis=2)  # kg m-2 s-1 per column, all sizes summed
     colsum = weighted.sum(axis=2)  # kg/s per column
-    total = float(per_bin.sum())
     run_stats = dict(stats)
     run_stats.update(
-        total_kg_s=total,
+        flux=flux,
+        total_kg_s=float(per_bin.sum()),
         emitting_cols=int((colsum > 0).sum()),
         # The peak *flux* (per area) is what the column label claims; the peak load (per column)
         # is the area-weighted sibling. Reporting colsum.max() under a kg m-2 s-1 label gave a
@@ -478,35 +486,47 @@ def run_case(lead, threshold):
 
 # %%
 RESULTS = {}
+for flux in FLUXES:
+    for threshold in CASE["thresholds"]:
+        for lead in CASE["leads"]:
+            RESULTS[(flux, threshold, lead)] = run_case(lead, threshold, flux)
+
+# brittle total divided by Webb total per (threshold, lead): the headline number here. >1 means
+# turning brittle impaction on emits more saltation-flux-driven dust than Webb's formulation does.
 for threshold in CASE["thresholds"]:
     for lead in CASE["leads"]:
-        RESULTS[(threshold, lead)] = run_case(lead, threshold)
+        on = RESULTS[("brittle", threshold, lead)][2]["total_kg_s"]
+        off = RESULTS[("webb", threshold, lead)][2]["total_kg_s"]
+        assert on >= 0.0 and off >= 0.0, (threshold, lead)
+        RESULTS[("brittle", threshold, lead)][2]["off_ratio"] = on / off if off > 0 else float("inf")
 
-em0, bins0, st0 = RESULTS[(CASE["thresholds"][0], CASE["leads"][0])]
+em0, bins0, st0 = RESULTS[("brittle", CASE["thresholds"][0], CASE["leads"][0])]
+assert st0["flux"] == "brittle" and len(RESULTS) == len(FLUXES) * len(CASE["thresholds"]) * len(CASE["leads"])
 build_report({
-    "threshold set": CASE["thresholds"][0],
+    "threshold set": f"{CASE['thresholds'][0]} / {st0['flux']}",
     "total kg/s": st0["total_kg_s"],
     "emitting columns": st0["emitting_cols"],
     "peak flux kg m-2 s-1": st0["peak_kg_m2_s"],
-    "peak load kg/s": st0["peak_kg_s"],
-    "peak latitude": st0["peak_lat"],
-    "peak longitude": st0["peak_lon"],
-    "column load s": st0["seconds"],
+    "brittle / Webb total ratio": st0["off_ratio"],
     "bin 1 kg/s": float(bins0[0]),
     "bin 5 kg/s": float(bins0[-1]),
-}, title=f"f{CASE['leads'][0]:03d} emission report ({CASE['thresholds'][0]})")
+}, title=f"f{CASE['leads'][0]:03d} emission report ({st0['flux']}, {CASE['thresholds'][0]})")
 
 # The two threshold sets must actually differ — if they do not, the climatology variable was ignored.
 IDENTICAL = all(
-    np.array_equal(RESULTS[(CASE["thresholds"][0], lead)][0], RESULTS[(CASE["thresholds"][1], lead)][0])
+    np.array_equal(RESULTS[("brittle", CASE["thresholds"][0], lead)][0],
+                   RESULTS[("brittle", CASE["thresholds"][1], lead)][0])
     for lead in CASE["leads"]
 )
 assert not IDENTICAL, "uthres and uthres_sg gave identical emissions"
 
-print(f"\n{'set':<10}{'lead':>6}{'total kg/s':>14}{'emitting':>10}{'peak kg m-2 s-1':>18}{'s':>7}")
-for (threshold, lead), (_, _, st) in RESULTS.items():
-    print(f"{threshold:<10}{f'f{lead:03d}':>6}{st['total_kg_s']:>14.3e}{st['emitting_cols']:>10}"
-          f"{st['peak_kg_m2_s']:>18.3e}{st['seconds']:>7.2f}")
+print(f"\n{'flux':<9}{'set':<10}{'lead':>6}{'total kg/s':>14}{'emitting':>10}"
+      f"{'peak kg m-2 s-1':>18}{'b/w ratio':>11}{'s':>7}")
+for (flux, threshold, lead), (_, _, st) in RESULTS.items():
+    ratio = st.get("off_ratio")
+    print(f"{flux:<9}{threshold:<10}{f'f{lead:03d}':>6}{st['total_kg_s']:>14.3e}"
+          f"{st['emitting_cols']:>10}{st['peak_kg_m2_s']:>18.3e}"
+          f"{(f'{ratio:.1f}' if ratio else '-'):>10}{st['seconds']:>7.2f}")
 
 # %% [markdown]
 # ## 6. Maps
@@ -590,7 +610,7 @@ LON_MESH, LAT_MESH = np.meshgrid(LON1, LAT1)
 for row, threshold in enumerate(CASE["thresholds"]):
     for col, lead in enumerate(CASE["leads"]):
         ax = axes2[row, col]
-        array = RESULTS[(threshold, lead)][0].sum(axis=-1)
+        array = RESULTS[(FLUXES[0], threshold, lead)][0].sum(axis=-1)
         mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
                              cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
         ax.set_extent([WEST, EAST, SOUTH, NORTH], crs=PC)

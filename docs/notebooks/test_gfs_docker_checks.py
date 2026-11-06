@@ -1135,3 +1135,22 @@ def test_real_notebook_reads_no_environment(tmp_path):
     """The plan's central promise: os.environ is gone from the notebook source."""
     src = open("docs/notebooks/fengsha_gfs.py").read()
     assert "os.environ" not in src, [ln for ln in src.splitlines() if "os.environ" in ln]
+
+
+def test_comparison_token_required(tmp_path):
+    """good_source() defines neither FLUXES nor off_ratio, so the new token must fail on it."""
+    py = tmp_path / "plain.py"
+    nb = tmp_path / "plain.ipynb"
+    write(str(py), good_source())
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("comparison",))
+    assert any("FLUXES" in p for p in found) and any("off_ratio" in p for p in found), found
+
+
+def test_comparison_token_passes_when_present(tmp_path):
+    src = good_source() + "\n# %%\nFLUXES = (\"brittle\", \"webb\")\nst[\"off_ratio\"] = 1\n"
+    py = tmp_path / "cmp.py"
+    nb = tmp_path / "cmp.ipynb"
+    write(str(py), src)
+    C.sync_notebook(str(py), str(nb))
+    assert C.check_notebook(str(nb), requires=("comparison",)) == []
