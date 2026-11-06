@@ -701,30 +701,64 @@ for threshold in CASE["thresholds"]:
     if _INLINE:
         plt.show()
 
+# %% [markdown]
+# ### 6b. Regional zooms of the brittle-ON rows
+#
+# The global figure above is honest about *where the world* emits; a reader comparing formulations
+# also wants to see the source basins up close. Below is one figure per region, each a 2x4 of the
+# brittle-ON total (rows = threshold sets, columns = forecast leads) with the colour scale
+# autoscaled **per panel**, so a faint basin is faint in absolute terms. The titles therefore print
+# the in-region peak flux: a CONUS panel that looks "on" may be ~two decades dimmer than the Sahel.
+#
+# Regions: the **Sahel** (this path's main November source), **CONUS** (the US High Plains, expected
+# near-dormant in autumn), the **Gobi/Taklamakan** basins (the other great Northern-Hemisphere dust
+# source), and the **Saharan-to-Atlantic dust belt** (the transported plume, not just the cradle).
+
 # %%
-fig2, axes2 = plt.subplots(
-    2, 4, figsize=(15, 7), sharex=True, sharey=True, subplot_kw={"projection": PC}
-)
-for row, threshold in enumerate(CASE["thresholds"]):
-    for col, lead in enumerate(CASE["leads"]):
-        ax = axes2[row, col]
-        array = RESULTS[("brittle", threshold, lead)][0].sum(axis=-1)
-        mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
-                             cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
-        ax.set_extent([WEST, EAST, SOUTH, NORTH], crs=PC)
-        # one graticule per column, one label set per edge — a 2x4 of labelled panels is noise
-        geo_overlays(ax, borders=True, labels=(col == 0 and row == 1))
-        ax.set_title(f"ON {threshold} f{lead:03d}  {array.max():.1e} kg m-2 s-1", pad=1)
-fig2.suptitle("Detail view of the brittle-ON rows: Sahel zoom"
-              " (Natural Earth 50 m coastlines + borders)")
-# tight_layout *before* the colourbar: with the colourbar axes already present matplotlib warns
-# "Axes that are not compatible with tight_layout", and the warning lands in the committed output.
-fig2.tight_layout()
-fig2.colorbar(mesh, ax=axes2, fraction=0.03, pad=0.02)
-print(f"{len(RESULTS)} cases run; the Sahel zoom is the detail view of the ON row above, "
-      f"peak cell {WEST:.0f}..{EAST:.0f}E {SOUTH:.0f}..{NORTH:.0f}N")
-if _INLINE:
-    plt.show()
+# (label, west, east, south, north) in degrees. WEST/EAST/SOUTH/NORTH are the Sahel box above.
+REGIONS = [
+    (("Sahel"), WEST, EAST, SOUTH, NORTH),
+    (("CONUS"), -125.0, -66.0, 24.0, 50.0),
+    ("Gobi / Taklamakan", 73.0, 118.0, 32.0, 48.0),
+    ("Dust belt (Sahara -> Atlantic)", -80.0, 50.0, 8.0, 28.0),
+]
+
+REGION_FIGS = {}
+for label, west, east, south, north in REGIONS:
+    fig2, axes2 = plt.subplots(
+        2, 4, figsize=(15, 7), sharex=True, sharey=True, subplot_kw={"projection": PC}
+    )
+    mesh = None
+    region_peak = 0.0
+    for row, threshold in enumerate(CASE["thresholds"]):
+        for col, lead in enumerate(CASE["leads"]):
+            ax = axes2[row, col]
+            array = RESULTS[("brittle", threshold, lead)][0].sum(axis=-1)
+            # in-region peak, computed on the cropped cells so the title is about THIS basin
+            inside = (array[(LON_MESH >= west) & (LON_MESH <= east)
+                            & (LAT_MESH >= south) & (LAT_MESH <= north)])
+            peak = float(inside.max()) if inside.size else 0.0
+            region_peak = max(region_peak, peak)
+            mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
+                                 cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
+            ax.set_extent([west, east, south, north], crs=PC)
+            # one graticule per column, one label set per edge — a 2x4 of labelled panels is noise
+            geo_overlays(ax, borders=True, labels=(col == 0 and row == 1))
+            ax.set_title(f"ON {threshold} f{lead:03d}  {peak:.1e} kg m-2 s-1", pad=1)
+    fig2.suptitle(f"Detail view of the brittle-ON rows: {label} zoom"
+                  " (Natural Earth 50 m coastlines + borders)")
+    # tight_layout *before* the colourbar: with the colourbar axes already present matplotlib warns
+    # "Axes that are not compatible with tight_layout", and the warning lands in the committed output.
+    fig2.tight_layout()
+    cb = fig2.colorbar(mesh, ax=axes2, fraction=0.03, pad=0.02)
+    # each panel autoscales independently, so this bar shows only THIS panel's range by reference
+    cb.set_label("kg m-2 s-1 (panel-local colour scale)")
+    print(f"{label} zoom {west:.0f}..{east:.0f}E {south:.0f}..{north:.0f}N: "
+          f"largest in-region peak across the 8 panels {region_peak:.2e} kg m-2 s-1 "
+          f"(per-panel colour scale; see panel titles)")
+    REGION_FIGS[label] = fig2
+    if _INLINE:
+        plt.show()
 
 # %%
 # Numbers behind the pictures: a latitude profile, the source bands it actually produced, and the
