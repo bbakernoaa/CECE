@@ -619,8 +619,9 @@ if _INLINE:  # a bare `fig` expression would ALSO emit an execute_result next to
 # %%
 # The comparison figure. Two rows of global dust flux share ONE LogNorm, and the third row is
 # log10(ON/OFF) on ONE symmetric diverging scale, so a panel's colour means the same absolute
-# flux (or the same ratio) everywhere in the figure. The Sahel figure after it is the detail view
-# of the same brittle-ON data, whose colourbar is independent because it is a zoom.
+# flux (or the same ratio) everywhere in the figure. §6b after it crops the same comparison region by
+# region onto its own in-region colour scale (still rows of ON, OFF and log10), because a shared
+# global scale hides whether brittle vs Webb differ inside a single basin.
 import matplotlib
 import matplotlib.colors as mcolors
 
@@ -702,63 +703,102 @@ for threshold in CASE["thresholds"]:
         plt.show()
 
 # %% [markdown]
-# ### 6b. Regional zooms of the brittle-ON rows
+# ### 6b. Regional zooms: brittle-ON vs Webb-OFF, basin by basin
 #
-# The global figure above is honest about *where the world* emits; a reader comparing formulations
-# also wants to see the source basins up close. Below is one figure per region, each a 2x4 of the
-# brittle-ON total (rows = threshold sets, columns = forecast leads) with the colour scale
-# autoscaled **per panel**, so a faint basin is faint in absolute terms. The titles therefore print
-# the in-region peak flux: a CONUS panel that looks "on" may be ~two decades dimmer than the Sahel.
+# The global figure above compares the two fluxes on one world colour scale, which buries the
+# question the comparison actually asks: *inside a source basin*, where does brittle impaction turn
+# emission on that Webb saltation does not? Below is one figure per (region, threshold set), with
+# **three rows** — `brittle ON`, `Webb OFF`, and `log10(ON/OFF)` — and the four forecast leads as
+# columns. A region therefore gets a `uthres` figure and a `uthres_sg` figure.
 #
-# Regions: the **Sahel** (this path's main November source), **CONUS** (the US High Plains, expected
-# near-dormant in autumn), the **Gobi/Taklamakan** basins (the other great Northern-Hemisphere dust
-# source), and the **Saharan-to-Atlantic dust belt** (the transported plume, not just the cradle).
+# Colour scale: **in-region, per figure.** The two flux rows share one `LogNorm` spanning the
+# brightest emitting cell *in that basin* (floored at six decades below the peak, same rule as §6),
+# so ON-vs-OFF is directly comparable inside the figure. Panel titles still print the in-region peak;
+# a near-empty basin is labelled at its actual, tiny magnitude rather than hidden by a shared scale.
+# The ratio row uses one symmetric `TwoSlopeNorm` per figure.
+#
+# Regions (**Sahel**, **CONUS**, **Gobi / Taklamakan**, **Sahara→Atlantic dust belt**): the Sahel is
+# the source this path already flags; the other three are what a reader asked to see in the same
+# November window — whether the US High Plains, the East-Asian basins, or the transported Saharan
+# plume over the ocean show an ON/OFF contrast at all.
 
 # %%
-# (label, west, east, south, north) in degrees. WEST/EAST/SOUTH/NORTH are the Sahel box above.
+# (label, west, east, south, north) in degrees. WEST/EAST/SOUTH/NORTH is the Sahel box used above.
 REGIONS = [
-    (("Sahel"), WEST, EAST, SOUTH, NORTH),
-    (("CONUS"), -125.0, -66.0, 24.0, 50.0),
+    ("Sahel", WEST, EAST, SOUTH, NORTH),
+    ("CONUS", -125.0, -66.0, 24.0, 50.0),
     ("Gobi / Taklamakan", 73.0, 118.0, 32.0, 48.0),
     ("Dust belt (Sahara -> Atlantic)", -80.0, 50.0, 8.0, 28.0),
 ]
+DECADE_FLOOR = 1e-6  # same decade cap as §6, applied strictly inside each basin and threshold
 
-REGION_FIGS = {}
+REGION_FIGS: dict[tuple[str, str], object] = {}
 for label, west, east, south, north in REGIONS:
-    fig2, axes2 = plt.subplots(
-        2, 4, figsize=(15, 7), sharex=True, sharey=True, subplot_kw={"projection": PC}
-    )
-    mesh = None
-    region_peak = 0.0
-    for row, threshold in enumerate(CASE["thresholds"]):
+    crop = (LON_MESH >= west) & (LON_MESH <= east) & (LAT_MESH >= south) & (LAT_MESH <= north)
+    for threshold in CASE["thresholds"]:
+        # rows: one per flux in FLUXES -- brittle ON first, Webb OFF second -- and one for the ratio
+        fig, axes = plt.subplots(3, 4, figsize=(15, 8.5), subplot_kw={"projection": PC}, squeeze=False)
+        rows, peaks = {}, {}
+        for flux in FLUXES:
+            rows[flux] = []
+            peaks[flux] = 0.0
+            for lead in CASE["leads"]:
+                array = RESULTS[(flux, threshold, lead)][0].sum(axis=-1)
+                in_region = array[crop]
+                peaks[flux] = max(peaks[flux], float(in_region.max()) if in_region.size else 0.0)
+                rows[flux].append(np.ma.masked_where((array <= 0) | ~crop, array))
+        positive = np.concatenate([a[crop][a[crop] > 0]
+                                   for flux in FLUXES for a in rows[flux]])
+        assert positive.size, f"{label} {threshold}: neither flux emits inside the basin"
+        vmax = float(positive.max())
+        vmin = max(float(positive.min()), vmax * DECADE_FLOOR)
+        assert 0 < vmin <= vmax
+        shared = mcolors.LogNorm(vmin=vmin, vmax=vmax)
+        drawn, ratio_meshes, ratio_peaks = [], [], []
         for col, lead in enumerate(CASE["leads"]):
-            ax = axes2[row, col]
-            array = RESULTS[("brittle", threshold, lead)][0].sum(axis=-1)
-            # in-region peak, computed on the cropped cells so the title is about THIS basin
-            inside = (array[(LON_MESH >= west) & (LON_MESH <= east)
-                            & (LAT_MESH >= south) & (LAT_MESH <= north)])
-            peak = float(inside.max()) if inside.size else 0.0
-            region_peak = max(region_peak, peak)
-            mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
-                                 cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
-            ax.set_extent([west, east, south, north], crs=PC)
-            # one graticule per column, one label set per edge — a 2x4 of labelled panels is noise
-            geo_overlays(ax, borders=True, labels=(col == 0 and row == 1))
-            ax.set_title(f"ON {threshold} f{lead:03d}  {peak:.1e} kg m-2 s-1", pad=1)
-    fig2.suptitle(f"Detail view of the brittle-ON rows: {label} zoom"
-                  " (Natural Earth 50 m coastlines + borders)")
-    # tight_layout *before* the colourbar: with the colourbar axes already present matplotlib warns
-    # "Axes that are not compatible with tight_layout", and the warning lands in the committed output.
-    fig2.tight_layout()
-    cb = fig2.colorbar(mesh, ax=axes2, fraction=0.03, pad=0.02)
-    # each panel autoscales independently, so this bar shows only THIS panel's range by reference
-    cb.set_label("kg m-2 s-1 (panel-local colour scale)")
-    print(f"{label} zoom {west:.0f}..{east:.0f}E {south:.0f}..{north:.0f}N: "
-          f"largest in-region peak across the 8 panels {region_peak:.2e} kg m-2 s-1 "
-          f"(per-panel colour scale; see panel titles)")
-    REGION_FIGS[label] = fig2
-    if _INLINE:
-        plt.show()
+            for rax, flux in zip((axes[0][col], axes[1][col]), FLUXES):
+                mesh = rax.pcolormesh(LON_MESH, LAT_MESH, rows[flux][col], norm=shared,
+                                      cmap="magma", shading="nearest", transform=PC, zorder=1)
+                rax.set_extent([west, east, south, north], crs=PC)
+                geo_overlays(rax, borders=True, labels=False)
+                rax.set_title(f"f{lead:03d}  {peaks[flux]:.1e}", pad=1)
+                drawn.append(mesh)
+            on_col, off_col = rows["brittle"][col], rows["webb"][col]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                lr = np.log10(np.ma.filled(on_col, 1) / np.ma.filled(off_col, 1))
+            lr = np.ma.masked_invalid(np.where(crop & ~on_col.mask & ~off_col.mask, lr, np.nan))
+            finite = lr.compressed()
+            pmax = float(np.abs(finite).max()) if finite.size else 0.0
+            ratio_peaks.append(pmax)
+            cmap = matplotlib.colormaps["RdBu_r"].copy(); cmap.set_bad(alpha=0.0)
+            axr = axes[2][col]
+            ratio_meshes.append(axr.pcolormesh(
+                LON_MESH, LAT_MESH, lr,
+                norm=mcolors.TwoSlopeNorm(vmin=-max(pmax, 1e-3), vcenter=0.0, vmax=max(pmax, 1e-3)),
+                cmap=cmap, shading="nearest", transform=PC, zorder=1))
+            axr.set_extent([west, east, south, north], crs=PC)
+            geo_overlays(axr, borders=True, labels=False)
+            axr.set_title(f"f{lead:03d}  "
+                          f"{f'\u00b1{pmax:.1f}' if finite.size else 'no overlap'}", pad=1)
+        assert all(a.norm is shared for a in drawn), "a flux panel left its in-region scale"
+        for row, legend in ((0, "brittle"), (1, "Webb"), (2, "log10")):
+            axes[row][0].set_ylabel(legend, fontsize=8, rotation=0, labelpad=28, va="center", ha="right")
+        fig.suptitle(f"{label} {threshold}: brittle ON (top row) vs Webb OFF (middle row) vs "
+                     f"log10(ON/OFF) (bottom row), {west:.0f}..{east:.0f}E {south:.0f}..{north:.0f}N")
+        fig.tight_layout()
+        cbar = fig.colorbar(drawn[0], ax=list(axes[0]) + list(axes[1]), fraction=0.03, pad=0.02)
+        cbar.set_label(u"kg m\u207b\u00b2 s\u207b\u00b9 (in-region scale, shared by both flux rows)")
+        fig.colorbar(ratio_meshes[int(np.argmax(ratio_peaks))], ax=list(axes[2]), fraction=0.04,
+                     pad=0.02, label="log10 ON/OFF (per-lead scale)")
+        overlap = any(p > 0.0 for p in ratio_peaks)
+        print(f"{label} {threshold}: in-region shared flux scale {shared.vmin:.2e}..{shared.vmax:.2e}; "
+              f"brittle peak {peaks['brittle']:.1e} / Webb peak {peaks['webb']:.1e} kg m\u207b\u00b2 s\u207b\u00b9; "
+              + (f"largest ratio row \u00b1{max(ratio_peaks):.1f} decades" if overlap
+                 else "no lead has both fluxes nonzero in-region"))
+        REGION_FIGS[(label, threshold)] = fig
+        if _INLINE:
+            plt.show()
+
 
 # %%
 # Numbers behind the pictures: a latitude profile, the source bands it actually produced, and the

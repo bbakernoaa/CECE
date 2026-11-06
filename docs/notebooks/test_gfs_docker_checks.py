@@ -1166,10 +1166,60 @@ def test_maps_requires_global_log_panels(tmp_path):
 
 
 def test_maps_passes_with_global_log_panels(tmp_path):
-    src = good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n" \
-                          "ax.set_global()\n"
+    src = (good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n"
+           "ax.set_global()\n"
+           "# %%\nREGIONS = [(\"Sahel\", WEST, EAST, SOUTH, NORTH)]\n"
+           'for label, west, east, south, north in REGIONS:\n'
+           '    for flux in FLUXES:\n'
+           '        ax.set_extent([west, east, south, north], crs=PC)\n'
+           '        ax.pcolormesh(x, y, z, norm=shared)\n')
     py = tmp_path / "global.py"
     nb = tmp_path / "global.ipynb"
+    write(str(py), src)
+    C.sync_notebook(str(py), str(nb))
+    assert C.check_notebook(str(nb), requires=("maps",)) == []
+
+
+def test_maps_requires_regional_on_off_zooms(tmp_path):
+    """The per-basin zooms must loop both fluxes (brittle-ON vs Webb-OFF), not just the ON row."""
+    src = (good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n"
+           "ax.set_global()\n"
+           "# %%\nREGIONS = [(\"Sahel\", WEST, EAST, SOUTH, NORTH)]\n"
+           'for label, west, east, south, north in REGIONS:\n'
+           '    array = RESULTS[("brittle", threshold, lead)][0].sum(axis=-1)\n'
+           '    ax.set_extent([west, east, south, north], crs=PC)\n')  # ON-only crop (the wrong shape)
+    py = tmp_path / "onlyon.py"
+    nb = tmp_path / "onlyon.ipynb"
+    write(str(py), src)
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("maps",))
+    assert any("FLUXES" in p for p in found), found
+
+
+def test_maps_requires_regional_crops_at_all(tmp_path):
+    """With the global maps present but no regional crop cell, the gate must say which token is missing."""
+    src = (good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n"
+           "ax.set_global()\n")
+    py = tmp_path / "nocrop.py"
+    nb = tmp_path / "nocrop.ipynb"
+    write(str(py), src)
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("maps",))
+    assert any("REGIONS" in p for p in found), found
+    assert any("set_extent" in p for p in found), found
+
+
+def test_maps_passes_with_regional_on_off_zooms(tmp_path):
+    src = (good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n"
+           "ax.set_global()\n"
+           "# %%\nREGIONS = [(\"Sahel\", WEST, EAST, SOUTH, NORTH)]\n"
+           'for label, west, east, south, north in REGIONS:\n'
+           '    for flux in FLUXES:\n'
+           '        array = RESULTS[(flux, threshold, lead)][0].sum(axis=-1)\n'
+           '        ax.set_extent([west, east, south, north], crs=PC)\n'
+           '        ax.pcolormesh(x, y, array, norm=shared)\n')
+    py = tmp_path / "crops.py"
+    nb = tmp_path / "crops.ipynb"
     write(str(py), src)
     C.sync_notebook(str(py), str(nb))
     assert C.check_notebook(str(nb), requires=("maps",)) == []

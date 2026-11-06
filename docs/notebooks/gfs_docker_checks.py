@@ -430,6 +430,17 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
                            ("LogNorm", "dust flux spans orders of magnitude, so the scale is log")):
             if token not in joined:
                 problems.append(f"{path}: \u00a76 {why} (missing {token!r})")
+        # per-basin crops: one cell must loop a REGIONS list AND crop with set_extent, and that cell
+        # must iterate FLUXES — a crop that reads only RESULTS[("brittle", ...)] answers
+        # "uthres vs uthres_sg" where the question was "brittle ON vs Webb OFF".
+        crop_cells = [c for c in code if "REGIONS" in c and "set_extent" in c]
+        if not crop_cells:
+            problems.append(f"{path}: \u00a76 no per-basin crop cell (one containing both "
+                            "'REGIONS' and 'set_extent')")
+        for cell in crop_cells:
+            if "FLUXES" not in cell:
+                problems.append(f"{path}: \u00a76 the REGIONS/set_extent crop cell does not iterate "
+                                "'FLUXES' — regional zooms must compare brittle-ON against Webb-OFF")
     if "caveats" in requires:
         for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest",
                        "by construction", "k_v/h", "driver:` is duplicated"):
