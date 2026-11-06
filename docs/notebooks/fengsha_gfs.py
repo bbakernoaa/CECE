@@ -507,6 +507,8 @@ build_report({
     "total kg/s": st0["total_kg_s"],
     "emitting columns": st0["emitting_cols"],
     "peak flux kg m-2 s-1": st0["peak_kg_m2_s"],
+    "peak latitude": st0["peak_lat"],
+    "peak longitude": st0["peak_lon"],
     "brittle / Webb total ratio": st0["off_ratio"],
     "bin 1 kg/s": float(bins0[0]),
     "bin 5 kg/s": float(bins0[-1]),
@@ -521,12 +523,12 @@ IDENTICAL = all(
 assert not IDENTICAL, "uthres and uthres_sg gave identical emissions"
 
 print(f"\n{'flux':<9}{'set':<10}{'lead':>6}{'total kg/s':>14}{'emitting':>10}"
-      f"{'peak kg m-2 s-1':>18}{'b/w ratio':>11}{'s':>7}")
+      f"{'peak kg m-2 s-1':>18}{'b/w ratio':>11}{'ms':>9}")
 for (flux, threshold, lead), (_, _, st) in RESULTS.items():
     ratio = st.get("off_ratio")
     print(f"{flux:<9}{threshold:<10}{f'f{lead:03d}':>6}{st['total_kg_s']:>14.3e}"
           f"{st['emitting_cols']:>10}{st['peak_kg_m2_s']:>18.3e}"
-          f"{(f'{ratio:.1f}' if ratio else '-'):>10}{st['seconds']:>7.2f}")
+          f"{(f'{ratio:.1f}' if ratio else '-'):>10}{1000 * st['seconds']:>9.1f}")
 
 # %% [markdown]
 # ## 6. Maps and totals
@@ -616,7 +618,9 @@ if _INLINE:  # a bare `fig` expression would ALSO emit an execute_result next to
 import matplotlib
 import matplotlib.colors as mcolors
 
-BAD_GREY = "0.75"  # masked cells; the cmap's own bad colour is too dark to read as "no data"
+# masked ratio cells go fully transparent (cartopy rejects an opaque `bad` on pcolormesh), so
+# the figure's own face colour reads as "no emission in at least one branch".
+
 LON_MESH, LAT_MESH = np.meshgrid(LON1, LAT1)
 
 
@@ -639,7 +643,12 @@ for threshold in CASE["thresholds"]:
     assert positive.size, f"{threshold}: neither flux produced an emitting column"
     # One shared LogNorm for BOTH rows: independently autoscaled log panels make the Webb flux
     # look as strong as the brittle flux, which is the easiest way to lie with this figure.
-    shared = mcolors.LogNorm(vmin=float(positive.min()), vmax=float(positive.max()))
+    # Floor the decade span at eight: below ~1e-8 of the brightest cell the magma ramp cannot
+    # show anything, and the raw minimum is a sub-normal 1e-154, not a physical dimming.
+    vmax = float(positive.max())
+    vmin = max(float(positive.min()), vmax * 1e-8)
+    assert vmin > 0 and vmin <= vmax
+    shared = mcolors.LogNorm(vmin=vmin, vmax=vmax)
     fig, axes = plt.subplots(3, 4, figsize=(16, 10.5), subplot_kw={"projection": PC}, squeeze=False)
     drawn_on, drawn_off = [], []
     for col, lead in enumerate(CASE["leads"]):
@@ -658,7 +667,8 @@ for threshold in CASE["thresholds"]:
         peak = float(np.abs(finite).max()) if finite.size else 0.0
         peaks.append(peak)
         cmap = matplotlib.colormaps["RdBu_r"].copy()
-        cmap.set_bad(BAD_GREY)
+        # alpha=0, not a grey: cartopy warns and ignores an opaque bad colour on pcolormesh
+        cmap.set_bad(alpha=0.0)
         axes[2][col].pcolormesh(
             LON_MESH, LAT_MESH, np.ma.masked_invalid(log_ratio),
             norm=mcolors.TwoSlopeNorm(vmin=-max(peak, 1e-3), vcenter=0.0, vmax=max(peak, 1e-3)),
@@ -678,7 +688,8 @@ for threshold in CASE["thresholds"]:
     fig.colorbar(drawn_on[0], ax=list(axes[0]) + list(axes[1]), fraction=0.03, pad=0.02,
                  label="kg m-2 s-1")
     GLOBAL_FIGS[threshold] = fig
-    print(f"{threshold}: shared flux scale {shared.vmin:.2e}..{shared.vmax:.2e} kg m-2 s-1; "
+    print(f"{threshold}: shared flux scale {shared.vmin:.2e}..{shared.vmax:.2e} kg m-2 s-1 "
+          f"(raw minimum {float(positive.min()):.1e}, floored to 8 decades); "
           f"log10(ON/OFF) peaks at +/-{max(peaks):.2f} "
           f"(x{10 ** max(peaks):.1f} at most) in lead f{CASE['leads'][int(np.argmax(peaks))]:03d}")
     if _INLINE:
@@ -780,7 +791,7 @@ for ax, threshold in zip(axes4, CASE["thresholds"]):
     lat = np.asarray(LAT1, dtype=float)
     ax.plot(ZONAL[("brittle", threshold)], lat, "-", label="brittle impaction ON")
     ax.plot(ZONAL[("webb", threshold)], lat, "--", label="Webb saltation OFF")
-    ax.set_yscale("log")
+    ax.set_xscale("log")  # the LOAD is the log axis; latitude stays linear and north-up
     ax.set_ylim(-90.5, 90.5)
     ax.invert_yaxis()  # LAT1 descends from +90; the plot must read north-up
     ax.set_xlabel("dust load kg/s per 1-deg band (four leads summed)")
