@@ -18,7 +18,7 @@ import sys
 
 DATA_PATH = "docs/notebooks/gfs_docker_data.py"
 KERNEL_NAME = "cece-gfs"
-CASE_KEYS = ("date", "hour", "product", "leads", "thresholds", "dt", "cache_dir", "climo_dir")
+CASE_KEYS = ("leads", "thresholds", "product", "cache_dir", "climo_dir")
 
 
 def strip_marks(text: str) -> str:
@@ -132,7 +132,8 @@ NB_PATH = "docs/notebooks/fengsha_gfs.ipynb"
 SH_PATH = "docs/notebooks/gfs-docker.sh"
 MIN_CODE_CELLS = 12
 MIN_ASSERTS = 5
-ALL_TOKENS = ("kernelspec", "bootstrap", "case", "asserts", "cells", "report", "maps", "caveats")
+ALL_TOKENS = ("kernelspec", "bootstrap", "configs", "case", "asserts", "cells", "report", "maps",
+              "caveats")
 KERNEL_DISPLAY = "Python 3 (CECE GFS)"
 
 
@@ -395,6 +396,12 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
     if "bootstrap" in requires:
         if "sys.path.insert" not in joined or "build/src/python" not in joined:
             problems.append(f"{path}: no sys.path bootstrap to the volume-built cece bindings")
+    if "configs" in requires:
+        for name in ("fengsha_gfs_kok.yaml", "fengsha_gfs_webb.yaml"):
+            if name not in joined:
+                problems.append(f"{path}: notebook must load {name}")
+        if "os.environ" in joined:
+            problems.append(f"{path}: the notebook must not read environment variables")
     if "case" in requires:
         expected = set(CASE_KEYS)
         found = case_keys or set()

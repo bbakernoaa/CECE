@@ -24,14 +24,16 @@ import sys
 # `not in sys.path` guard skips re-inserting it and the repo's stale host build tree
 # (build/src/python, bind-mounted at /work) lands at the front and shadows the container bindings
 # with a 3.14-macos `_cece_core` -- a circular-import ImportError that only appears in the container.
-_CECE_PATHS = (os.environ.get("CECE_PYTHONPATH"), "/cache/build/src/python", "build/src/python")
-_CECE_PATH = next((_p for _p in _CECE_PATHS if _p and os.path.isdir(_p)), None)
+_CECE_PATHS = ("/cache/build/src/python", "build/src/python")
+_CECE_PATH = next((_p for _p in _CECE_PATHS if os.path.isdir(_p)), None)
 if _CECE_PATH:
     sys.path = [_p for _p in sys.path if _p not in _CECE_PATHS]
     sys.path.insert(0, _CECE_PATH)
 
 import numpy as np  # noqa: E402
 import xarray as xr  # noqa: E402
+from pathlib import Path  # noqa: E402
+from datetime import datetime  # noqa: E402
 
 import cece  # noqa: E402
 from cece import Grid, Model  # noqa: E402
@@ -39,7 +41,11 @@ from cece.preparation import regrid_rectilinear  # noqa: E402
 import monetio  # noqa: E402
 
 REPO = "/work" if os.path.isdir("/work/docs/notebooks") else os.getcwd()
-CACHE = os.environ.get("GFS_CACHE", "/cache/gfs")
+# No environment variables anywhere in this notebook: the scientific case is CECE YAML
+# (docs/notebooks/fengsha_gfs_*.yaml) and the container paths are literals. The bindings
+# bootstrap above and this cache choice are the only host/container difference, and both
+# degrade to the repo-relative path so a plain `python fengsha_gfs.py` from a checkout works.
+CACHE = "/cache/gfs" if os.path.isdir("/cache") else os.path.join(os.getcwd(), "cache", "gfs")
 print(f"python  {sys.version.split()[0]}  {sys.executable}")
 print(f"cece    {cece.__file__}")
 print(f"monetio {monetio.__version__}")
@@ -49,25 +55,32 @@ print(f"cache   {CACHE}")
 # %% [markdown]
 # ## 1. Configuration
 #
-# `gfs-docker.sh` passes `CASE_DATE` / `CASE_HOUR` / `CASE_LEADS` through as environment
-# variables, and the launcher's `--case YYYYMMDD HH LEADS` sets them, so the notebook and the
-# pre-fetch agree on a cycle. The defaults below are the cycle the design was recorded against,
-# which keeps the committed outputs stable when the notebook runs without the launcher.
+# The scheme is configured exactly the way a CECE run configures it: two standard YAML files,
+# `fengsha_gfs_kok.yaml` (Kok et al. 2014a brittle fragmentation) and `fengsha_gfs_webb.yaml`
+# (Webb et al. 2020 saltation flux), each with a `driver:` cycle and one `physics_schemes`
+# entry. `Model` hands the scheme options to the C++ parser as YAML text either way
+# (`src/python/model.py` serializes them with `yaml.safe_dump`), so a file and a dict are the
+# same path -- the file is just reviewable, and it is what a driver run would read.
+# Their `driver:` blocks must be identical, so one cycle governs both branches; the assert
+# below is what proves it. Nothing here reads an environment variable.
 # `monetio.load` needs both filter keys: without `productDefinitionTemplateNumber` the GRIB
 # reader refuses a cube that mixes instantaneous and accumulation records. One file per read
 # because merged files keep the first file's scalar `validDate`/`leadTime`.
 
 # %%
-_LEADS_DEFAULT = [0, 3, 6, 12]
-_leads_env = os.environ.get("CASE_LEADS", "")
-_leads = [int(v) for v in _leads_env.split(",") if v.strip()] or _LEADS_DEFAULT
+CONFIG_FILES = {"brittle": "fengsha_gfs_kok.yaml", "webb": "fengsha_gfs_webb.yaml"}
+CFG = {name: cece.load_config(os.path.join(REPO, "docs", "notebooks", fname))
+       for name, fname in CONFIG_FILES.items()}
+SCHEME_OPTIONS = {name: dict(cfg.physics_schemes[0].options) for name, cfg in CFG.items()}
+DRIVER = CFG["brittle"].driver
+DT = float(DRIVER.timestep_seconds)
+_start, _end = datetime.fromisoformat(DRIVER.start_time), datetime.fromisoformat(DRIVER.end_time)
+CYCLE = {"date": _start.strftime("%Y%m%d"), "hour": _start.hour}
+
 CASE = {
-    "date": os.environ.get("CASE_DATE", "20261103"),
-    "hour": int(os.environ.get("CASE_HOUR", "12")),
     "product": "pgrb2.1p00",
-    "leads": _leads,
+    "leads": [0, 3, 6, 12],
     "thresholds": ["uthres", "uthres_sg"],
-    "dt": 3600.0,
     "cache_dir": CACHE,
     "climo_dir": REPO,
 }
@@ -77,21 +90,39 @@ SENTINEL = 900.0  # NESDIS writes 999 into uthres/uthres_sg; anything >= this is
 R_EARTH = 6.371e6
 KDRY = 287.04  # dry air gas constant, J kg-1 K-1 -> rho = p / (KDRY * T)
 
+assert DT > 0, "driver.timestep_seconds must be positive"
+assert _start < _end, "driver.start_time must precede end_time"
+assert CYCLE["hour"] in (0, 6, 12, 18), "GFS is delivered at 6-hourly cycle hours"
 assert CASE["leads"] == sorted(set(CASE["leads"])), "leads must be unique and ascending"
-assert CASE["hour"] in (0, 6, 12, 18), "GFS is delivered at 6-hourly cycle hours"
+assert max(CASE["leads"]) * 3600 <= (_end - _start).total_seconds(), "longest lead exceeds the cycle"
+assert all(int(hours) * 3600 % DT == 0 for hours in CASE["leads"]), "leads must be whole steps"
 assert set(CASE["thresholds"]) <= {"uthres", "uthres_sg"}, "unknown threshold set"
-assert CASE["dt"] > 0, "dt must be positive seconds"
 assert CASE["product"] == "pgrb2.1p00", "only the 1-degree product is in scope here"
-print(f"case    {CASE['date']} t{CASE['hour']:02d}z leads={','.join(str(v) for v in CASE['leads'])}")
+for _name, _cfg in CFG.items():
+    _result = _cfg.validate()
+    assert _result == "Validation passed", (_name, _result)
+    assert SCHEME_OPTIONS[_name]["use_brittle_impaction"] is (_name == "brittle"), _name
+assert CFG["brittle"].driver == CFG["webb"].driver, "the two configs disagree about the cycle"
+# Option *values* include lists, so compare (key, value) pairs with the list entries made
+# hashable; the flux-formulation keys are the only allowed difference between the two files.
+_SKIP = {"use_brittle_impaction", "alpha", "gamma", "kvhmax"}
 
-KOK = {
-    "particle_radii": [2.15e-6, 4.875e-6, 9.575e-6, 1.375e-4, 6.25e-4],
-    "bin_lower_edges": [1.2e-6, 3.1e-6, 6.65e-6, 2.5e-5, 1.0e-4],
-    "bin_upper_edges": [3.1e-6, 6.65e-6, 1.25e-4, 2.5e-4, 1.0e-3],
-    "use_brittle_impaction": True,
-    "c_tune": 0.05,
-}
-print(CASE)
+
+def _pairs(_o):
+    return {(k, tuple(v) if isinstance(v, list) else v) for k, v in _o.items() if k not in _SKIP}
+
+
+_b_on, _b_off = SCHEME_OPTIONS["brittle"], SCHEME_OPTIONS["webb"]
+assert _pairs(_b_on) == _pairs(_b_off), "the two configs must differ only in the flux formulation"
+# the Webb file pins its branch's constants; they must equal the C++ defaults (hpp:40-42) that
+# the brittle file leaves unset, otherwise "identical forcing" would be a false claim.
+assert (_b_on.get("alpha", 1.0), _b_on.get("gamma", 1.0), _b_on.get("kvhmax", 2.45e-4)) == (
+    _b_off["alpha"], _b_off["gamma"], _b_off["kvhmax"]), "Webb-branch constants drifted"
+print(f"case    {CYCLE['date']} t{CYCLE['hour']:02d}z leads={','.join(str(v) for v in CASE['leads'])} "
+      f"dt={DT:.0f}s from {CONFIG_FILES['brittle']} driver")
+for _name in CONFIG_FILES:
+    print(f"flux    {_name:<8} {CONFIG_FILES[_name]:<22} "
+          f"use_brittle_impaction={SCHEME_OPTIONS[_name]['use_brittle_impaction']}")
 
 
 
@@ -113,8 +144,6 @@ print(CASE)
 # notebook mode, where the kernel's cwd is the repo root rather than the script's own directory.
 sys.path.insert(0, os.path.join(REPO, "docs", "notebooks"))
 
-from pathlib import Path
-
 import pandas as pd
 import gfs_docker_data as gdata
 
@@ -122,7 +151,7 @@ SURFACE_NEEDED = ["FRICV", "GUST", "LAND", "SNOD", "HPBL", "SOTYP", "VEG", "pres
 SOIL_NEEDED = ["SOILL", "TSOIL"]
 LEADS = {}
 for lead in CASE["leads"]:
-    (path,) = gdata.ensure_gribs(CASE["cache_dir"], CASE["date"], CASE["hour"], [lead])
+    (path,) = gdata.ensure_gribs(CASE["cache_dir"], CYCLE["date"], CYCLE["hour"], [lead])
     surface = monetio.load("gfs", files=[str(path)], filters=SURFACE_FILTER)
     soil = monetio.load("gfs", files=[str(path)], filters=SOIL_FILTER)
     valid = pd.Timestamp(str(np.datetime_as_string(np.asarray(surface.validDate.values), unit="s")))
@@ -140,7 +169,7 @@ for lead in CASE["leads"]:
     assert not missing, f"lead {lead}: soil cube lacks {missing}"
     assert int(np.asarray(soil.valueOfFirstFixedSurface)[0]) == 0, "level 0 must be the 0-0.1 m layer"
     assert LEADS[lead]["lead_s"] == 3600 * lead, (lead, LEADS[lead]["lead_s"])
-    expected = pd.Timestamp(f"{CASE['date']} {CASE['hour']:02d}:00") + pd.Timedelta(seconds=lead * 3600)
+    expected = pd.Timestamp(f"{CYCLE['date']} {CYCLE['hour']:02d}:00") + pd.Timedelta(seconds=lead * 3600)
     assert LEADS[lead]["valid"] == expected, (lead, LEADS[lead]["valid"], expected)
     print(f"f{lead:03d}  valid {LEADS[lead]['valid']}  lead {LEADS[lead]['lead_s'] // 60:5d} min  "
           f"surface {len(surf.data_vars)} vars  soil {len(soil.data_vars)} x {soil.sizes['level']} levels")
@@ -416,14 +445,14 @@ import time
 def run_case(lead, threshold):
     """One Model(["fengsha"]) step on one lead. Returns (emissions, per-bin kg/s, seconds)."""
     fields, stats = build_inputs(lead, threshold)
-    with Model(["fengsha"], grid=GRID, options={"fengsha": dict(KOK)}) as model:
+    with Model(["fengsha"], grid=GRID, options={"fengsha": dict(SCHEME_OPTIONS["brittle"])}) as model:
         model.set_inputs(fields)
         started = time.perf_counter()
-        out = model.step(time=float(LEADS[lead]["lead_s"]), dt=CASE["dt"])
+        out = model.step(time=float(LEADS[lead]["lead_s"]), dt=DT)
         elapsed = time.perf_counter() - started
     em = out["fengsha_dust_emissions"]
     arr = np.asarray(em, dtype=float)
-    assert arr.shape == (181, 360, len(KOK["particle_radii"])), arr.shape
+    assert arr.shape == (181, 360, len(SCHEME_OPTIONS["brittle"]["particle_radii"])), arr.shape
     assert bool(np.isfinite(arr).all()) and float(arr.min()) >= 0.0, "emissions must be finite and >= 0"
     weighted = arr * WEIGHT[..., None]  # kg/s per (column, size)
     per_bin = weighted.sum(axis=(0, 1))  # kg/s per size bin

@@ -23,7 +23,20 @@ import numpy as np
 """
 
 
-def good_source(extra: str = "") -> str:
+CONFIG_CELL = """# %%
+import os
+
+import cece
+REPO = "/work"
+CFG = {name: cece.load_config(os.path.join(REPO, "docs", "notebooks", fname))
+       for name, fname in (("kok", "fengsha_gfs_kok.yaml"), ("webb", "fengsha_gfs_webb.yaml"))}
+"""
+
+# A cell that is structurally equivalent but loads nothing, for the negative configs fixture.
+NO_CONFIG_CELL = '# %%\nimport os\nREPO = "/work"\nCFG = {}\n'
+
+
+def good_source(extra: str = "", config_cell: str = CONFIG_CELL) -> str:
     """A notebook source that satisfies every token except the task-specific ones."""
     cells = ["# %% [markdown]\n# # GFS-forced FENGSHA\n", f"""# %%
 import sys
@@ -31,7 +44,7 @@ sys.path.insert(0, "/gfs-cache/build/src/python")
 CASE = {{
 {CASE_BLOCK}
 }}
-"""]
+""", config_cell]
     cells += [f"# %%\nassert CASE is not None, {i}\n" for i in range(C.MIN_ASSERTS)]
     cells += [f"# %%\nx_{i} = {i}\n" for i in range(C.MIN_CODE_CELLS - 1 - C.MIN_ASSERTS)]
     return "\n".join(cells) + extra
@@ -1072,3 +1085,53 @@ def test_retired_case_knobs_are_a_gate_failure(tmp_path):
         'IMAGE="${CECE_IMAGE:-cece/cece-dev:latest}"',
         'IMAGE="${CECE_IMAGE:-cece/cece-dev:latest}"\nCASE_DATE="${CASE_DATE:-20261103}"'))
     assert any("retired" in p for p in C.check_script(str(sh))), C.check_script(str(sh))
+
+
+# ---------------------------------------------------------------- notebook loads configs
+
+
+def env_source() -> str:
+    """The good source with an os.environ read spliced into the bootstrap cell."""
+    return good_source().replace(
+        'sys.path.insert(0, "/gfs-cache/build/src/python")',
+        'sys.path.insert(0, "/gfs-cache/build/src/python")\n'
+        'CACHE = os.environ.get("GFS_CACHE", "/cache/gfs")',
+    )
+
+
+def test_notebook_env_read_is_rejected(tmp_path):
+    py = tmp_path / "env.py"
+    nb = tmp_path / "env.ipynb"
+    write(str(py), env_source())
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("configs",))
+    assert any("must not read environment variables" in p for p in found), found
+    # and only that one problem: the fixture is otherwise config-clean
+    assert len(found) == 1, found
+
+
+def test_notebook_config_load_is_required(tmp_path):
+    """Without a load_config call naming both YAML files, the configs token fails."""
+    py = tmp_path / "noconfigs.py"
+    nb = tmp_path / "noconfigs.ipynb"
+    write(str(py), good_source(config_cell=NO_CONFIG_CELL))
+    nb = str(nb)
+    C.sync_notebook(str(py), nb)
+    found = C.check_notebook(nb, requires=("configs",))
+    assert any("fengsha_gfs_kok.yaml" in p for p in found), found
+    assert any("fengsha_gfs_webb.yaml" in p for p in found), found
+    assert len(found) == 2, found
+
+
+def test_good_fixture_still_satisfies_the_configs_token(tmp_path):
+    py = tmp_path / "good.py"
+    nb = tmp_path / "good.ipynb"
+    write(str(py), good_source())
+    C.sync_notebook(str(py), str(nb))
+    assert C.check_notebook(str(nb), requires=("configs",)) == []
+
+
+def test_real_notebook_reads_no_environment(tmp_path):
+    """The plan's central promise: os.environ is gone from the notebook source."""
+    src = open("docs/notebooks/fengsha_gfs.py").read()
+    assert "os.environ" not in src, [ln for ln in src.splitlines() if "os.environ" in ln]
