@@ -119,7 +119,14 @@ Optional (fallbacks match CTSM's Leung_2023 defaults):
      `F_d = η · C_tune · C_d · f_bare · f_clay' · ρ_atm · (u_*s² − u_*it²)/u_*it² · (u_*s/u_*it)^κ`,
      with the transient erodibility `C_d = C_d0 exp[−C_e (u_st − u_st0)/u_st0]` (Eq. 2.31.11), the fragmentation exponent `κ = min(C_κ (u_st − u_st0)/u_st0, 2.5)` (Eq. 2.31.12, C_κ = 2.7), the standardised threshold `u_st = u_ft √(ρ_atm/1.225)` (Eq. 2.31.13) against the constant `u_st0 = 0.16 m/s`, and the CESM-tuned clay factor `f_clay' = max(0.1 + 0.5 f_clay, 0.2)` (Eq. 2.31.10).
    - `use_brittle_impaction: false` — original FENGSHA form:
-     `F = η · alpha · f_bare · SSM^gamma · ρ_atm · k_v/h · q`, with the Marticorena & Bergametti (1995) ratio `k_v/h = 10^(13.4 clay − 6)` (capped at `kvhmax` for clay > 0.2) and the Webb et al. (2020, Eq. 9) horizontal saltation flux `q`. **WIP:** `q` is currently a placeholder (`max(0, u_ft / F_eff)`), and the `alpha/g` sandblasting prefactor of the original formulation is not yet applied.
+     `F = η · alpha · f_bare · SSM^gamma · (k_v/h) · q`, with the Marticorena & Bergametti (1995)
+     ratio `k_v/h = 10^(13.4 clay − 6)` (capped at `kvhmax` for clay > 0.2) and the Webb et al.
+     (2020, Eq. 9) horizontal saltation flux
+     `q = (ρ_atm/g) · u*ₛ³ · [1 − (u*ₜ/u*)²] · [1 + (u*ₜ/u*)]`, where `u*ₜ = u_ft / F_eff`
+     (`src/core/physics/cece_fengsha.cpp:607-613`). `alpha` multiplies the whole expression and
+     `gamma` is the exponent on `SSM`; both default to 1.0, so an OFF-branch absolute value is only
+     meaningful next to the ON branch it is compared with — see the brittle/Webb comparison in
+     [`docs/notebooks/fengsha_gfs.ipynb`](./notebooks/fengsha_gfs.ipynb).
 7. Distribute across the size bins of the emission field using the configured
    weights (`bin_weights`, or the Kok et al. (2014b) weights derived from a
    configured bin geometry): `emissions(n) += D(n) · F`. With no bin
