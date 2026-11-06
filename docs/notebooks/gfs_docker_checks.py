@@ -430,7 +430,8 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
             if token not in joined:
                 problems.append(f"{path}: \u00a76 {why} (missing {token!r})")
     if "caveats" in requires:
-        for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest"):
+        for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest",
+                       "by construction", "k_v/h", "driver:` is duplicated"):
             if phrase not in md:
                 problems.append(f"{path}: caveats text omits {phrase!r}")
     return problems

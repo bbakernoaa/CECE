@@ -1173,3 +1173,15 @@ def test_maps_passes_with_global_log_panels(tmp_path):
     write(str(py), src)
     C.sync_notebook(str(py), str(nb))
     assert C.check_notebook(str(nb), requires=("maps",)) == []
+
+
+def test_caveats_requires_the_comparison_caveats(tmp_path):
+    """A notebook without the new caveat text must fail on every new phrase, by name."""
+    py = tmp_path / "cav.py"
+    nb = tmp_path / "cav.ipynb"
+    write(str(py), good_source())  # fixture has no caveat markdown at all
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("caveats",))
+    for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest",
+                   "by construction", "k_v/h", "driver:` is duplicated"):
+        assert any(phrase in p for p in found), (phrase, found)

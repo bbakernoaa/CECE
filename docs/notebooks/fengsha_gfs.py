@@ -529,10 +529,11 @@ for (flux, threshold, lead), (_, _, st) in RESULTS.items():
           f"{(f'{ratio:.1f}' if ratio else '-'):>10}{st['seconds']:>7.2f}")
 
 # %% [markdown]
-# ## 6. Maps
+# ## 6. Maps and totals
 #
-# Geography, not magnitude: this path is a data-pipeline demonstration. The Sahel column that lights up
-# in the emissions panel is the same one the climatology flags as the most erodible in the world.
+# Geography first, then the numbers behind it: this path is still a data-pipeline demonstration, and
+# the Sahel column that lights up in the emissions panel is the same one the climatology flags as the
+# most erodible in the world.
 #
 # The comparison figure is the point of the notebook: brittle impaction ON against Webb OFF on the
 # **same** global colour scale, lead by lead, with `log10(ON/OFF)` underneath so the sign of the
@@ -708,6 +709,90 @@ print(f"{len(RESULTS)} cases run; the Sahel zoom is the detail view of the ON ro
 if _INLINE:
     plt.show()
 
+# %%
+# Numbers behind the pictures: a latitude profile, the source bands it actually produced, and the
+# per-lead totals for both formulations side by side.
+ZONAL = {}
+for flux in FLUXES:
+    for threshold in CASE["thresholds"]:
+        profile = np.zeros(len(LAT1))
+        for lead in CASE["leads"]:
+            arr = RESULTS[(flux, threshold, lead)][0].sum(axis=-1)
+            profile += (arr * WEIGHT).sum(axis=1)  # kg/s per 1-degree latitude band, 4 leads summed
+        ZONAL[(flux, threshold)] = profile
+
+_share = ZONAL[("brittle", CASE["thresholds"][0])]
+assert np.isfinite(_share).all() and float(_share.sum()) > 0.0
+
+
+def source_bands(zonal, lat, min_share=0.02, max_bands=8):
+    """Contiguous latitude bands holding >= min_share of the run's total, derived from the data.
+
+    Region names are earned, not assumed: the band list comes from this run's own flux, so the
+    notebook cannot end up claiming a source region the forcing does not produce.
+    """
+    share = np.asarray(zonal, dtype=float) / max(float(np.asarray(zonal).sum()), 1e-30)
+    picked = sorted(i for i in range(len(share)) if share[i] >= min_share)[:max_bands]
+    bands, current = [], []
+    for i in picked:
+        if current and i != current[-1] + 1:
+            bands.append(current)
+            current = []
+        current.append(i)
+    if current:
+        bands.append(current)
+    # LAT1 descends from +90, so report each band low-latitude-first regardless of index order.
+    return [
+        (min(float(lat[b[0]]), float(lat[b[-1]])), max(float(lat[b[0]]), float(lat[b[-1]])),
+         float(share[b].sum()))
+        for b in bands if b
+    ]
+
+
+SOURCE_BANDS = source_bands(_share, LAT1)
+assert SOURCE_BANDS, "no latitude band reached 2% of the total, so the profile is not a source map"
+build_report(
+    {f"band {lo:+.0f}..{hi:+.0f} deg": share for lo, hi, share in SOURCE_BANDS},
+    title="brittle-ON latitude bands >= 2% of the four-lead total",
+)
+
+fig3, axes3 = plt.subplots(1, 2, figsize=(12.5, 4.4), sharey=True)
+for ax, threshold in zip(axes3, CASE["thresholds"]):
+    x = np.arange(len(CASE["leads"]))
+    on = [RESULTS[("brittle", threshold, lead)][2]["total_kg_s"] for lead in CASE["leads"]]
+    off = [RESULTS[("webb", threshold, lead)][2]["total_kg_s"] for lead in CASE["leads"]]
+    ax.bar(x - 0.2, on, 0.38, label="brittle impaction ON")
+    ax.bar(x + 0.2, off, 0.38, label="Webb saltation OFF")
+    for xi, a, b in zip(x, on, off):
+        ax.text(xi, max(a, b) * 1.25, f"x{a / b:.1f}" if b > 0 else "ON only", ha="center", fontsize=8)
+    ax.set_yscale("log")
+    ax.set_xticks(x, [f"f{lead:03d}" for lead in CASE["leads"]])
+    ax.set_title(threshold)
+    ax.set_ylabel("global dust load kg/s")
+fig3.suptitle("Area-weighted global dust load per lead, both flux formulations")
+fig3.tight_layout()
+fig3.legend(fontsize=8, loc="upper right")
+if _INLINE:
+    plt.show()
+
+fig4, axes4 = plt.subplots(1, 2, figsize=(12.5, 4.4), sharey=True)
+for ax, threshold in zip(axes4, CASE["thresholds"]):
+    lat = np.asarray(LAT1, dtype=float)
+    ax.plot(ZONAL[("brittle", threshold)], lat, "-", label="brittle impaction ON")
+    ax.plot(ZONAL[("webb", threshold)], lat, "--", label="Webb saltation OFF")
+    ax.set_yscale("log")
+    ax.set_ylim(-90.5, 90.5)
+    ax.invert_yaxis()  # LAT1 descends from +90; the plot must read north-up
+    ax.set_xlabel("dust load kg/s per 1-deg band (four leads summed)")
+    ax.set_ylabel("latitude")
+    ax.set_title(f"{threshold}: zonal contribution")
+    ax.axhline(0, color="0.6", lw=0.6)
+    ax.legend(fontsize=8)
+fig4.suptitle("Where the dust comes from: latitude bands, derived from this run (not assumed)")
+fig4.tight_layout()
+if _INLINE:
+    plt.show()
+
 # %% [markdown]
 # ## 7. Known limitations of this path
 #
@@ -727,3 +812,14 @@ if _INLINE:
 # - **The atmosphere is ideal gas and `pressure`/`temperature` are the GFS surface fields.** No moisture
 #   correction, so `air_density` is a few tenths of a percent low over humid oceans — those columns are masked.
 # - **`time = lead seconds`** is passed to the step, not to the clock; FENGSHA ignores it.
+# - **The on/off comparison cannot speak about size distribution.** Both branches run the same bin
+#   geometry from the two config files, so the Kok et al. (2014b) weights `D(n)` are identical
+#   by construction**: the difference appears only in the total flux and in which columns emit. Reading
+#   the panels as "brittle fragmentation changes the grain size" would be wrong.
+# - **Webb-branch absolute values are not comparable with observations, only with the ON branch.** The
+#   OFF flux carries the Marticorena & Bergametti `k_v/h` ratio (capped at `kvhmax`, ~1e-4 m at these
+#   clay fractions) times `SSM^gamma`, while the ON flux uses the transient erodibility `C_d` and
+#   `c_tune`. The two encode soil supply differently, which is why the ratio is the number to look at,
+#   not either total on its own.
+# - **`driver:` is duplicated across the two config files.** Their blocks must be identical; the §1
+#   equality assert plus `gfs_docker_checks.py configs` is what stops them drifting apart.
