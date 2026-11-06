@@ -4,7 +4,8 @@
 #   docs/notebooks/gfs-docker.sh                      # Jupyter Lab on http://localhost:8888
 #   docs/notebooks/gfs-docker.sh --nb                 # execute the notebook headless, in place
 #   docs/notebooks/gfs-docker.sh -c 'python -V'       # one-off command inside the env
-#   docs/notebooks/gfs-docker.sh --case 20261103 12 0,3,6,12
+#   The cycle is not a flag: start_time / end_time / timestep_seconds live in the two CECE
+#   configs (docs/notebooks/fengsha_gfs_kok.yaml, ..._webb.yaml); PROBE checks both.
 #   docs/notebooks/gfs-docker.sh --rebuild            # force a fresh _cece_core build
 #   docs/notebooks/gfs-docker.sh --skip-build         # reuse the cached bindings
 #   docs/notebooks/gfs-docker.sh --reset              # drop both volumes
@@ -33,9 +34,6 @@ REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 PORT="${GFS_PORT:-8888}"
 NOTEBOOK=/work/docs/notebooks/fengsha_gfs.ipynb
 DATA_HELPER=/work/docs/notebooks/gfs_docker_data.py
-CASE_DATE="${CASE_DATE:-20261103}"
-CASE_HOUR="${CASE_HOUR:-12}"
-CASE_LEADS="${CASE_LEADS:-0,3,6,12}"
 
 # The org is noaa-oar-arl: NOAA-EMC/MONETIO prompts for credentials and cannot be cloned here.
 MONETIO_REMOTE="${MONETIO_REMOTE:-https://github.com/noaa-oar-arl/monetio.git}"
@@ -49,7 +47,7 @@ WANT_BUILD=1
 SKIP_BUILD=0
 REBUILD=0
 
-usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,8 +58,6 @@ while [ $# -gt 0 ]; do
             docker volume rm -f "$VOL_ENV" "$VOL_CACHE" >/dev/null
             echo "reset: removed $VOL_ENV $VOL_CACHE"
             exit 0 ;;
-        --case)
-            CASE_DATE="$2"; CASE_HOUR="$3"; CASE_LEADS="$4"; shift 4 ;;
         -c|--cmd) MODE=cmd; RUN_CMD="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown flag: $1" >&2; usage >&2; exit 2 ;;
@@ -93,11 +89,10 @@ fi
 RUN_ARGS=(--rm -i --platform linux/arm64
     -v "$REPO":/work -v "$VOL_ENV":/env -v "$VOL_CACHE":/cache
     -e ENV_NAME="$ENV_NAME" -e MONETIO_REMOTE="$MONETIO_REMOTE" -e MONETIO_SHA="$MONETIO_SHA"
-    -e CASE_DATE="$CASE_DATE" -e CASE_HOUR="$CASE_HOUR" -e CASE_LEADS="$CASE_LEADS"
     -e DIRTY_HASH="$DIRTY_HASH" -e MODE="$MODE" -e RUN_CMD="$RUN_CMD"
     -e NOTEBOOK="$NOTEBOOK" -e DATA_HELPER="$DATA_HELPER"
-    -e CECE_PYTHONPATH=/cache/build/src/python -e PYTHONPATH=/cache/build/src/python
-    -e GFS_CACHE=/cache/gfs -e MPLBACKEND=Agg -e OMP_NUM_THREADS="${OMP_NUM_THREADS:-10}"
+    -e PYTHONPATH=/cache/build/src/python
+    -e MPLBACKEND=Agg -e OMP_NUM_THREADS="${OMP_NUM_THREADS:-10}"
     # Cartopy downloads the Natural Earth shapefiles lazily into $XDG_DATA_HOME/cache/cartopy.
     # Default points at /root/.local/share, which dies with the container; /cache is a volume, so
     # one warm run populates it and every subsequent run draws offline.
@@ -185,9 +180,9 @@ fi
 SO=$(echo /cache/build/src/python/cece/_cece_core*.so)
 ls "${SO}" >/dev/null
 
-echo "[data] GRIB leads ${CASE_LEADS} for ${CASE_DATE} t${CASE_HOUR}z"
-RUN "$PY" "${DATA_HELPER}" --cache /cache/gfs --date "${CASE_DATE}" --hour "${CASE_HOUR}" \
-    --leads "${CASE_LEADS}"
+# The GRIBs are staged by the notebook itself (gfs_docker_data.ensure_gribs), using the cycle
+# in the two CECE configs -- the launcher no longer knows the case, so it cannot pre-fetch it.
+echo "[data] staged by the notebook via ${DATA_HELPER}"
 
 RUN "$PY" - <<'PROBE'
 import sys
@@ -197,7 +192,26 @@ import cece, monetio, grib2io, axis
 from cece import Grid
 from cece.preparation import regrid_rectilinear  # noqa: F401
 g = Grid.structured(longitude=np.arange(-180.0, 180.0, 1.0), latitude=np.arange(90.0, -91.0, -1.0))
-print(f"PROBE ok py{sys.version.split()[0]} monetio={monetio.__version__} grib2io={grib2io.__version__} grid={g.ncol}")
+REPO = "/work"
+# Both FENGSHA configs are loaded and validated here, so a drifted cycle or a mis-set
+# use_brittle_impaction fails the launcher before 16 notebook runs are attempted.
+CONFIGS = {"kok": f"{REPO}/docs/notebooks/fengsha_gfs_kok.yaml",
+           "webb": f"{REPO}/docs/notebooks/fengsha_gfs_webb.yaml"}
+cfgs = {label: cece.load_config(path) for label, path in CONFIGS.items()}
+for label, cfg in cfgs.items():
+    result = cfg.validate()
+    assert result == "Validation passed", (label, result)
+    schemes = cfg.physics_schemes
+    assert len(schemes) == 1 and schemes[0].name == "fengsha", (label, schemes)
+    opts = schemes[0].options
+    assert opts["use_brittle_impaction"] is (label == "kok"), (label, opts)
+_kok, _webb = cfgs["kok"].physics_schemes[0].options, cfgs["webb"].physics_schemes[0].options
+assert cfgs["kok"].driver == cfgs["webb"].driver, "the two configs describe different cycles"
+# the Webb file is exactly the kok option set plus the three constants only its branch reads
+assert set(_webb) - set(_kok) == {"alpha", "gamma", "kvhmax"}, f"option drift: {set(_webb) - set(_kok)}"
+assert not set(_kok) - set(_webb), f"kok-only option drift: {set(_kok) - set(_webb)}"
+print(f"PROBE ok py{sys.version.split()[0]} monetio={monetio.__version__} "
+      f"grib2io={grib2io.__version__} grid={g.ncol} configs=kok(brittle)+webb(saltation)")
 PROBE
 
 case "${MODE}" in

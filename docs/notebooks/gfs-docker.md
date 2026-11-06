@@ -8,12 +8,14 @@ image on Apple silicon; the launcher is [gfs-docker.sh](./gfs-docker.sh).
 
 ## What the path does
 
-1. GRIB2 files for a chosen forecast cycle are downloaded once and cached in the `/cache/gfs`
-   named volume. The launcher's `--case YYYYMMDD HH LEADS` exports `CASE_DATE` / `CASE_HOUR` /
-   `CASE_LEADS` into the container; the notebook's §1 reads them (§2 pre-fetches from the same
-   values), so a fresh cycle ends-to-end replaces the design case. The default is still the
-   recorded case used to write everything here — 20261103 t12z, leads 0, 3, 6, 12 — so the
-   committed notebook outputs stay reproducible without the launcher.
+1. GRIB2 files for the forecast cycle are downloaded once and cached in the `/cache/gfs` named
+   volume, by the notebook itself (§2 calls `gfs_docker_data.ensure_gribs`). The cycle is *not* a
+   launcher flag or an environment variable: it is the `driver:` block of
+   [fengsha_gfs_kok.yaml](./fengsha_gfs_kok.yaml) and [fengsha_gfs_webb.yaml](./fengsha_gfs_webb.yaml)
+   (`start_time`, `end_time`, `timestep_seconds`), which must stay identical — the launcher's
+   `PROBE` stage and the notebook both assert it. Changing the cycle means editing `start_time` /
+   `end_time` in **both** files, plus `leads` in the notebook's `CASE`. The recorded case is
+   20261103 t12z, leads 0, 3, 6, 12, so the committed notebook outputs stay reproducible.
 2. [MONETIO](https://github.com/noaa-oar-arl/monetio)'s `gfsreader` (via `grib2io`) decodes
    them into xarray. MONETIO itself is a pinned git checkout (`67b1071e`, from
    `tests/data/interfaces/compatibility-lock.json`), installed `pip --no-deps` inside the
@@ -48,8 +50,10 @@ Additional flags can be combined with any of the above:
 |---|---|
 | `--rebuild` | discard `/cache/build`, `/cache/src`, and the stamp, and recompile `_cece_core` |
 | `--skip-build` | explicitly reuse the cached bindings; the default `--nb` path already skips a rebuild when the content-hash stamp matches, this makes it unconditional |
-| `--case YYYYMMDD HH LEADS` | change the forecast cycle / lead list exported to the container |
 | `--reset` | remove both named volumes next run; slow, but reproduces a fresh machine |
+
+There is no `--case` flag: the cycle lives in the two CECE configs (see step 1 above), and the
+launcher only checks that they load, agree, and set `use_brittle_impaction` opposite on each other.
 
 The rebuild trigger is a content hash over `git rev-parse HEAD:src HEAD:include HEAD:cmake`
 plus `git status --porcelain` on those directories. Notebook-only commits do not touch the
@@ -83,9 +87,12 @@ exercises the whole cold path again; a full cold on a fresh machine runs ≈ 11 
 | `GFS_ENV_NAME` | `cece-gfs` | conda env name *and* the `ipykernel` spec the notebook selects |
 | `GFS_VOL_ENV` | `cece-gfs-env` | named volume holding the conda env |
 | `GFS_VOL_CACHE` | `cece-gfs-cache` | named volume holding GRIBs, builds, NE shapefiles |
-| `CASE_DATE` / `CASE_HOUR` / `CASE_LEADS` | `20261103` / `12` / `0,3,6,12` | forecast cycle |
 | `MONETIO_REMOTE` / `MONETIO_SHA` | `https://github.com/noaa-oar-arl/monetio.git` / `67b1071e…` | MONETIO pin (must match compatibility-lock.json) |
 | `OMP_NUM_THREADS` | `10` | Kokkos openmp threads inside the container |
+
+The forecast cycle is not here: `docs/notebooks/fengsha_gfs_kok.yaml` and
+`docs/notebooks/fengsha_gfs_webb.yaml` carry it in their `driver:` blocks and are the only place
+to change it. Nothing in the notebook reads an environment variable.
 
 `$XDG_DATA_HOME=/cache/xdg` is pinned in the launcher so Cartopy caches its Natural Earth
 shapefiles on the volume rather than in the container's `/root/.local/share`. First draw on a

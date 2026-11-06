@@ -469,6 +469,9 @@ SH_STAGES = [
     (r"MAMBA_ROOT_PREFIX=/env", "micromamba must create the env under the volume, not the container home"),
     (r"export PATH=/env/bin", "the stage calls bare micromamba, which only exists in the volume"),
     (r"gfs_docker_data\.py", "GRIB staging must reuse the shared helper, not duplicate the URL"),
+    (r"load_config", "the probe must validate both FENGSHA configs before the notebook runs"),
+    (r"fengsha_gfs_kok\.yaml", "the probe must load the brittle-impaction config by name"),
+    (r"fengsha_gfs_webb\.yaml", "the probe must load the Webb-branch config too"),
     (r'git -C /work archive HEAD', "a dirty worktree snapshot breaks the build (deleted cmake/*.cmake)"),
     (r"--skip-build", "escape hatch documented in the usage header"),
     (r"--rebuild", "forces a fresh bindings build"),
@@ -1070,6 +1073,11 @@ def check_script(path: str = SH_PATH) -> list[str]:
     for flag in ("--help", "--nb", "--rebuild", "--reset", "--skip-build", "-c |--cmd )"):
         if flag.replace(" ", "") not in clean.replace(" ", ""):
             problems.append(f"{path}: flag {flag} is not dispatched")
+    # The cycle belongs to the CECE configs; a launcher that re-exports it can silently
+    # disagree with them, which is exactly the failure this plan exists to remove.
+    for gone in ("--case", "CASE_DATE", "CASE_HOUR", "CASE_LEADS", "CECE_PYTHONPATH", "GFS_CACHE"):
+        if gone in clean:
+            problems.append(f"{path}: {gone} is retired; the cycle lives in the CECE configs")
     for pat, why in SH_STAGES:
         if pat in SH_FILE_SCOPED:
             if not re.search(pat, requirement_clean, re.M):

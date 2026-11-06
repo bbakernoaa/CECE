@@ -7,6 +7,7 @@ Run: python3 docs/notebooks/gfs_docker_checks.py --self-test
 from __future__ import annotations
 
 import os
+import re
 
 import nbformat
 
@@ -81,6 +82,8 @@ def minimal_good_script() -> str:
         'micromamba run -n "$ENV_NAME" "$PY" -m ipykernel install',
         'micromamba run -n "$ENV_NAME" "$PY" -m jupyter nbconvert --to notebook',
         'micromamba run -n "$ENV_NAME" "$PY" gfs_docker_data.py',
+        'for p in /work/docs/notebooks/fengsha_gfs_kok.yaml /work/docs/notebooks/fengsha_gfs_webb.yaml; do'
+        ' "$PY" -c "import cece,sys; c=cece.load_config(sys.argv[1]); assert c.validate()==\'Validation passed\'" "$p"; done',
         'chown "$HOST_UID:$HOST_GID" docs/notebooks/fengsha_gfs.ipynb',
         "# noaa-oar-arl/monetio",
         "# 67b1071e30bbcbf2f8853b1c6ecc432c430a8df3",
@@ -465,6 +468,10 @@ def plan_shaped_script(stage_extra: str = "", host_tail: str = "") -> str:
         "        -DCECE_PYTHON_SIMULATION=OFF -DCECE_FETCH_DEPS=OFF",
         "    RUN cmake --build /cache/build --target _cece_core",
         '    RUN "$PY" -m ipykernel install --name "${ENV_NAME}"',
+        '    for cfg in /work/docs/notebooks/fengsha_gfs_kok.yaml /work/docs/notebooks/fengsha_gfs_webb.yaml; do',
+        '        RUN "$PY" -c \'import cece,sys; c=cece.load_config(sys.argv[1]);'
+        ' assert c.validate()=="Validation passed"\' "$cfg"',
+        "    done",
         '    RUN "$PY" -m jupyter nbconvert --to notebook --execute "${NOTEBOOK}"',
         '    RUN "$PY" -m jupyter kernelspec list >/dev/null',
         f'    chown "${{HOST_UID}}:${{HOST_GID}}" "${{NOTEBOOK}}" 2>/dev/null || true{stage_extra}',
@@ -1017,3 +1024,51 @@ def test_check_fengsha_configs_flags_missing_file(tmp_path):
     found = C.check_fengsha_configs((str(tmp_path / "fengsha_gfs_kok.yaml"),
                                      str(tmp_path / "fengsha_gfs_webb.yaml")))
     assert len(found) == 2 and all("missing" in p for p in found), found
+
+
+# ------------------------------------------------------------------- launcher owns no case
+
+CASE_VARS_GONE = (
+    "CASE_DATE", "CASE_HOUR", "CASE_LEADS", "CECE_PYTHONPATH", "GFS_CACHE", "--case",
+)
+
+
+def test_launcher_no_longer_carries_the_case(tmp_path):
+    """The cycle lives in the CECE configs; the launcher must not re-export it."""
+    src = open("docs/notebooks/gfs-docker.sh").read()
+    leftovers = [name for name in CASE_VARS_GONE if name in src]
+    assert leftovers == [], leftovers
+
+
+def test_probe_validates_both_configs():
+    # Same slicing check_script uses: strip comments, then take the quoted STAGE heredoc body.
+    src = open("docs/notebooks/gfs-docker.sh").read()
+    stage = " ".join(C.quoted_stage_body(C.drop_noop_prefixed_lines(
+        C.strip_shell_comments(src, strip_heredoc_body_comments=True))).splitlines())
+    assert "fengsha_gfs_kok.yaml" in stage and "fengsha_gfs_webb.yaml" in stage
+    assert "load_config" in stage
+
+
+def test_usage_covers_exactly_the_header_comment_block():
+    """`usage()` prints a hardcoded line range; deleting a usage line without retuning it
+    silently starts printing shell code (or stops before the last note)."""
+    src = open("docs/notebooks/gfs-docker.sh").read().splitlines()
+    last_comment = 1
+    for i, line in enumerate(src[1:], start=2):
+        if not line.startswith("#"):
+            break
+        last_comment = i
+    m = re.search(r"usage\(\) \{ sed -n '(\d+),(\d+)p'", "\n".join(src))
+    assert m, "usage() must print the header comment block with sed -n '<a>,<b>p'"
+    assert int(m.group(1)) == 2, m.group(1)
+    assert int(m.group(2)) == last_comment, (
+        f"usage() stops at line {m.group(2)} but the header comment block ends at "
+        f"{last_comment} — it would print shell code: {src[int(m.group(2)):last_comment]!r}")
+
+
+def test_retired_case_knobs_are_a_gate_failure(tmp_path):
+    sh = tmp_path / "d.sh"
+    sh.write_text(minimal_good_script().replace(
+        'IMAGE="${CECE_IMAGE:-cece/cece-dev:latest}"',
+        'IMAGE="${CECE_IMAGE:-cece/cece-dev:latest}"\nCASE_DATE="${CASE_DATE:-20261103}"'))
+    assert any("retired" in p for p in C.check_script(str(sh))), C.check_script(str(sh))
