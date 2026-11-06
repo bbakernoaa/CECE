@@ -96,7 +96,7 @@ def minimal_good_script() -> str:
         'micromamba run -n "$ENV_NAME" "$PY" -m jupyter nbconvert --to notebook',
         'micromamba run -n "$ENV_NAME" "$PY" gfs_docker_data.py',
         'for p in /work/docs/notebooks/fengsha_gfs_kok.yaml /work/docs/notebooks/fengsha_gfs_webb.yaml; do'
-        ' "$PY" -c "import cece,sys; c=cece.load_config(sys.argv[1]); assert c.validate()==\'Validation passed\'" "$p"; done',
+        ' "$PY" -c "import cece,sys; c=cece.load_config(sys.argv[1]); assert c.validate().is_valid" "$p"; done',
         'chown "$HOST_UID:$HOST_GID" docs/notebooks/fengsha_gfs.ipynb',
         "# noaa-oar-arl/monetio",
         "# 67b1071e30bbcbf2f8853b1c6ecc432c430a8df3",
@@ -483,7 +483,7 @@ def plan_shaped_script(stage_extra: str = "", host_tail: str = "") -> str:
         '    RUN "$PY" -m ipykernel install --name "${ENV_NAME}"',
         '    for cfg in /work/docs/notebooks/fengsha_gfs_kok.yaml /work/docs/notebooks/fengsha_gfs_webb.yaml; do',
         '        RUN "$PY" -c \'import cece,sys; c=cece.load_config(sys.argv[1]);'
-        ' assert c.validate()=="Validation passed"\' "$cfg"',
+        ' assert c.validate().is_valid\' "$cfg"',
         "    done",
         '    RUN "$PY" -m jupyter nbconvert --to notebook --execute "${NOTEBOOK}"',
         '    RUN "$PY" -m jupyter kernelspec list >/dev/null',
@@ -1185,3 +1185,26 @@ def test_caveats_requires_the_comparison_caveats(tmp_path):
     for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest",
                    "by construction", "k_v/h", "driver:` is duplicated"):
         assert any(phrase in p for p in found), (phrase, found)
+
+
+BAD_VALIDATE = "\n# %%\n_r = cfg.validate()\nassert _r == 'Validation passed', _r\n"
+
+
+def test_validate_result_must_be_checked_by_is_valid_in_the_launcher(tmp_path):
+    """`CeceConfig.validate()` returns a ValidationResult, never the string it is told to match."""
+    src = minimal_good_script().replace("assert c.validate().is_valid",
+                                       'assert c.validate() == "Validation passed"')
+    assert "Validation passed" in src, src
+    sh = tmp_path / "bad.sh"
+    write(str(sh), src)
+    problems = C.check_script(str(sh))
+    assert any("is_valid" in p for p in problems), problems
+
+
+def test_notebook_must_not_compare_validate_to_a_string(tmp_path):
+    py = tmp_path / "badval.py"
+    nb = tmp_path / "badval.ipynb"
+    write(str(py), good_source(BAD_VALIDATE))
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("configs",))
+    assert any("is_valid" in p for p in found), found

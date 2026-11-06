@@ -100,7 +100,7 @@ assert set(CASE["thresholds"]) <= {"uthres", "uthres_sg"}, "unknown threshold se
 assert CASE["product"] == "pgrb2.1p00", "only the 1-degree product is in scope here"
 for _name, _cfg in CFG.items():
     _result = _cfg.validate()
-    assert _result == "Validation passed", (_name, _result)
+    assert _result.is_valid, (_name, _result.errors)
     assert SCHEME_OPTIONS[_name]["use_brittle_impaction"] is (_name == "brittle"), _name
 assert CFG["brittle"].driver == CFG["webb"].driver, "the two configs disagree about the cycle"
 # Option *values* include lists, so compare (key, value) pairs with the list entries made

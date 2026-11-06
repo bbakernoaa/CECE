@@ -403,6 +403,7 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
                 problems.append(f"{path}: notebook must load {name}")
         if "os.environ" in joined:
             problems.append(f"{path}: the notebook must not read environment variables")
+        problems += _validate_idiom_problems(joined, path)
     if "case" in requires:
         expected = set(CASE_KEYS)
         found = case_keys or set()
@@ -1071,6 +1072,27 @@ def docker_arg_scope(clean: str, cmd_text: str) -> str:
     return "\n".join(parts)
 
 
+# `CeceConfig.validate()` returns a `ValidationResult` carrying `is_valid` + `errors`
+# (src/python/config.py:1364, :1673). Comparing that object to the string it "should" equal is
+# never true, so such an assert silently fails at first execution — the container PROBE died on
+# exactly this in Task 7, and the host gate now blocks the idiom in both the launcher and the notebook.
+
+
+def _validate_idiom_problems(text: str, where: str) -> list[str]:
+    """Reject the string-compare idiom and require the real ValidationResult field."""
+    out: list[str] = []
+    if "validate()" not in text:
+        return out
+    if "is_valid" not in text:
+        out.append(
+            f"{where}: validate() returns a ValidationResult — assert `result.is_valid` "
+            "(not a string comparison)"
+        )
+    if "Validation passed" in text:
+        out.append(f"{where}: no CECE API returns that string; use result.is_valid")
+    return out
+
+
 def check_script(path: str = SH_PATH) -> list[str]:
     problems: list[str] = []
     try:
@@ -1096,6 +1118,7 @@ def check_script(path: str = SH_PATH) -> list[str]:
     for gone in ("--case", "CASE_DATE", "CASE_HOUR", "CASE_LEADS", "CECE_PYTHONPATH", "GFS_CACHE"):
         if gone in clean:
             problems.append(f"{path}: {gone} is retired; the cycle lives in the CECE configs")
+    problems += _validate_idiom_problems(clean, path)
     for pat, why in SH_STAGES:
         if pat in SH_FILE_SCOPED:
             if not re.search(pat, requirement_clean, re.M):

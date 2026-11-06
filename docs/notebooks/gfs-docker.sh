@@ -200,7 +200,7 @@ CONFIGS = {"kok": f"{REPO}/docs/notebooks/fengsha_gfs_kok.yaml",
 cfgs = {label: cece.load_config(path) for label, path in CONFIGS.items()}
 for label, cfg in cfgs.items():
     result = cfg.validate()
-    assert result == "Validation passed", (label, result)
+    assert result.is_valid, (label, result.errors)
     schemes = cfg.physics_schemes
     assert len(schemes) == 1 and schemes[0].name == "fengsha", (label, schemes)
     opts = schemes[0].options
