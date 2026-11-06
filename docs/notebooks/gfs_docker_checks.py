@@ -5,7 +5,7 @@ Run with any python3 that has nbformat installed (the host Homebrew python does)
 nothing here imports cece, so this is checkable on a machine that cannot run the
 notebook at all.
 
-usage: python3 docs/notebooks/gfs_docker_checks.py [data|sh|nb|all]
+usage: python3 docs/notebooks/gfs_docker_checks.py [data|configs|sh|nb|all]
                                              [--sync|--check-sync|--self-test]
 """
 
@@ -265,6 +265,65 @@ def sync_notebook(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> str:
     with open(nb_path, "w") as fh:
         fh.write(rendered_text)
     return "written"
+
+
+CONFIG_PATHS = ("docs/notebooks/fengsha_gfs_kok.yaml", "docs/notebooks/fengsha_gfs_webb.yaml")
+CONFIG_DRIVER_KEYS = ("start_time", "end_time", "timestep_seconds")
+CONFIG_WEBB_ONLY_KEYS = ("alpha", "gamma", "kvhmax")
+
+
+def _top_level_block(lines: list[str], header: str) -> list[str]:
+    """Lines of a top-level `header:` block, indented content only, comment-free."""
+    body, seen = [], False
+    for line in lines:
+        stripped = line.split("#")[0].rstrip()
+        if not stripped:
+            continue
+        if not stripped.startswith(" "):
+            seen = stripped.rstrip(":") == header.rstrip(":")
+            continue
+        if seen:
+            body.append(stripped.strip())
+    return body
+
+
+def check_fengsha_configs(paths: tuple[str, ...] = CONFIG_PATHS) -> list[str]:
+    """The two FENGSHA run configs must describe one cycle and differ only in the flux.
+
+    Textual by design: gfs_docker_checks runs on a host python3 that has nbformat but not
+    PyYAML, and its contract is "nothing here imports cece". validate() happens in the
+    container's PROBE stage and in the notebook itself, where both exist.
+    """
+    problems: list[str] = []
+    drivers: list[str] = []
+    for path in paths:
+        try:
+            lines = open(path).read().splitlines()
+        except OSError:
+            problems.append(f"{path}: missing")
+            continue
+        driver = _top_level_block(lines, "driver:")
+        keys = tuple(item.split(":")[0].strip() for item in driver)
+        if keys != CONFIG_DRIVER_KEYS:
+            problems.append(f"{path}: driver keys {keys} != {CONFIG_DRIVER_KEYS}")
+        drivers.append("\n".join(driver))
+        schemes = [item for item in _top_level_block(lines, "physics_schemes:") if "name:" in item]
+        if len(schemes) != 1 or "name: fengsha" not in schemes[0]:
+            problems.append(f"{path}: expected exactly one `- name: fengsha` scheme, got {schemes}")
+        # Comment-free, like _top_level_block(): the file headers mention the flag by name,
+        # and a header line must not be mistaken for a second setting of it.
+        flags = [item for item in (line.split("#")[0] for line in lines) if "use_brittle_impaction" in item]
+        want = "true" if path.endswith("_kok.yaml") else "false"
+        if len(flags) != 1 or f"use_brittle_impaction: {want}" not in flags[0]:
+            problems.append(f"{path}: use_brittle_impaction must appear once as {want}")
+        if path.endswith("_webb.yaml"):
+            for key in CONFIG_WEBB_ONLY_KEYS:
+                if not any(re.search(rf"^\s*{key}:", line.split("#")[0]) for line in lines):
+                    problems.append(f"{path}: Webb branch must pin {key}")
+    if len(drivers) == 2 and drivers[0] != drivers[1]:
+        problems.append(f"{paths[0]}: driver block differs from {paths[1]} — the two "
+                        "configs must describe the same cycle")
+    return problems
 
 
 def check_sync(py_path: str = PY_PATH, nb_path: str = NB_PATH) -> list[str]:
@@ -1090,6 +1149,7 @@ def check_sync_cmd(*paths: str) -> int:
 
 CHECKS = {
     "data": check_data_module,
+    "configs": check_fengsha_configs,
     "sh": check_script,
     "nb": lambda: check_notebook(requires=("kernelspec", "bootstrap", "case", "asserts"))
     + check_sync(),

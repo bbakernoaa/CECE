@@ -940,3 +940,80 @@ def test_minimal_fixture_still_passes(tmp_path):
     sh = tmp_path / "m.sh"
     sh.write_text(minimal_good_script())
     assert C.check_script(str(sh)) == []
+
+
+# --------------------------------------------------------------------------- configs gate
+
+GOOD_KOK = """
+driver:
+  start_time: "2026-11-03T12:00:00"
+  end_time: "2026-11-04T00:00:00"
+  timestep_seconds: 3600
+physics_schemes:
+  - name: fengsha
+    language: cpp
+    options:
+      use_brittle_impaction: true
+"""
+
+# The gate requires the Webb file to pin the three constants only its branch reads, so the
+# good Webb fixture has to carry them too -- a bare `true`->`false` replace would not.
+GOOD_WEBB = GOOD_KOK.replace(
+    "      use_brittle_impaction: true\n",
+    "      use_brittle_impaction: false\n      alpha: 1.0\n      gamma: 1.0\n      kvhmax: 2.45e-4\n",
+)
+
+
+def _write(tmp_path, name, text):
+    """Config fixtures live in tmp_path; `write()` above takes a path string instead."""
+    path = tmp_path / name
+    path.write_text(text)
+    return str(path)
+
+
+def test_check_fengsha_configs_accepts_matching_pair(tmp_path):
+    kok = _write(tmp_path, "fengsha_gfs_kok.yaml", GOOD_KOK)
+    webb = _write(tmp_path, "fengsha_gfs_webb.yaml", GOOD_WEBB)
+    assert C.check_fengsha_configs((kok, webb)) == []
+
+
+def test_check_fengsha_configs_flags_driver_drift(tmp_path):
+    kok = _write(tmp_path, "fengsha_gfs_kok.yaml", GOOD_KOK)
+    webb = _write(tmp_path, "fengsha_gfs_webb.yaml",
+                  GOOD_WEBB.replace('end_time: "2026-11-04T00:00:00"',
+                                    'end_time: "2026-11-04T06:00:00"'))
+    found = C.check_fengsha_configs((kok, webb))
+    assert len(found) == 1 and "driver" in found[0], found
+
+
+def test_check_fengsha_configs_flags_wrong_brittle_flag(tmp_path):
+    kok = _write(tmp_path, "fengsha_gfs_kok.yaml", GOOD_KOK)
+    webb = _write(tmp_path, "fengsha_gfs_webb.yaml", GOOD_KOK)  # both true
+    found = C.check_fengsha_configs((kok, webb))
+    assert any("use_brittle_impaction" in p for p in found), found
+
+
+def test_check_fengsha_configs_flags_missing_scheme(tmp_path):
+    kok = _write(tmp_path, "fengsha_gfs_kok.yaml", GOOD_KOK.replace("name: fengsha", "name: other"))
+    webb = _write(tmp_path, "fengsha_gfs_webb.yaml", GOOD_WEBB)
+    found = C.check_fengsha_configs((kok, webb))
+    assert any("fengsha" in p for p in found), found
+
+
+def test_real_config_files_pass_the_gate():
+    assert C.check_fengsha_configs() == []
+
+
+def test_check_fengsha_configs_flags_unpinned_webb_constant(tmp_path):
+    """The Webb branch must pin alpha/gamma/kvhmax rather than lean on the C++ defaults."""
+    kok = _write(tmp_path, "fengsha_gfs_kok.yaml", GOOD_KOK)
+    webb = _write(tmp_path, "fengsha_gfs_webb.yaml",
+                  GOOD_WEBB.replace("      kvhmax: 2.45e-4\n", ""))
+    found = C.check_fengsha_configs((kok, webb))
+    assert len(found) == 1 and "kvhmax" in found[0], found
+
+
+def test_check_fengsha_configs_flags_missing_file(tmp_path):
+    found = C.check_fengsha_configs((str(tmp_path / "fengsha_gfs_kok.yaml"),
+                                     str(tmp_path / "fengsha_gfs_webb.yaml")))
+    assert len(found) == 2 and all("missing" in p for p in found), found

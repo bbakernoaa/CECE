@@ -1,0 +1,24 @@
+# FENGSHA configuration for docs/notebooks/fengsha_gfs.ipynb: the Kok et al. (2014a)
+# brittle-fragmentation total flux (CTSM 5.0 tech note Eq. 2.31.8), which is what CTSM's
+# Leung_2023 dust scheme uses. The paired fengsha_gfs_webb.yaml differs only in
+# use_brittle_impaction: false plus the Webb-branch constants, so the notebook compares
+# the two flux formulations on identical GFS forcing and identical size bins.
+#
+# The driver block is the case definition: it replaces the CASE_DATE / CASE_HOUR /
+# CASE_LEADS environment variables the launcher used to export. timestep_seconds is the
+# dt of the single Model.step per lead.
+driver:
+  start_time: "2026-11-03T12:00:00"   # f000 valid time of the recorded cycle
+  end_time: "2026-11-04T00:00:00"     # +12 h: the longest lead (f012) fits inside the run
+  timestep_seconds: 3600              # one 1-hour step per lead
+
+physics_schemes:
+  - name: fengsha
+    language: cpp
+    options:
+      use_brittle_impaction: true
+      c_tune: 0.05                    # Eq. 2.31.8 tuning constant
+      use_intermittency: true         # Comola et al. 2019 eta (Eq. 2.31.27)
+      particle_radii: [2.15e-6, 4.875e-6, 9.575e-6, 1.375e-4, 6.25e-4]
+      bin_lower_edges: [1.2e-6, 3.1e-6, 6.65e-6, 2.5e-5, 1.0e-4]
+      bin_upper_edges: [3.1e-6, 6.65e-6, 1.25e-4, 2.5e-4, 1.0e-3]

@@ -1,0 +1,25 @@
+# FENGSHA configuration for docs/notebooks/fengsha_gfs.ipynb: the original FENGSHA total
+# flux, i.e. the Marticorena & Bergametti (1995) k_v/h ratio with the Webb et al. (2020,
+# Eq. 9) horizontal saltation flux. Identical to fengsha_gfs_kok.yaml except
+# use_brittle_impaction and the three constants that only this branch reads; they are
+# pinned rather than left to the C++ defaults so the comparison is legible from the file.
+# The bin geometry is deliberately the same as the brittle file: the size distribution
+# D(n) is a shared input here, not a variable of the comparison.
+driver:
+  start_time: "2026-11-03T12:00:00"
+  end_time: "2026-11-04T00:00:00"
+  timestep_seconds: 3600
+
+physics_schemes:
+  - name: fengsha
+    language: cpp
+    options:
+      use_brittle_impaction: false
+      alpha: 1.0                      # sandblasting efficiency
+      gamma: 1.0                      # SSM exponent
+      kvhmax: 2.45e-4                 # cap on k_v/h for clay > 0.2
+      c_tune: 0.05
+      use_intermittency: true
+      particle_radii: [2.15e-6, 4.875e-6, 9.575e-6, 1.375e-4, 6.25e-4]
+      bin_lower_edges: [1.2e-6, 3.1e-6, 6.65e-6, 2.5e-5, 1.0e-4]
+      bin_upper_edges: [3.1e-6, 6.65e-6, 1.25e-4, 2.5e-4, 1.0e-3]
