@@ -534,6 +534,11 @@ for (flux, threshold, lead), (_, _, st) in RESULTS.items():
 # Geography, not magnitude: this path is a data-pipeline demonstration. The Sahel column that lights up
 # in the emissions panel is the same one the climatology flags as the most erodible in the world.
 #
+# The comparison figure is the point of the notebook: brittle impaction ON against Webb OFF on the
+# **same** global colour scale, lead by lead, with `log10(ON/OFF)` underneath so the sign of the
+# difference is visible where the two formulations both emit. Both threshold sets get their own
+# figure, because a shared scale is only meaningful inside one forcing set.
+#
 # Overlays use Cartopy's Natural Earth shapefiles (cached under $XDG_DATA_HOME/cartopy on the
 # `/cache` volume after the first run). Coastlines and political borders are drawn with the
 # 50 m dataset: crisp enough at 1°/°subpanel scale and ~1 MB, so no ~60 MB 10 m download.
@@ -603,26 +608,103 @@ if _INLINE:  # a bare `fig` expression would ALSO emit an execute_result next to
     plt.show()
 
 # %%
+# The comparison figure. Two rows of global dust flux share ONE LogNorm, and the third row is
+# log10(ON/OFF) on ONE symmetric diverging scale, so a panel's colour means the same absolute
+# flux (or the same ratio) everywhere in the figure. The Sahel figure after it is the detail view
+# of the same brittle-ON data, whose colourbar is independent because it is a zoom.
+import matplotlib
+import matplotlib.colors as mcolors
+
+BAD_GREY = "0.75"  # masked cells; the cmap's own bad colour is too dark to read as "no data"
+LON_MESH, LAT_MESH = np.meshgrid(LON1, LAT1)
+
+
+def flux_panel(ax, array, norm, cmap):
+    """One global dust panel on a shared scale, with the geography overlays."""
+    mesh = ax.pcolormesh(
+        LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
+        norm=norm, cmap=cmap, shading="nearest", transform=PC, zorder=1,
+    )
+    ax.set_global()  # the comparison is global: an autoscaled crop would hide where else it emits
+    geo_overlays(ax, borders=True, labels=False)
+    return mesh
+
+
+GLOBAL_FIGS = {}
+for threshold in CASE["thresholds"]:
+    on = [RESULTS[("brittle", threshold, lead)][0].sum(axis=-1) for lead in CASE["leads"]]
+    off = [RESULTS[("webb", threshold, lead)][0].sum(axis=-1) for lead in CASE["leads"]]
+    positive = np.concatenate([a[a > 0] for row in (on, off) for a in row])
+    assert positive.size, f"{threshold}: neither flux produced an emitting column"
+    # One shared LogNorm for BOTH rows: independently autoscaled log panels make the Webb flux
+    # look as strong as the brittle flux, which is the easiest way to lie with this figure.
+    shared = mcolors.LogNorm(vmin=float(positive.min()), vmax=float(positive.max()))
+    fig, axes = plt.subplots(3, 4, figsize=(16, 10.5), subplot_kw={"projection": PC}, squeeze=False)
+    drawn_on, drawn_off = [], []
+    for col, lead in enumerate(CASE["leads"]):
+        drawn_on.append(flux_panel(axes[0][col], on[col], shared, "magma"))
+        axes[0][col].set_title(f"ON  {threshold} f{lead:03d}", pad=1)
+        drawn_off.append(flux_panel(axes[1][col], off[col], shared, "magma"))
+    assert all(a.norm is shared for a in drawn_on + drawn_off), "a flux panel left the shared scale"
+    # one symmetric limit per panel is set below; peaks records them for the printed summary.
+    peaks = []
+    for col, lead in enumerate(CASE["leads"]):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_ratio = np.where((on[col] > 0) & (off[col] > 0),
+                                np.log10(np.where(off[col] > 0, on[col], np.nan)
+                                         / np.where(off[col] > 0, off[col], np.nan)), np.nan)
+        finite = log_ratio[np.isfinite(log_ratio)]
+        peak = float(np.abs(finite).max()) if finite.size else 0.0
+        peaks.append(peak)
+        cmap = matplotlib.colormaps["RdBu_r"].copy()
+        cmap.set_bad(BAD_GREY)
+        axes[2][col].pcolormesh(
+            LON_MESH, LAT_MESH, np.ma.masked_invalid(log_ratio),
+            norm=mcolors.TwoSlopeNorm(vmin=-max(peak, 1e-3), vcenter=0.0, vmax=max(peak, 1e-3)),
+            cmap=cmap, shading="nearest", transform=PC, zorder=1,
+        )
+        axes[2][col].set_global()
+        geo_overlays(axes[2][col], borders=True)
+        axes[2][col].set_title(
+            f"log10 ON/OFF f{lead:03d}  {f'+{peak:.1f}' if finite.size else 'no overlap'}", pad=1
+        )
+    for row, label in enumerate(("brittle impaction ON", "Webb saltation OFF", "log10(ON / OFF)")):
+        axes[row][0].text(-0.08, 0.5, label, transform=axes[row][0].transAxes,
+                          rotation=90, va="center", ha="right", fontsize=9)
+    fig.suptitle(f"FENGSHA global dust emission, {threshold}: brittle impaction vs Webb "
+                 f"({CYCLE['date']} t{CYCLE['hour']:02d}z, shared colour scale)")
+    fig.tight_layout()
+    fig.colorbar(drawn_on[0], ax=list(axes[0]) + list(axes[1]), fraction=0.03, pad=0.02,
+                 label="kg m-2 s-1")
+    GLOBAL_FIGS[threshold] = fig
+    print(f"{threshold}: shared flux scale {shared.vmin:.2e}..{shared.vmax:.2e} kg m-2 s-1; "
+          f"log10(ON/OFF) peaks at +/-{max(peaks):.2f} "
+          f"(x{10 ** max(peaks):.1f} at most) in lead f{CASE['leads'][int(np.argmax(peaks))]:03d}")
+    if _INLINE:
+        plt.show()
+
+# %%
 fig2, axes2 = plt.subplots(
     2, 4, figsize=(15, 7), sharex=True, sharey=True, subplot_kw={"projection": PC}
 )
-LON_MESH, LAT_MESH = np.meshgrid(LON1, LAT1)
 for row, threshold in enumerate(CASE["thresholds"]):
     for col, lead in enumerate(CASE["leads"]):
         ax = axes2[row, col]
-        array = RESULTS[(FLUXES[0], threshold, lead)][0].sum(axis=-1)
+        array = RESULTS[("brittle", threshold, lead)][0].sum(axis=-1)
         mesh = ax.pcolormesh(LON_MESH, LAT_MESH, np.ma.masked_where(array <= 0, array),
                              cmap="YlOrRd", shading="nearest", transform=PC, zorder=1)
         ax.set_extent([WEST, EAST, SOUTH, NORTH], crs=PC)
         # one graticule per column, one label set per edge — a 2x4 of labelled panels is noise
         geo_overlays(ax, borders=True, labels=(col == 0 and row == 1))
-        ax.set_title(f"{threshold} f{lead:03d}  {array.max():.1e} kg m-2 s-1", pad=1)
-fig2.suptitle("FENGSHA dust emissions, Sahel zoom (Natural Earth 50 m coastlines + borders)")
+        ax.set_title(f"ON {threshold} f{lead:03d}  {array.max():.1e} kg m-2 s-1", pad=1)
+fig2.suptitle("Detail view of the brittle-ON rows: Sahel zoom"
+              " (Natural Earth 50 m coastlines + borders)")
 # tight_layout *before* the colourbar: with the colourbar axes already present matplotlib warns
 # "Axes that are not compatible with tight_layout", and the warning lands in the committed output.
 fig2.tight_layout()
 fig2.colorbar(mesh, ax=axes2, fraction=0.03, pad=0.02)
-print(f"{len(RESULTS)} cases mapped; peak Sahel cell is where the climatology threshold is lowest")
+print(f"{len(RESULTS)} cases run; the Sahel zoom is the detail view of the ON row above, "
+      f"peak cell {WEST:.0f}..{EAST:.0f}E {SOUTH:.0f}..{NORTH:.0f}N")
 if _INLINE:
     plt.show()
 

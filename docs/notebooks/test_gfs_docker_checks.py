@@ -1154,3 +1154,22 @@ def test_comparison_token_passes_when_present(tmp_path):
     write(str(py), src)
     C.sync_notebook(str(py), str(nb))
     assert C.check_notebook(str(nb), requires=("comparison",)) == []
+
+
+def test_maps_requires_global_log_panels(tmp_path):
+    py = tmp_path / "crop.py"
+    nb = tmp_path / "crop.ipynb"
+    write(str(py), good_source() + "\n# %%\nmesh = ax.pcolormesh(x, y, z)\n")
+    C.sync_notebook(str(py), str(nb))
+    found = C.check_notebook(str(nb), requires=("maps",))
+    assert any("set_global" in p for p in found) and any("LogNorm" in p for p in found), found
+
+
+def test_maps_passes_with_global_log_panels(tmp_path):
+    src = good_source() + "\n# %%\nax.pcolormesh(x, y, z, norm=mcolors.LogNorm(vmin=a, vmax=b))\n" \
+                          "ax.set_global()\n"
+    py = tmp_path / "global.py"
+    nb = tmp_path / "global.ipynb"
+    write(str(py), src)
+    C.sync_notebook(str(py), str(nb))
+    assert C.check_notebook(str(nb), requires=("maps",)) == []

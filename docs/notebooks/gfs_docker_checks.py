@@ -422,8 +422,13 @@ def check_notebook(path: str = NB_PATH, requires: tuple[str, ...] = ("kernelspec
                 problems.append(f"{path}: brittle-on/off comparison must define {phrase!r}")
     if "report" in requires and joined.count("build_report(") < 2:
         problems.append(f"{path}: build_report() must be defined and called")
-    if "maps" in requires and "pcolormesh" not in joined:
-        problems.append(f"{path}: no pcolormesh map cell")
+    if "maps" in requires:
+        if "pcolormesh" not in joined:
+            problems.append(f"{path}: no pcolormesh map cell")
+        for token, why in (("set_global", "the dust maps must show the whole globe"),
+                           ("LogNorm", "dust flux spans orders of magnitude, so the scale is log")):
+            if token not in joined:
+                problems.append(f"{path}: \u00a76 {why} (missing {token!r})")
     if "caveats" in requires:
         for phrase in ("erodibility = 1", "frozen", "lake_fraction", "nearest"):
             if phrase not in md:
