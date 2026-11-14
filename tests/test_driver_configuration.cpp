@@ -443,6 +443,7 @@ TEST_F(DriverConfigurationTest, ParseOutputAmioStagingSettings) {
   output:
     enabled: true
     amio_worker_threads: 2
+    amio_parallel_output: false
     amio_staging_buffer_count: 3
     amio_staging_buffer_capacity_bytes: 67108864
     amio_staging_timeout_ms: 45000
@@ -451,6 +452,7 @@ TEST_F(DriverConfigurationTest, ParseOutputAmioStagingSettings) {
 
     const CeceConfig config = ParseConfig(test_config_file);
     EXPECT_EQ(config.output_config.amio_worker_threads, 2);
+    EXPECT_FALSE(config.output_config.amio_parallel_output);
     EXPECT_EQ(config.output_config.amio_staging_buffer_count, 3);
     EXPECT_EQ(config.output_config.amio_staging_buffer_capacity_bytes, 67108864);
     EXPECT_EQ(config.output_config.amio_staging_timeout_ms, 45000);
@@ -460,6 +462,7 @@ TEST_F(DriverConfigurationTest, OutputAmioStagingDefaultsAreHighResolutionSafe) 
     WriteConfigFile(test_config_file, "output:\n  enabled: true\nphysics_schemes: []\n");
 
     const CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_TRUE(config.output_config.amio_parallel_output);
     EXPECT_EQ(config.output_config.amio_staging_buffer_count, 2);
     EXPECT_EQ(config.output_config.amio_staging_buffer_capacity_bytes, 67108864);
     EXPECT_EQ(config.output_config.amio_staging_timeout_ms, 60000);

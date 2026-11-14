@@ -280,6 +280,9 @@ CeceConfig ParseConfig(const std::string& filename) {
                 for (const auto& key : attributes.keys()) field.attributes[key] = attributes[key].as_string();
             config.output_config.fields.push_back(std::move(field));
         }
+        if (output["amio_parallel_output"]) {
+            config.output_config.amio_parallel_output = output["amio_parallel_output"].as_bool();
+        }
         if (output["amio_worker_threads"]) {
             int threads = output["amio_worker_threads"].as_int();
             if (threads < 1) {

@@ -549,7 +549,18 @@ endif()
 target_link_libraries(cece_core PUBLIC HELM::LOGS)
 
 if(netCDF_FOUND)
-  target_link_libraries(cece_core PUBLIC netCDF::netcdf)
+  # Direct nc_* users must resolve to the same runtime as HELM's writer.
+  # Exporting Debian's serial target first interposes its nc_create_par stub
+  # over libnetcdf_mpi and rejects otherwise supported shared output.
+  if(AMIO_NETCDF_PAR_LIB)
+    target_link_libraries(cece_core PUBLIC ${AMIO_NETCDF_PAR_LIB})
+    get_target_property(_cece_nc_includes netCDF::netcdf INTERFACE_INCLUDE_DIRECTORIES)
+    if(_cece_nc_includes)
+      target_include_directories(cece_core PUBLIC ${_cece_nc_includes})
+    endif()
+  else()
+    target_link_libraries(cece_core PUBLIC netCDF::netcdf)
+  endif()
   target_include_directories(cece_core PUBLIC ${netCDF_INCLUDE_DIRS})
 endif()
 
@@ -572,6 +583,7 @@ add_library(
   src/driver/cece_helm_graph.cpp
   src/driver/cece_regridder_utils.cpp
   src/driver/cece_standalone_writer.cpp
+  src/driver/cece_parallel_writer.cpp
   src/driver/cece_core_local_time_init.cpp
   src/driver/cece_core_writer_init.cpp
   src/driver/cece_amio_utils.cpp
@@ -594,6 +606,23 @@ target_link_libraries(
   cece_driver
   PUBLIC cece_core amio_core HELM::SPAN blend axis HELM::DAGR HELM::HALO HELM::TICK conf
 )
+
+# Match the NetCDF runtime selected by HELM, including Debian's separate
+# netcdf_mpi library and HPC installations exporting parallel netCDF directly.
+include(CheckCSourceCompiles)
+set(CMAKE_REQUIRED_LIBRARIES netCDF::netcdf)
+check_c_source_compiles("#include <netcdf_meta.h>
+#if !defined(NC_HAS_PARALLEL4) || !NC_HAS_PARALLEL4
+#error parallel NetCDF-4 unavailable
+#endif
+int main(void) { return 0; }" CECE_NETCDF_HAS_PARALLEL4)
+unset(CMAKE_REQUIRED_LIBRARIES)
+if(AMIO_NETCDF_PAR_LIB OR CECE_NETCDF_HAS_PARALLEL4)
+  target_compile_definitions(cece_driver PRIVATE CECE_HAS_PARALLEL_NETCDF=1)
+  message(STATUS "CECE: shared NetCDF output enabled (requires MPI_THREAD_MULTIPLE at runtime)")
+else()
+  message(STATUS "CECE: using rank-0 NetCDF output (parallel NetCDF unavailable)")
+endif()
 
 # --- Backward-Compatibility target aliases ---
 add_library(cece INTERFACE)

@@ -528,3 +528,12 @@ def test_nuopc_rejects_unknown_attribute():
             "species": {"oc": [{"field": "OC", "operation": "add"}]},
             "nuopc": {"export_fields": {"oc": {"standard_name": "x", "rank": 2}}},
         })
+
+
+def test_parallel_output_round_trip():
+    assert config.OutputConfig().amio_parallel_output is True
+    parsed = config.CeceConfig.from_dict({"output": {"amio_parallel_output": False}})
+    assert parsed.to_dict()["output"]["amio_parallel_output"] is False
+    assert config.CeceConfig.from_dict(parsed.to_dict()).to_dict() == parsed.to_dict()
+    with pytest.raises(ValueError, match="amio_parallel_output must be a boolean"):
+        config.OutputConfig.from_dict({"amio_parallel_output": "false"})
