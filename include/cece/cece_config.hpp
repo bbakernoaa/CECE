@@ -388,6 +388,7 @@ struct CeceOutputConfig {
     bool include_diagnostics = false;   ///< Also write diagnostic fields when true.
     bool enabled = false;               ///< True when an output block is present in the YAML.
     int amio_worker_threads = -1;       ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
+    bool amio_parallel_output = true;   ///< Prefer shared region batches when parallel NetCDF and MPI thread support are available.
     int amio_staging_buffer_count = 2;  ///< Number of output staging buffers.
     int amio_staging_buffer_capacity_bytes = 67108864;               ///< Minimum bytes per output staging buffer (64 MiB).
     int amio_staging_timeout_ms = 60000;                             ///< Output staging acquisition/write wait timeout.

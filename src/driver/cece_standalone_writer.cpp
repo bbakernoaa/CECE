@@ -306,11 +306,14 @@ std::string CeceStandaloneWriter::ResolveFilename(double time_seconds_since_star
 }
 
 void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t dataset, double time_seconds) {
-    // Writes every coordinate variable into the open WRITE-mode dataset:
-    // lon, lat, cell bounds (lon_bnds/lat_bnds, plus a UGRID mesh marker when
-    // ny_ == 1), lev, and time. Moved out of WriteTimeStep verbatim; throws
-    // via check_amio_rc on any AMIO write failure (the caller degrades that
-    // to skip_file_work so the mandatory field gathers still run).
+    VisitCoordinateVariables(time_seconds, [&](const char* name, const void* values, amio_dtype_t dtype, const amio_shape_t* shape) {
+        write_and_wait(dataset, name, values, dtype, shape, config_.amio_staging_timeout_ms);
+    });
+}
+
+void CeceStandaloneWriter::VisitCoordinateVariables(double time_seconds, const CoordinateVisitor& write_coordinate) {
+    // Generate coordinate shapes and payloads once for both output paths.
+    // The visitor consumes each payload before its local storage is released.
 
     // Step 4: Write lon coordinate variable
     std::vector<double> lon_values;
@@ -332,7 +335,7 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
         lon_shape.rank = 1;
         lon_shape.extents[0] = nx_;
     }
-    write_and_wait(dataset, "lon", lon_values.data(), AMIO_DTYPE_F64, &lon_shape, config_.amio_staging_timeout_ms);
+    write_coordinate("lon", lon_values.data(), AMIO_DTYPE_F64, &lon_shape);
 
     // Step 5: Write lat coordinate variable
     std::vector<double> lat_values;
@@ -354,7 +357,7 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
         lat_shape.rank = 1;
         lat_shape.extents[0] = (ny_ == 1) ? nx_ : ny_;
     }
-    write_and_wait(dataset, "lat", lat_values.data(), AMIO_DTYPE_F64, &lat_shape, config_.amio_staging_timeout_ms);
+    write_coordinate("lat", lat_values.data(), AMIO_DTYPE_F64, &lat_shape);
 
     // Step 5b: Compute and write cell boundary coordinate variables (bounds) using the AXIS mesh directly!
     std::vector<double> lon_bnds_values;
@@ -480,8 +483,8 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
         if (lat_bnds_values[i] > 90.0) lat_bnds_values[i] = 90.0;
     }
 
-    write_and_wait(dataset, "lon_bnds", lon_bnds_values.data(), AMIO_DTYPE_F64, &lon_bnds_shape, config_.amio_staging_timeout_ms);
-    write_and_wait(dataset, "lat_bnds", lat_bnds_values.data(), AMIO_DTYPE_F64, &lat_bnds_shape, config_.amio_staging_timeout_ms);
+    write_coordinate("lon_bnds", lon_bnds_values.data(), AMIO_DTYPE_F64, &lon_bnds_shape);
+    write_coordinate("lat_bnds", lat_bnds_values.data(), AMIO_DTYPE_F64, &lat_bnds_shape);
 
     // Step 5c: Write mesh topology variable for unstructured UGRID mesh
     if (ny_ == 1) {
@@ -490,7 +493,7 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
         std::memset(&mesh_shape, 0, sizeof(mesh_shape));
         mesh_shape.rank = 1;
         mesh_shape.extents[0] = 1;
-        write_and_wait(dataset, "mesh", &mesh_val, AMIO_DTYPE_I32, &mesh_shape, config_.amio_staging_timeout_ms);
+        write_coordinate("mesh", &mesh_val, AMIO_DTYPE_I32, &mesh_shape);
     }
 
     // Step 6: Write lev coordinate variable
@@ -502,7 +505,7 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
     std::memset(&lev_shape, 0, sizeof(lev_shape));
     lev_shape.rank = 1;
     lev_shape.extents[0] = nz_;
-    write_and_wait(dataset, "lev", lev_values.data(), AMIO_DTYPE_F64, &lev_shape, config_.amio_staging_timeout_ms);
+    write_coordinate("lev", lev_values.data(), AMIO_DTYPE_F64, &lev_shape);
 
     // Step 7: Write time coordinate variable
     double time_val = time_seconds;
@@ -510,7 +513,7 @@ void CeceStandaloneWriter::WriteCoordinateVariables(amio_dataset_handle_t datase
     std::memset(&time_shape, 0, sizeof(time_shape));
     time_shape.rank = 1;
     time_shape.extents[0] = 1;
-    write_and_wait(dataset, "time", &time_val, AMIO_DTYPE_F64, &time_shape, config_.amio_staging_timeout_ms);
+    write_coordinate("time", &time_val, AMIO_DTYPE_F64, &time_shape);
 }
 
 int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, DualView3D>& fields, double time_seconds, int step) {
@@ -523,6 +526,19 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
     if (mpi_live && comm_ != MPI_COMM_NULL) {
         MPI_Comm_rank(comm_, &rank);
     }
+
+    if (!ValidateOutputFields(fields)) return -1;
+
+    int parallel_output = 0;
+#ifdef CECE_HAS_PARALLEL_NETCDF
+    if (mpi_live && comm_ != MPI_COMM_NULL) {
+        int size = 1, thread_level = MPI_THREAD_SINGLE;
+        MPI_Comm_size(comm_, &size);
+        MPI_Query_thread(&thread_level);
+        parallel_output = config_.amio_parallel_output && size > 1 && thread_level >= MPI_THREAD_MULTIPLE;
+        MPI_Allreduce(MPI_IN_PLACE, &parallel_output, 1, MPI_INT, MPI_MIN, comm_);
+    }
+#endif
 
     CECE_LOG_INFO("[CECE] Writing time step " + std::to_string(step) + " (t=" + std::to_string(time_seconds) + ") via AMIO");
 
@@ -544,124 +560,152 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
 
     try {
         if (rank == 0) {
-            // Step 1: Build the dynamic AMIO netcdf4 manifest YAML in memory (rank 0 only,
-            // then broadcast so every rank opens with byte-identical content).
-            std::ostringstream m_file;
+            try {
+                // Step 1: Build the dynamic AMIO netcdf4 manifest YAML in memory (rank 0 only,
+                // then broadcast so every rank opens with byte-identical content).
+                std::ostringstream m_file;
 
-            const size_t staging_capacity = ResolveStagingBufferCapacity(config_, nx_, ny_, nz_);
-            const int output_threads = std::max(1, config_.amio_worker_threads);
+                const int staging_rows = parallel_output ? *std::max_element(band_.row_counts.begin(), band_.row_counts.end()) : ny_;
+                const size_t staging_capacity = ResolveStagingBufferCapacity(config_, nx_, staging_rows, nz_);
+                const int output_threads = std::max(1, config_.amio_worker_threads);
 
-            m_file << "backend: netcdf4\n"
-                   << "path: " << filename << "\n"
-                   << "data_model: enhanced\n"
-                   << "staging_pool:\n"
-                   << "  buffer_count: " << config_.amio_staging_buffer_count << "\n"
-                   << "  buffer_capacity_bytes: " << staging_capacity << "\n"
-                   << "  max_buffer_count: " << config_.amio_staging_buffer_count << "\n"
-                   << "worker_pool:\n"
-                   << "  threads: " << output_threads << "\n"
-                   << "prefetch:\n"
-                   << "  depth: 1\n"
-                   << "  read_timeout_s: 60\n"
-                   << "staging_timeout_ms: " << config_.amio_staging_timeout_ms << "\n";
+                m_file << "backend: netcdf4\n"
+                       << "path: " << filename << "\n"
+                       << "data_model: enhanced\n"
+                       << "staging_pool:\n"
+                       << "  buffer_count: " << config_.amio_staging_buffer_count << "\n"
+                       << "  buffer_capacity_bytes: " << staging_capacity << "\n"
+                       << "  max_buffer_count: " << config_.amio_staging_buffer_count << "\n"
+                       << "worker_pool:\n"
+                       << "  threads: " << output_threads << "\n"
+                       << "prefetch:\n"
+                       << "  depth: 1\n"
+                       << "  read_timeout_s: 60\n"
+                       << "staging_timeout_ms: " << config_.amio_staging_timeout_ms << "\n";
 
-            std::map<std::string, std::string> final_attrs;
-            final_attrs["title"] = "CECE Standalone Emissions Simulation Output";
-            final_attrs["Conventions"] = (ny_ == 1 ? "CF-1.9 UGRID-1.0" : "CF-1.9");
-            final_attrs["institution"] = "National Oceanic and Atmospheric Administration";
-            final_attrs["source"] = "CECE Standalone Driver, regridded dynamically via HELM AXIS topology engine";
-            final_attrs["history"] = "Simulated on " + GetCurrentTimestamp() + " UTC";
-            final_attrs["references"] = "CECE Documentation: https://ufs-community.github.io/CECE, Repository: https://github.com/ufs-community/cece";
-            final_attrs["comment"] = "Target spatial grid: " + std::to_string(nx_) + "x" + std::to_string(ny_) + "x" + std::to_string(nz_);
-            final_attrs["gridspec_file"] = (gridspec_file_.empty() ? "none" : gridspec_file_);
-            final_attrs["date_created"] = GetCurrentTimestamp();
-            final_attrs["date_modified"] = GetCurrentTimestamp();
-            final_attrs["date_metadata_modified"] = GetCurrentTimestamp();
-
-            for (const auto& [key, value] : config_.global_attributes) {
-                final_attrs[key] = value;
-            }
-
-            m_file << "global_attributes:\n";
-            for (const auto& [key, value] : final_attrs) {
-                m_file << "  \"" << EscapeYamlDoubleQuoted(key) << "\": \"" << EscapeYamlDoubleQuoted(value) << "\"\n";
-            }
-            // The collection is seeded with the coordinate variables and
-            // carries time's units from config initialization (SetTimeUnits),
-            // so it renders the whole variable side of the manifest.
-            m_file << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"lon_bnds\", \"lat_bnds\"";
-            if (ny_ == 1) {
-                m_file << ", \"mesh\"";
-            }
-            for (const auto& field : config_.fields) {
-                if (field.name != "lon" && field.name != "lat" && field.name != "lev" && field.name != "time" && field.name != "lon_bnds" &&
-                    field.name != "lat_bnds" && field.name != "mesh") {
-                    m_file << ", \"" << field.name << "\"";
+                // Explicit axes avoid length-based aliases (for example lev=1
+                // and time=1) and preserve the unlimited record dimension in
+                // both legacy and schema-prepared writes.
+                m_file << "unlimited_dimensions: [time]\nvariable_dimensions:\n  time: [time]\n  lev: [lev]\n";
+                const bool curvilinear = use_custom_coords_ && ny_ > 1 && lon_coords_.size() == static_cast<size_t>(nx_) * ny_;
+                m_file << "  lon: " << (curvilinear ? "[lat, lon]" : "[lon]") << "\n"
+                       << "  lat: " << (curvilinear ? "[lat, lon]" : (ny_ == 1 ? "[lon]" : "[lat]")) << "\n"
+                       << "  lon_bnds: " << (curvilinear ? "[lat, lon, vertices]" : "[lon, vertices]") << "\n"
+                       << "  lat_bnds: " << (curvilinear ? "[lat, lon, vertices]" : (ny_ == 1 ? "[lon, vertices]" : "[lat, vertices]")) << "\n";
+                if (ny_ == 1) m_file << "  mesh: [mesh]\n";
+                std::vector<std::string> dimension_fields;
+                const bool all_fields = config_.fields.GetDataFields().empty();
+                for (const auto& [name, view] : fields) {
+                    if (!IsCoordinateName(name) && (all_fields || config_.fields.Contains(name))) dimension_fields.push_back(name);
                 }
-            }
-            m_file << "]\nvariables:\n"
-                   << "  lon:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_east\"\n"
-                   << "      standard_name: \"longitude\"\n"
-                   << "      long_name: \"longitude\"\n"
-                   << "      bounds: \"lon_bnds\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n"
-                   << "  lat:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_north\"\n"
-                   << "      standard_name: \"latitude\"\n"
-                   << "      long_name: \"latitude\"\n"
-                   << "      bounds: \"lat_bnds\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n"
-                   << "  lev:\n"
-                   << "    attributes:\n"
-                   << "      units: \"1\"\n"
-                   << "      standard_name: \"model_level_number\"\n"
-                   << "      long_name: \"vertical level\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n"
-                   << "  time:\n"
-                   << "    attributes:\n"
-                   << "      units: \"seconds since " << start_time_iso8601_ << "\"\n"
-                   << "      long_name: \"time\"\n"
-                   << "      standard_name: \"time\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n"
-                   << "  lon_bnds:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_east\"\n"
-                   << "      standard_name: \"longitude\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n"
-                   << "  lat_bnds:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_north\"\n"
-                   << "      standard_name: \"latitude\"\n"
-                   << "      coverage_content_type: \"coordinate\"\n";
+                std::sort(dimension_fields.begin(), dimension_fields.end());
+                for (const auto& name : dimension_fields) {
+                    m_file << "  \"" << EscapeYamlDoubleQuoted(name) << "\": [time, lev, " << (ny_ == 1 ? "lon" : "lat, lon") << "]\n";
+                }
 
-            if (ny_ == 1) {
-                m_file << "  mesh:\n"
+                std::map<std::string, std::string> final_attrs;
+                final_attrs["title"] = "CECE Standalone Emissions Simulation Output";
+                final_attrs["Conventions"] = (ny_ == 1 ? "CF-1.9 UGRID-1.0" : "CF-1.9");
+                final_attrs["institution"] = "National Oceanic and Atmospheric Administration";
+                final_attrs["source"] = "CECE Standalone Driver, regridded dynamically via HELM AXIS topology engine";
+                final_attrs["history"] = "Simulated on " + GetCurrentTimestamp() + " UTC";
+                final_attrs["references"] =
+                    "CECE Documentation: https://ufs-community.github.io/CECE, Repository: https://github.com/ufs-community/cece";
+                final_attrs["comment"] = "Target spatial grid: " + std::to_string(nx_) + "x" + std::to_string(ny_) + "x" + std::to_string(nz_);
+                final_attrs["gridspec_file"] = (gridspec_file_.empty() ? "none" : gridspec_file_);
+                final_attrs["date_created"] = GetCurrentTimestamp();
+                final_attrs["date_modified"] = GetCurrentTimestamp();
+                final_attrs["date_metadata_modified"] = GetCurrentTimestamp();
+
+                for (const auto& [key, value] : config_.global_attributes) {
+                    final_attrs[key] = value;
+                }
+
+                m_file << "global_attributes:\n";
+                for (const auto& [key, value] : final_attrs) {
+                    m_file << "  \"" << EscapeYamlDoubleQuoted(key) << "\": \"" << EscapeYamlDoubleQuoted(value) << "\"\n";
+                }
+                // The collection is seeded with the coordinate variables and
+                // carries time's units from config initialization (SetTimeUnits),
+                // so it renders the whole variable side of the manifest.
+                m_file << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"lon_bnds\", \"lat_bnds\"";
+                if (ny_ == 1) {
+                    m_file << ", \"mesh\"";
+                }
+                for (const auto& field : config_.fields) {
+                    if (field.name != "lon" && field.name != "lat" && field.name != "lev" && field.name != "time" && field.name != "lon_bnds" &&
+                        field.name != "lat_bnds" && field.name != "mesh") {
+                        m_file << ", \"" << field.name << "\"";
+                    }
+                }
+                m_file << "]\nvariables:\n"
+                       << "  lon:\n"
                        << "    attributes:\n"
-                       << "      cf_role: \"mesh_topology\"\n"
-                       << "      topology_dimension: 2\n"
-                       << "      face_coordinates: \"lon lat\"\n"
-                       << "      face_bounds: \"lon_bnds lat_bnds\"\n";
-            }
+                       << "      units: \"degrees_east\"\n"
+                       << "      standard_name: \"longitude\"\n"
+                       << "      long_name: \"longitude\"\n"
+                       << "      bounds: \"lon_bnds\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n"
+                       << "  lat:\n"
+                       << "    attributes:\n"
+                       << "      units: \"degrees_north\"\n"
+                       << "      standard_name: \"latitude\"\n"
+                       << "      long_name: \"latitude\"\n"
+                       << "      bounds: \"lat_bnds\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n"
+                       << "  lev:\n"
+                       << "    attributes:\n"
+                       << "      units: \"1\"\n"
+                       << "      standard_name: \"model_level_number\"\n"
+                       << "      long_name: \"vertical level\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n"
+                       << "  time:\n"
+                       << "    attributes:\n"
+                       << "      units: \"seconds since " << start_time_iso8601_ << "\"\n"
+                       << "      long_name: \"time\"\n"
+                       << "      standard_name: \"time\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n"
+                       << "  lon_bnds:\n"
+                       << "    attributes:\n"
+                       << "      units: \"degrees_east\"\n"
+                       << "      standard_name: \"longitude\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n"
+                       << "  lat_bnds:\n"
+                       << "    attributes:\n"
+                       << "      units: \"degrees_north\"\n"
+                       << "      standard_name: \"latitude\"\n"
+                       << "      coverage_content_type: \"coordinate\"\n";
 
-            for (const auto& field : config_.fields) {
-                if (field.name != "lon" && field.name != "lat" && field.name != "lev" && field.name != "time" && field.name != "lon_bnds" &&
-                    field.name != "lat_bnds" && field.name != "mesh") {
-                    m_file << "  " << field.name << ":\n"
-                           << "    attributes:\n";
-                    for (const auto& [attr_name, attr_value] : field.attributes) {
-                        m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
-                    }
-                    m_file << "      coordinates: \"time lev lat lon\"\n";
-                    if (ny_ == 1) {
-                        m_file << "      mesh: \"mesh\"\n"
-                               << "      location: \"face\"\n";
+                if (ny_ == 1) {
+                    m_file << "  mesh:\n"
+                           << "    attributes:\n"
+                           << "      cf_role: \"mesh_topology\"\n"
+                           << "      topology_dimension: 2\n"
+                           << "      face_coordinates: \"lon lat\"\n"
+                           << "      face_bounds: \"lon_bnds lat_bnds\"\n";
+                }
+
+                for (const auto& field : config_.fields) {
+                    if (field.name != "lon" && field.name != "lat" && field.name != "lev" && field.name != "time" && field.name != "lon_bnds" &&
+                        field.name != "lat_bnds" && field.name != "mesh") {
+                        m_file << "  " << field.name << ":\n"
+                               << "    attributes:\n";
+                        for (const auto& [attr_name, attr_value] : field.attributes) {
+                            m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
+                        }
+                        m_file << "      coordinates: \"time lev lat lon\"\n";
+                        if (ny_ == 1) {
+                            m_file << "      mesh: \"mesh\"\n"
+                                   << "      location: \"face\"\n";
+                        }
                     }
                 }
+                manifest_content = m_file.str();
+            } catch (const std::exception& e) {
+                CECE_LOG_ERROR(std::string("[CECE] Output manifest failed: ") + e.what());
+                manifest_content.clear();
+                skip_file_work = true;
             }
-            manifest_content = m_file.str();
         }
 
         // Broadcast the in-memory manifest from rank 0 to every rank so all ranks see
@@ -682,6 +726,13 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 manifest_content.resize(static_cast<size_t>(manifest_len));
                 MPI_Bcast(manifest_content.data(), manifest_len, MPI_CHAR, 0, comm_);
             }
+        }
+
+        // Capability selection precedes file operations. An actual shared-write
+        // failure is returned to the caller, never retried as serial output.
+
+        if (parallel_output && !skip_file_work) {
+            return WriteParallelTimeStep(fields, time_seconds, manifest_content);
         }
 
         // Step 2: Initialize AMIO Core.
@@ -820,34 +871,25 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                     return -1;
                 }
 
-                // Pack the band host view (LayoutLeft (i, jrel, k)) into a
-                // contiguous per-level send buffer laid out [level][jrel][i]:
-                // element (k, jrel, i) at k*(ny_local*nx_) + jrel*nx_ + i.
-                std::vector<double> send_buf(static_cast<size_t>(nz_) * band_level_elems);
-                for (int k = 0; k < nz_; ++k) {
-                    for (int jrel = 0; jrel < ny_local; ++jrel) {
-                        for (int i = 0; i < nx_; ++i) {
-                            size_t kokkos_idx = static_cast<size_t>(i) + static_cast<size_t>(jrel) * nx_ + static_cast<size_t>(k) * nx_ * ny_local;
-                            size_t send_idx = static_cast<size_t>(k) * band_level_elems + static_cast<size_t>(jrel) * nx_ + i;
-                            send_buf[send_idx] = h_view.data()[kokkos_idx];
-                        }
-                    }
+                // Dense LayoutLeft(i,j,k) is already contiguous [k,j,i].
+                // Borrow it through synchronous snapshot admission; only padded
+                // host views require a packed copy.
+                const double* send_data = h_view.data();
+                std::vector<double> send_buf;
+                if (h_view.stride(0) != 1 || h_view.stride(1) != static_cast<size_t>(nx_) ||
+                    h_view.stride(2) != static_cast<size_t>(nx_) * ny_local) {
+                    send_buf.resize(static_cast<size_t>(nz_) * band_level_elems);
+                    for (int k = 0; k < nz_; ++k)
+                        for (int jrel = 0; jrel < ny_local; ++jrel)
+                            for (int i = 0; i < nx_; ++i) send_buf[(static_cast<size_t>(k) * ny_local + jrel) * nx_ + i] = h_view(i, jrel, k);
+                    send_data = send_buf.data();
                 }
 
-                // global_field is the assembled global [level][j][i] buffer
-                // (size nz_ * ny_ * nx_). In the single-rank path it IS send_buf
-                // (already the whole grid). In the multi-rank path rank 0 fills it
-                // via the per-level MPI_Gatherv below and writes it directly — the
-                // file is rank-0-owned in independent mode (see Step 2), so no
-                // broadcast and no per-rank copy are needed.
                 std::vector<double> global_field;
-                if (!do_gather) {
-                    // Single-rank / no-MPI: ny_local == ny_, so send_buf is already
-                    // the global [level][j][i] field. Move it in directly.
-                    global_field = std::move(send_buf);
-                } else {
+                const double* field_data = send_data;
+                if (do_gather) {
                     if (rank == 0) {
-                        global_field.assign(static_cast<size_t>(nz_) * global_level_elems, 0.0);
+                        global_field.resize(static_cast<size_t>(nz_) * global_level_elems);
                     }
                     // One MPI_Gatherv PER LEVEL (Req 6.1, 6.3, 6.6). Every rank
                     // (including rank 0 and surplus ranks with ny_local == 0)
@@ -856,7 +898,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                     // send a zero-count band (sendcount 0).
                     const int sendcount = static_cast<int>(band_level_elems);  // nx_ * ny_local
                     for (int k = 0; k < nz_; ++k) {
-                        const double* level_send = send_buf.data() + static_cast<size_t>(k) * band_level_elems;
+                        const double* level_send = sendcount ? send_data + static_cast<size_t>(k) * band_level_elems : nullptr;
                         double* level_recv = (rank == 0) ? (global_field.data() + static_cast<size_t>(k) * global_level_elems) : nullptr;
                         const int gather_rc = MPI_Gatherv(level_send, sendcount, MPI_DOUBLE, level_recv, (rank == 0) ? recvcounts.data() : nullptr,
                                                           (rank == 0) ? recvdispls.data() : nullptr, MPI_DOUBLE, 0, comm_);
@@ -866,6 +908,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                             return -1;
                         }
                     }
+                    field_data = rank == 0 ? global_field.data() : nullptr;
                     // The gather leaves the authoritative global field on rank 0.
                     // The output file is opened in INDEPENDENT mode by rank 0 only
                     // (see Step 2), so rank 0 writes it directly below: no full-grid
@@ -876,7 +919,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 // --- Global write assembly (task 8.2) ---------------------------
                 // Only the file owner writes: rank 0 in the multi-rank path (it
                 // assembled global_field via Gatherv), the single process in the
-                // no-gather path (global_field was moved from send_buf). The
+                // no-gather path (the dense host view is borrowed directly). The
                 // [level][j][i] layout is already exactly the NetCDF
                 // [lev, lat, lon] ordering — the old "transpose" loop computed
                 // src_idx and netcdf_idx as the same value — so global_field is
@@ -901,7 +944,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                             field_shape.extents[3] = nx_;
                         }
 
-                        write_and_wait(dataset, name.c_str(), global_field.data(), AMIO_DTYPE_F64, &field_shape, config_.amio_staging_timeout_ms);
+                        write_and_wait(dataset, name.c_str(), field_data, AMIO_DTYPE_F64, &field_shape, config_.amio_staging_timeout_ms);
                     } catch (const std::exception& e) {
                         CECE_LOG_ERROR(std::string("[CECE] Writer field write failed for '") + name + "': " + e.what());
                         skip_file_work = true;
@@ -935,7 +978,9 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
         }
 
         if (multi_rank_writer) {
-            MPI_Barrier(comm_);
+            int failed = skip_file_work ? 1 : 0;
+            MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, comm_);
+            skip_file_work = failed != 0;
         }
 
         // Restore the ambient parent communicator for downstream AMIO users

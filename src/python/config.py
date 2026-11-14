@@ -1040,6 +1040,7 @@ class OutputConfig:
     filename_pattern: str = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
     frequency_steps: int = 1
     fields: list[OutputFieldConfig] = field(default_factory=list)
+    amio_parallel_output: bool = True
     amio_worker_threads: int | None = None
     amio_staging_buffer_count: int = 2
     amio_staging_buffer_capacity_bytes: int = 67108864
@@ -1047,6 +1048,8 @@ class OutputConfig:
     global_attributes: dict[str, str | int | float | bool] = field(default_factory=dict)
 
     def validate(self) -> None:
+        if not isinstance(self.amio_parallel_output, bool):
+            raise ValueError("output.amio_parallel_output must be a boolean")
         if not isinstance(self.enabled, bool):
             raise ValueError("output.enabled must be a boolean")
         _validate_string(self.directory, "output.directory")
@@ -1095,6 +1098,7 @@ class OutputConfig:
                 "filename_pattern",
                 "frequency_steps",
                 "fields",
+                "amio_parallel_output",
                 "amio_worker_threads",
                 "amio_staging_buffer_count",
                 "amio_staging_buffer_capacity_bytes",
@@ -1117,6 +1121,7 @@ class OutputConfig:
                 OutputFieldConfig.from_dict(item, f"{where}.fields[{index}]")
                 for index, item in enumerate(raw_fields)
             ],
+            amio_parallel_output=values.get("amio_parallel_output", True),
             amio_worker_threads=values.get("amio_worker_threads"),
             amio_staging_buffer_count=values.get("amio_staging_buffer_count", 2),
             amio_staging_buffer_capacity_bytes=values.get(
@@ -1929,6 +1934,7 @@ class CeceConfig:
             }
             if output.global_attributes:
                 result["output"]["global_attributes"] = output.global_attributes
+            result["output"]["amio_parallel_output"] = output.amio_parallel_output
             if output.amio_worker_threads is not None:
                 result["output"]["amio_worker_threads"] = output.amio_worker_threads
             result["output"]["amio_staging_buffer_count"] = (

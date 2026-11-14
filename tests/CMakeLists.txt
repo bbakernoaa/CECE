@@ -973,4 +973,37 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 # --- Test defaults (labels, PROCESSORS, OMP_PROC_BIND) ------------------------
+
+# Real shared-file output and collective validation, independently read through NetCDF.
+cece_add_gtest(test_parallel_standalone_writer MAIN OWN MPI_LAUNCHER NO_DISCOVER)
+cece_add_mpi_tests(
+  test_parallel_standalone_writer
+  NP 1 2 3
+  ENVIRONMENT "OMP_NUM_THREADS=1" "OMP_PROC_BIND=false"
+)
+set_tests_properties(
+  test_parallel_standalone_writer_np1
+  test_parallel_standalone_writer_np2
+  test_parallel_standalone_writer_np3
+  PROPERTIES TIMEOUT 120
+)
+add_executable(test_output_batch test_output_batch.cpp)
+target_include_directories(test_output_batch PRIVATE "${PROJECT_SOURCE_DIR}/src/driver")
+add_test(NAME output_batch_bounds COMMAND test_output_batch)
+
+add_test(
+  NAME test_parallel_standalone_writer_serialized
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:test_parallel_standalone_writer> ${MPIEXEC_POSTFLAGS}
+)
+set_tests_properties(
+  test_parallel_standalone_writer_serialized
+  PROPERTIES
+    TIMEOUT 120
+    PROCESSORS 3
+    ENVIRONMENT
+      "${CECE_TEST_MPI_ENVIRONMENT};${CECE_TEST_MPI_ROOT_ENVIRONMENT};CECE_TEST_SERIALIZED_MPI=1;OMP_NUM_THREADS=1;OMP_PROC_BIND=false;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
+)
+
 cece_apply_test_defaults()

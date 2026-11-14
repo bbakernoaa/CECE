@@ -1065,9 +1065,10 @@ Configuration for NetCDF output file generation with emission fields.
 | `frequency_steps` | Integer | Output frequency in timesteps |
 | `fields` | List | Fields to write; each entry is either a field name string or a map with `name` and optional `attributes` |
 | `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads for output. Must be ≥ 1 when explicitly set; nonpositive values are rejected. When omitted, falls back to `driver.amio_worker_threads`. |
-| `amio_staging_buffer_count` | Integer | Number of output staging buffers, in `[1, 4096]`. Default: `2`. The writer waits for each asynchronous write and bounds the pool at this count. |
-| `amio_staging_buffer_capacity_bytes` | Integer | Minimum capacity of each output staging buffer, in `[1, 1073741824]`. Default: `67108864` (64 MiB). The writer automatically raises this to fit one complete `float64` output field. |
-| `amio_staging_timeout_ms` | Integer | Output staging acquisition and write-completion timeout, in `[1, 60000]` milliseconds. Default: `60000`. |
+| `amio_parallel_output` | Boolean | Default: `true`. Use shared NetCDF region batches for multi-rank output when parallel NetCDF and `MPI_THREAD_MULTIPLE` are available; otherwise use rank-0 output. Set `false` to force the original rank-0 path. |
+| `amio_staging_buffer_count` | Integer | Number of output staging buffers, in `[1, 4096]`. Default: `2`. The writer drains each bounded batch and caps the pool at this count. |
+| `amio_staging_buffer_capacity_bytes` | Integer | Minimum capacity of each output staging buffer, in `[1, 1073741824]`. Default: `67108864` (64 MiB). The writer automatically raises this to fit one `float64` output field (the largest rank-local band for shared output, the global field for rank-0 output). |
+| `amio_staging_timeout_ms` | Integer | Output staging acquisition timeout, in `[1, 60000]` milliseconds; also used for individual waits on the rank-0 path. Shared batches drain to terminal completion before lifecycle collectives. Default: `60000`. |
 | `global_attributes` | Map | (Optional) Map of NetCDF global attribute names to string, number, or boolean values, overriding any defaults. |
 
 ### Fields and Attributes
@@ -1260,3 +1261,29 @@ A complete example lives in
 `examples/cece_config_ceds_oc_small_coupled.yaml` (the small CEDS ocean
 fixture plus a `nuopc:` block exporting `oc` and importing one temperature
 field).
+
+### Shared NetCDF output (HELM PR #41)
+
+CECE pins HELM to `5afeb95e3e7e8e44d577c0cc5b286af909c063f8`
+from [HELM PR #41](https://github.com/NOAA-EMC/HELM/pull/41).
+Initialize MPI with `MPI_THREAD_MULTIPLE` to use background shared output;
+the standalone driver already requests this level. With parallel NetCDF,
+active latitude bands write directly to one file, without gathering full
+fields on rank 0. Empty-band ranks receive the same final status. Schema
+preparation and ordered batches use the same field order on every writer.
+
+Each batch fits one configured staging buffer and contains at most 4096
+field descriptors; the prepared schema, including coordinates, is also
+limited to 4096 variables. Source buffers can be reused after admission;
+CECE waits for batch completion before submitting the next batch. This
+bounds memory and does not overlap output across model timesteps.
+Coordinate schemas are prepared with the fields, then rank 0 fills their
+payloads after the collective file close. Errors propagate to all ranks;
+failed parallel output is never retried as serial output.
+
+Both output paths declare explicit field axes and an unlimited time dimension,
+so equal-length axes retain their scientific identity and consumers can append
+records. Set `output.amio_parallel_output: false` to force the rank-0 path.
+Field values, coordinate values, attributes, filenames and variable axis order
+retain the existing conventions. This integration does not
+migrate input readers to step collections or enable streaming.
