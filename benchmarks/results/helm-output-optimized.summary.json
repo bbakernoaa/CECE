@@ -1,0 +1,123 @@
+{
+  "provenance": {
+    "baseline_ref": "4b1afa18578b229a7cbea9816828bd22d3481380",
+    "helm_ref": "eeb037b16712042f891992ddbf178848e6cb7477",
+    "writer_sha256": "706e9eb01146f5f66bd1b7f6b6e373a0861ab9b1763d06ec718f878cd0d8fe27",
+    "seed": 41,
+    "note": "Same optimized build and HELM runtime; exact baseline writer source is compiled under a renamed class. Local cached output; no durability/whole-model throughput claim."
+  },
+  "comparisons": [
+    {
+      "case": "small",
+      "ranks": 1,
+      "variant": "parallel",
+      "baseline_median_s": 0.05291156,
+      "candidate_median_s": 0.060222757,
+      "paired_speedup_median": 0.8867265804053569,
+      "paired_speedup_min": 0.8571933101039878,
+      "paired_speedup_max": 0.9172493215479989,
+      "baseline_root_peak_rss_kib": 118324,
+      "candidate_root_peak_rss_kib": 118112,
+      "baseline_sum_rank_peak_rss_kib": 118324,
+      "candidate_sum_rank_peak_rss_kib": 118112
+    },
+    {
+      "case": "small",
+      "ranks": 2,
+      "variant": "parallel",
+      "baseline_median_s": 0.055542262,
+      "candidate_median_s": 0.059415411,
+      "paired_speedup_median": 0.9598518808529323,
+      "paired_speedup_min": 0.8265763921628551,
+      "paired_speedup_max": 0.9708424569696937,
+      "baseline_root_peak_rss_kib": 115148,
+      "candidate_root_peak_rss_kib": 104792,
+      "baseline_sum_rank_peak_rss_kib": 142888,
+      "candidate_sum_rank_peak_rss_kib": 208888
+    },
+    {
+      "case": "layered",
+      "ranks": 1,
+      "variant": "parallel",
+      "baseline_median_s": 0.141781383,
+      "candidate_median_s": 0.149186503,
+      "paired_speedup_median": 0.9418075373748791,
+      "paired_speedup_min": 0.9172577647800483,
+      "paired_speedup_max": 0.9906390861320674,
+      "baseline_root_peak_rss_kib": 401340,
+      "candidate_root_peak_rss_kib": 401436,
+      "baseline_sum_rank_peak_rss_kib": 401340,
+      "candidate_sum_rank_peak_rss_kib": 401436
+    },
+    {
+      "case": "layered",
+      "ranks": 2,
+      "variant": "parallel",
+      "baseline_median_s": 0.163318179,
+      "candidate_median_s": 0.163641258,
+      "paired_speedup_median": 0.9809988994340291,
+      "paired_speedup_min": 0.9282116820459659,
+      "paired_speedup_max": 1.1143884814512224,
+      "baseline_root_peak_rss_kib": 336204,
+      "candidate_root_peak_rss_kib": 183908,
+      "baseline_sum_rank_peak_rss_kib": 434320,
+      "candidate_sum_rank_peak_rss_kib": 358776
+    },
+    {
+      "case": "global",
+      "ranks": 1,
+      "variant": "parallel",
+      "baseline_median_s": 0.312268206,
+      "candidate_median_s": 0.345092582,
+      "paired_speedup_median": 0.9132915272244635,
+      "paired_speedup_min": 0.871557761074566,
+      "paired_speedup_max": 1.1535824754413297,
+      "baseline_root_peak_rss_kib": 603128,
+      "candidate_root_peak_rss_kib": 603812,
+      "baseline_sum_rank_peak_rss_kib": 603128,
+      "candidate_sum_rank_peak_rss_kib": 603812
+    },
+    {
+      "case": "global",
+      "ranks": 2,
+      "variant": "parallel",
+      "baseline_median_s": 0.366121597,
+      "candidate_median_s": 0.35871897,
+      "paired_speedup_median": 1.0427962368424506,
+      "paired_speedup_min": 0.9959621885544334,
+      "paired_speedup_max": 1.0783574006975658,
+      "baseline_root_peak_rss_kib": 473600,
+      "candidate_root_peak_rss_kib": 271388,
+      "baseline_sum_rank_peak_rss_kib": 645008,
+      "candidate_sum_rank_peak_rss_kib": 506760
+    },
+    {
+      "case": "many_fields",
+      "ranks": 1,
+      "variant": "parallel",
+      "baseline_median_s": 0.098727894,
+      "candidate_median_s": 0.113800205,
+      "paired_speedup_median": 0.8446440847799879,
+      "paired_speedup_min": 0.8067832659105111,
+      "paired_speedup_max": 0.8941455885760017,
+      "baseline_root_peak_rss_kib": 242028,
+      "candidate_root_peak_rss_kib": 242012,
+      "baseline_sum_rank_peak_rss_kib": 242028,
+      "candidate_sum_rank_peak_rss_kib": 242012
+    },
+    {
+      "case": "many_fields",
+      "ranks": 2,
+      "variant": "parallel",
+      "baseline_median_s": 0.104023571,
+      "candidate_median_s": 0.147990862,
+      "paired_speedup_median": 0.7195398861856754,
+      "paired_speedup_min": 0.6546249170831803,
+      "paired_speedup_max": 0.7479997535899285,
+      "baseline_root_peak_rss_kib": 210352,
+      "candidate_root_peak_rss_kib": 140688,
+      "baseline_sum_rank_peak_rss_kib": 269568,
+      "candidate_sum_rank_peak_rss_kib": 279340
+    }
+  ]
+}

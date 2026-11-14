@@ -13,6 +13,14 @@ extern "C" void amio_set_parent_communicator(MPI_Fint comm);
 
 namespace cece {
 namespace {
+struct CoordinatePayload {
+    std::string name;
+    amio_dtype_t dtype;
+    amio_shape_t shape;
+    std::vector<double> doubles;
+    std::vector<int> integers;
+};
+
 // Call only between AMIO operations: outstanding backend collectives must be
 // complete before the application enters a collective on this communicator.
 int AgreeFailure(MPI_Comm comm, int failed) {
@@ -75,6 +83,7 @@ int CeceStandaloneWriter::WriteParallelTimeStep(const std::unordered_map<std::st
     int failed = 0;
     amio_core_handle core = nullptr;
     amio_dataset_handle dataset = nullptr;
+    std::vector<CoordinatePayload> coordinates;
     if (writers != MPI_COMM_NULL) {
         amio_set_parent_communicator(MPI_Comm_c2f(writers));
         std::vector<std::string> names;
@@ -98,8 +107,22 @@ int CeceStandaloneWriter::WriteParallelTimeStep(const std::unordered_map<std::st
                 schema.push_back(variable);
             };
             if (rank == 0) {
-                VisitCoordinateVariables(time_seconds, [&](const char* name, const void*, amio_dtype_t dtype, const amio_shape_t* shape) {
+                coordinates.reserve(7);
+                VisitCoordinateVariables(time_seconds, [&](const char* name, const void* data, amio_dtype_t dtype, const amio_shape_t* shape) {
                     add_schema(name, dtype, shape);
+                    size_t elements = 1;
+                    for (int d = 0; d < shape->rank; ++d) elements *= static_cast<size_t>(shape->extents[d]);
+                    CoordinatePayload payload{name, dtype, *shape, {}, {}};
+                    if (dtype == AMIO_DTYPE_F64) {
+                        const auto* source = static_cast<const double*>(data);
+                        payload.doubles.assign(source, source + elements);
+                    } else if (dtype == AMIO_DTYPE_I32) {
+                        const auto* source = static_cast<const int*>(data);
+                        payload.integers.assign(source, source + elements);
+                    } else {
+                        throw std::runtime_error("unsupported coordinate payload type");
+                    }
+                    coordinates.push_back(std::move(payload));
                 });
             } else {
                 // Match the coordinate visitor's order without materializing a
@@ -183,12 +206,20 @@ int CeceStandaloneWriter::WriteParallelTimeStep(const std::unordered_map<std::st
                     auto& view = const_cast<DualView3D&>(fields.at(names[first + n]));
                     view.sync<Kokkos::HostSpace>();
                     auto host = view.view_host();
-                    auto& payload = payloads[n];
-                    payload.resize(static_cast<size_t>(nx_) * band_.ny_local * nz_);
-                    for (int k = 0; k < nz_; ++k)
-                        for (int j = 0; j < band_.ny_local; ++j)
-                            for (int i = 0; i < nx_; ++i) payload[(static_cast<size_t>(k) * band_.ny_local + j) * nx_ + i] = host(i, j, k);
-                    writes[n] = {names[first + n].c_str(), payload.data(), AMIO_DTYPE_F64, &local, &region};
+                    const double* source = host.data();
+                    // LayoutLeft(i,j,k) already matches NetCDF's [k,j,i]
+                    // contiguous order. AMIO snapshots this buffer before
+                    // admission returns; packing it again duplicates that copy.
+                    if (host.stride(0) != 1 || host.stride(1) != static_cast<size_t>(nx_) ||
+                        host.stride(2) != static_cast<size_t>(nx_) * band_.ny_local) {
+                        auto& payload = payloads[n];
+                        payload.resize(static_cast<size_t>(nx_) * band_.ny_local * nz_);
+                        for (int k = 0; k < nz_; ++k)
+                            for (int j = 0; j < band_.ny_local; ++j)
+                                for (int i = 0; i < nx_; ++i) payload[(static_cast<size_t>(k) * band_.ny_local + j) * nx_ + i] = host(i, j, k);
+                        source = payload.data();
+                    }
+                    writes[n] = {names[first + n].c_str(), source, AMIO_DTYPE_F64, &local, &region};
                 }
             } catch (const std::exception& e) {
                 CECE_LOG_ERROR(std::string("[CECE] Packing parallel output failed: ") + e.what());
@@ -221,15 +252,18 @@ int CeceStandaloneWriter::WriteParallelTimeStep(const std::unordered_map<std::st
         try {
             if (nc_open(ResolveFilename(time_seconds).c_str(), NC_WRITE, &ncid) != NC_NOERR)
                 throw std::runtime_error("opening output for coordinate payloads");
-            VisitCoordinateVariables(time_seconds, [&](const char* name, const void* values, amio_dtype_t dtype, const amio_shape_t* shape) {
+            // Coordinate payloads were captured during schema preparation.
+            // Rebuilding them here would reconstruct the entire AXIS mesh twice.
+            for (const auto& coordinate : coordinates) {
                 int id = -1;
-                if (nc_inq_varid(ncid, name, &id) != NC_NOERR) throw std::runtime_error(std::string("coordinate schema missing: ") + name);
+                if (nc_inq_varid(ncid, coordinate.name.c_str(), &id) != NC_NOERR)
+                    throw std::runtime_error("coordinate schema missing: " + coordinate.name);
                 size_t start[AMIO_MAX_RANK]{}, count[AMIO_MAX_RANK]{};
-                for (int d = 0; d < shape->rank; ++d) count[d] = static_cast<size_t>(shape->extents[d]);
-                const int rc = dtype == AMIO_DTYPE_I32 ? nc_put_vara_int(ncid, id, start, count, static_cast<const int*>(values))
-                                                       : nc_put_vara_double(ncid, id, start, count, static_cast<const double*>(values));
-                if (rc != NC_NOERR) throw std::runtime_error(std::string("writing coordinate ") + name + ": " + nc_strerror(rc));
-            });
+                for (int d = 0; d < coordinate.shape.rank; ++d) count[d] = static_cast<size_t>(coordinate.shape.extents[d]);
+                const int rc = coordinate.dtype == AMIO_DTYPE_I32 ? nc_put_vara_int(ncid, id, start, count, coordinate.integers.data())
+                                                                  : nc_put_vara_double(ncid, id, start, count, coordinate.doubles.data());
+                if (rc != NC_NOERR) throw std::runtime_error("writing coordinate " + coordinate.name + ": " + nc_strerror(rc));
+            }
         } catch (const std::exception& e) {
             CECE_LOG_ERROR(std::string("[CECE] Parallel output coordinate failure: ") + e.what());
             failed = 1;

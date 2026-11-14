@@ -1,5 +1,8 @@
 # Performance Benchmarks
 
+For measured standalone I/O results and reproducible before/after trials, see
+[HELM output profiling](helm-output-profiling.md).
+
 This document presents performance benchmarking results for CECE, comparing CPU and GPU execution, and comparing CECE performance to HEMCO.
 
 ## Executive Summary

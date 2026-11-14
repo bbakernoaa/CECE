@@ -68,3 +68,6 @@ specs/
 .vscode/
 
 .scratch/
+
+# Local output profiling data and saved runtime snapshots
+/output-profile/

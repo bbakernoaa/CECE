@@ -1264,7 +1264,7 @@ field).
 
 ### Shared NetCDF output (HELM PR #41)
 
-CECE pins HELM to `eeb037b16712042f891992ddbf178848e6cb7477`
+CECE pins HELM to `12ad43def7527827418fed6437b75b661bbb63d3`
 from [HELM PR #41](https://github.com/NOAA-EMC/HELM/pull/41).
 Initialize MPI with `MPI_THREAD_MULTIPLE` to use background shared output;
 the standalone driver already requests this level. With parallel NetCDF,

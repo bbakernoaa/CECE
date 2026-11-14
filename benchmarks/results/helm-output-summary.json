@@ -1,0 +1,121 @@
+{
+  "method": "Median of paired per-process median ratios; every recorded confirmation pair included. One warm-up per process, 7 timed writes in main matrix and 9 in confirmation. RSS is per-process high-water captured before untimed readback.",
+  "sources": [
+    "helm-output-final.jsonl",
+    "helm-output-many-fields-confirmation.jsonl"
+  ],
+  "comparisons": [
+    {
+      "case": "small",
+      "ranks": 1,
+      "paired_rounds": 3,
+      "speedup_median": 1.1881961340928306,
+      "speedup_min": 1.1613725506390904,
+      "speedup_max": 1.194213215439278,
+      "baseline_median_s": 0.05383254,
+      "candidate_median_s": 0.045590085,
+      "baseline_root_peak_rss_kib": 118944,
+      "candidate_root_peak_rss_kib": 117000,
+      "baseline_sum_rank_peak_rss_kib": 118944,
+      "candidate_sum_rank_peak_rss_kib": 117000
+    },
+    {
+      "case": "small",
+      "ranks": 2,
+      "paired_rounds": 3,
+      "speedup_median": 1.2533350746345346,
+      "speedup_min": 1.2182105447441223,
+      "speedup_max": 1.3813761715871977,
+      "baseline_median_s": 0.053905919,
+      "candidate_median_s": 0.043009982,
+      "baseline_root_peak_rss_kib": 116668,
+      "candidate_root_peak_rss_kib": 105024,
+      "baseline_sum_rank_peak_rss_kib": 145796,
+      "candidate_sum_rank_peak_rss_kib": 209744
+    },
+    {
+      "case": "layered",
+      "ranks": 1,
+      "paired_rounds": 3,
+      "speedup_median": 1.0400364965893822,
+      "speedup_min": 1.011341919743895,
+      "speedup_max": 1.0697033907370228,
+      "baseline_median_s": 0.142252151,
+      "candidate_median_s": 0.137118566,
+      "baseline_root_peak_rss_kib": 402488,
+      "candidate_root_peak_rss_kib": 395268,
+      "baseline_sum_rank_peak_rss_kib": 402488,
+      "candidate_sum_rank_peak_rss_kib": 395268
+    },
+    {
+      "case": "layered",
+      "ranks": 2,
+      "paired_rounds": 3,
+      "speedup_median": 1.085368564082221,
+      "speedup_min": 1.0216396411706226,
+      "speedup_max": 1.148196852306551,
+      "baseline_median_s": 0.167849096,
+      "candidate_median_s": 0.15123065,
+      "baseline_root_peak_rss_kib": 345108,
+      "candidate_root_peak_rss_kib": 187888,
+      "baseline_sum_rank_peak_rss_kib": 444644,
+      "candidate_sum_rank_peak_rss_kib": 363092
+    },
+    {
+      "case": "global",
+      "ranks": 1,
+      "paired_rounds": 3,
+      "speedup_median": 1.1395412715321283,
+      "speedup_min": 1.0214390295299276,
+      "speedup_max": 1.166673143917355,
+      "baseline_median_s": 0.347418436,
+      "candidate_median_s": 0.304875694,
+      "baseline_root_peak_rss_kib": 596636,
+      "candidate_root_peak_rss_kib": 603652,
+      "baseline_sum_rank_peak_rss_kib": 596636,
+      "candidate_sum_rank_peak_rss_kib": 603652
+    },
+    {
+      "case": "global",
+      "ranks": 2,
+      "paired_rounds": 3,
+      "speedup_median": 1.1220990082072653,
+      "speedup_min": 1.116245204807373,
+      "speedup_max": 1.179713584255128,
+      "baseline_median_s": 0.36268248,
+      "candidate_median_s": 0.324912912,
+      "baseline_root_peak_rss_kib": 466864,
+      "candidate_root_peak_rss_kib": 271732,
+      "baseline_sum_rank_peak_rss_kib": 640000,
+      "candidate_sum_rank_peak_rss_kib": 507580
+    },
+    {
+      "case": "many_fields",
+      "ranks": 1,
+      "paired_rounds": 8,
+      "speedup_median": 1.0156997391377687,
+      "speedup_min": 0.8729727694044619,
+      "speedup_max": 1.2182519595446641,
+      "baseline_median_s": 0.097780402,
+      "candidate_median_s": 0.09588158199999999,
+      "baseline_root_peak_rss_kib": 243690.0,
+      "candidate_root_peak_rss_kib": 242024.0,
+      "baseline_sum_rank_peak_rss_kib": 243690.0,
+      "candidate_sum_rank_peak_rss_kib": 242024.0
+    },
+    {
+      "case": "many_fields",
+      "ranks": 2,
+      "paired_rounds": 8,
+      "speedup_median": 1.0864281994108347,
+      "speedup_min": 0.8919919391679003,
+      "speedup_max": 1.3277712457290072,
+      "baseline_median_s": 0.109414824,
+      "candidate_median_s": 0.1007195305,
+      "baseline_root_peak_rss_kib": 210788.0,
+      "candidate_root_peak_rss_kib": 141056.0,
+      "baseline_sum_rank_peak_rss_kib": 271096.0,
+      "candidate_sum_rank_peak_rss_kib": 279538.0
+    }
+  ]
+}

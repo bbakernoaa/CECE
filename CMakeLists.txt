@@ -611,11 +611,14 @@ target_link_libraries(
 # netcdf_mpi library and HPC installations exporting parallel netCDF directly.
 include(CheckCSourceCompiles)
 set(CMAKE_REQUIRED_LIBRARIES netCDF::netcdf)
-check_c_source_compiles("#include <netcdf_meta.h>
+check_c_source_compiles(
+  "#include <netcdf_meta.h>
 #if !defined(NC_HAS_PARALLEL4) || !NC_HAS_PARALLEL4
 #error parallel NetCDF-4 unavailable
 #endif
-int main(void) { return 0; }" CECE_NETCDF_HAS_PARALLEL4)
+int main(void) { return 0; }"
+  CECE_NETCDF_HAS_PARALLEL4
+)
 unset(CMAKE_REQUIRED_LIBRARIES)
 if(AMIO_NETCDF_PAR_LIB OR CECE_NETCDF_HAS_PARALLEL4)
   target_compile_definitions(cece_driver PRIVATE CECE_HAS_PARALLEL_NETCDF=1)
@@ -802,3 +805,71 @@ message(STATUS "CECE external dependency resolution:")
 foreach(_cece_dep_entry IN LISTS _cece_dep_summary)
   message(STATUS "  ${_cece_dep_entry}")
 endforeach()
+
+option(CECE_BUILD_OUTPUT_BENCHMARK "Build the matched develop/current output benchmark" OFF)
+set(
+  CECE_OUTPUT_BASELINE_REF
+  "4b1afa18578b229a7cbea9816828bd22d3481380"
+  CACHE STRING
+  "CECE commit providing the baseline writer"
+)
+if(CECE_BUILD_OUTPUT_BENCHMARK)
+  find_package(Git REQUIRED)
+  set(_output_baseline_dir "${CMAKE_BINARY_DIR}/output-baseline")
+  file(MAKE_DIRECTORY "${_output_baseline_dir}")
+  foreach(_kind IN ITEMS header source)
+    if(_kind STREQUAL "header")
+      set(_path "include/cece/cece_standalone_writer.hpp")
+      set(_dest "cece_develop_standalone_writer.hpp")
+    else()
+      set(_path "src/driver/cece_standalone_writer.cpp")
+      set(_dest "cece_develop_standalone_writer.cpp")
+    endif()
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} show "${CECE_OUTPUT_BASELINE_REF}:${_path}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      OUTPUT_VARIABLE _baseline
+      RESULT_VARIABLE _baseline_rc
+    )
+    if(NOT _baseline_rc EQUAL 0)
+      message(FATAL_ERROR "Unable to load baseline writer ${CECE_OUTPUT_BASELINE_REF}:${_path}")
+    endif()
+    string(REPLACE "CeceStandaloneWriter" "CeceDevelopStandaloneWriter" _baseline "${_baseline}")
+    string(
+      REPLACE "CECE_STANDALONE_WRITER_HPP"
+      "CECE_DEVELOP_STANDALONE_WRITER_HPP"
+      _baseline
+      "${_baseline}"
+    )
+    string(
+      REPLACE "cece/cece_standalone_writer.hpp"
+      "cece_develop_standalone_writer.hpp"
+      _baseline
+      "${_baseline}"
+    )
+    set(_baseline_existing "")
+    if(EXISTS "${_output_baseline_dir}/${_dest}")
+      file(READ "${_output_baseline_dir}/${_dest}" _baseline_existing)
+    endif()
+    if(NOT _baseline_existing STREQUAL _baseline)
+      file(WRITE "${_output_baseline_dir}/${_dest}" "${_baseline}")
+    endif()
+  endforeach()
+  add_executable(
+    benchmark_standalone_output
+    benchmarks/benchmark_standalone_output.cpp
+    "${_output_baseline_dir}/cece_develop_standalone_writer.cpp"
+  )
+  target_include_directories(
+    benchmark_standalone_output
+    PRIVATE "${_output_baseline_dir}" "${CMAKE_CURRENT_SOURCE_DIR}/include/cece"
+  )
+  target_compile_definitions(
+    benchmark_standalone_output
+    PRIVATE CECE_OUTPUT_BASELINE_REF="${CECE_OUTPUT_BASELINE_REF}"
+  )
+  target_link_libraries(benchmark_standalone_output PRIVATE cece_driver)
+  add_library(output_io_trace SHARED benchmarks/output_io_trace.cpp)
+  target_link_libraries(output_io_trace PRIVATE AMIO::public_headers MPI::MPI_CXX ${CMAKE_DL_LIBS})
+  target_include_directories(output_io_trace PRIVATE ${netCDF_INCLUDE_DIRS})
+endif()

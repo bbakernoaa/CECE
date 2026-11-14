@@ -22,13 +22,14 @@ struct FileSnapshot {
 
 // All ranks execute each case. Rank zero alone inspects the closed file.
 void WriteBands(int ny, bool malformed, bool different_names, bool parallel = true, bool failing_open = false, FileSnapshot* snapshot = nullptr,
-                bool curvilinear = false, bool coordinate_only = false) {
+                bool curvilinear = false, bool coordinate_only = false, bool padded = false) {
     int rank = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     int size = 1;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     if (different_names && size == 1) GTEST_SKIP() << "requires multiple ranks";
-    constexpr int nx = 5, nz = 3;
+    const int nx = padded ? 129 : 5;
+    constexpr int nz = 3;
     const auto band = cece::BandDecomposition::compute(ny, MPI_COMM_WORLD);
     std::string directory;
     if (rank == 0) {
@@ -73,8 +74,10 @@ void WriteBands(int ny, bool malformed, bool different_names, bool parallel = tr
     for (int f = 0; f < (coordinate_only ? 0 : 7); ++f) {
         const std::string name = "species" + std::to_string(f);
         const int local_ny = band.ny_local + ((malformed && rank == 0) ? 1 : 0);
-        cece::DualView3D view(name, nx, local_ny, nz);
+        cece::DualView3D view =
+            padded ? cece::DualView3D(Kokkos::view_alloc(Kokkos::AllowPadding, name), nx, local_ny, nz) : cece::DualView3D(name, nx, local_ny, nz);
         auto h = view.view_host();
+        if (padded && local_ny > 1) EXPECT_GT(h.stride(1), static_cast<size_t>(nx));
         for (int k = 0; k < nz; ++k)
             for (int j = 0; j < local_ny; ++j)
                 for (int i = 0; i < nx; ++i) h(i, j, k) = f * 10000 + k * 1000 + (band.j0 + j) * 10 + i;
@@ -175,6 +178,13 @@ TEST(ParallelStandaloneWriter, CurvilinearFilesAgree) {
 
 TEST(ParallelStandaloneWriter, CoordinateOnlyTimeIsWritten) {
     WriteBands(5, false, false, true, false, nullptr, false, true);
+}
+
+TEST(ParallelStandaloneWriter, PaddedSerialViewsKeepValues) {
+    WriteBands(5, false, false, false, false, nullptr, false, false, true);
+}
+TEST(ParallelStandaloneWriter, PaddedParallelViewsKeepValues) {
+    WriteBands(5, false, false, true, false, nullptr, false, false, true);
 }
 
 TEST(ParallelStandaloneWriter, UnevenBandsAndBoundedBatches) {

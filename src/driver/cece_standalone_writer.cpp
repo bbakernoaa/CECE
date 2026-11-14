@@ -871,34 +871,25 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                     return -1;
                 }
 
-                // Pack the band host view (LayoutLeft (i, jrel, k)) into a
-                // contiguous per-level send buffer laid out [level][jrel][i]:
-                // element (k, jrel, i) at k*(ny_local*nx_) + jrel*nx_ + i.
-                std::vector<double> send_buf(static_cast<size_t>(nz_) * band_level_elems);
-                for (int k = 0; k < nz_; ++k) {
-                    for (int jrel = 0; jrel < ny_local; ++jrel) {
-                        for (int i = 0; i < nx_; ++i) {
-                            size_t kokkos_idx = static_cast<size_t>(i) + static_cast<size_t>(jrel) * nx_ + static_cast<size_t>(k) * nx_ * ny_local;
-                            size_t send_idx = static_cast<size_t>(k) * band_level_elems + static_cast<size_t>(jrel) * nx_ + i;
-                            send_buf[send_idx] = h_view.data()[kokkos_idx];
-                        }
-                    }
+                // Dense LayoutLeft(i,j,k) is already contiguous [k,j,i].
+                // Borrow it through synchronous snapshot admission; only padded
+                // host views require a packed copy.
+                const double* send_data = h_view.data();
+                std::vector<double> send_buf;
+                if (h_view.stride(0) != 1 || h_view.stride(1) != static_cast<size_t>(nx_) ||
+                    h_view.stride(2) != static_cast<size_t>(nx_) * ny_local) {
+                    send_buf.resize(static_cast<size_t>(nz_) * band_level_elems);
+                    for (int k = 0; k < nz_; ++k)
+                        for (int jrel = 0; jrel < ny_local; ++jrel)
+                            for (int i = 0; i < nx_; ++i) send_buf[(static_cast<size_t>(k) * ny_local + jrel) * nx_ + i] = h_view(i, jrel, k);
+                    send_data = send_buf.data();
                 }
 
-                // global_field is the assembled global [level][j][i] buffer
-                // (size nz_ * ny_ * nx_). In the single-rank path it IS send_buf
-                // (already the whole grid). In the multi-rank path rank 0 fills it
-                // via the per-level MPI_Gatherv below and writes it directly — the
-                // file is rank-0-owned in independent mode (see Step 2), so no
-                // broadcast and no per-rank copy are needed.
                 std::vector<double> global_field;
-                if (!do_gather) {
-                    // Single-rank / no-MPI: ny_local == ny_, so send_buf is already
-                    // the global [level][j][i] field. Move it in directly.
-                    global_field = std::move(send_buf);
-                } else {
+                const double* field_data = send_data;
+                if (do_gather) {
                     if (rank == 0) {
-                        global_field.assign(static_cast<size_t>(nz_) * global_level_elems, 0.0);
+                        global_field.resize(static_cast<size_t>(nz_) * global_level_elems);
                     }
                     // One MPI_Gatherv PER LEVEL (Req 6.1, 6.3, 6.6). Every rank
                     // (including rank 0 and surplus ranks with ny_local == 0)
@@ -907,7 +898,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                     // send a zero-count band (sendcount 0).
                     const int sendcount = static_cast<int>(band_level_elems);  // nx_ * ny_local
                     for (int k = 0; k < nz_; ++k) {
-                        const double* level_send = send_buf.data() + static_cast<size_t>(k) * band_level_elems;
+                        const double* level_send = sendcount ? send_data + static_cast<size_t>(k) * band_level_elems : nullptr;
                         double* level_recv = (rank == 0) ? (global_field.data() + static_cast<size_t>(k) * global_level_elems) : nullptr;
                         const int gather_rc = MPI_Gatherv(level_send, sendcount, MPI_DOUBLE, level_recv, (rank == 0) ? recvcounts.data() : nullptr,
                                                           (rank == 0) ? recvdispls.data() : nullptr, MPI_DOUBLE, 0, comm_);
@@ -917,6 +908,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                             return -1;
                         }
                     }
+                    field_data = rank == 0 ? global_field.data() : nullptr;
                     // The gather leaves the authoritative global field on rank 0.
                     // The output file is opened in INDEPENDENT mode by rank 0 only
                     // (see Step 2), so rank 0 writes it directly below: no full-grid
@@ -927,7 +919,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 // --- Global write assembly (task 8.2) ---------------------------
                 // Only the file owner writes: rank 0 in the multi-rank path (it
                 // assembled global_field via Gatherv), the single process in the
-                // no-gather path (global_field was moved from send_buf). The
+                // no-gather path (the dense host view is borrowed directly). The
                 // [level][j][i] layout is already exactly the NetCDF
                 // [lev, lat, lon] ordering — the old "transpose" loop computed
                 // src_idx and netcdf_idx as the same value — so global_field is
@@ -952,7 +944,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                             field_shape.extents[3] = nx_;
                         }
 
-                        write_and_wait(dataset, name.c_str(), global_field.data(), AMIO_DTYPE_F64, &field_shape, config_.amio_staging_timeout_ms);
+                        write_and_wait(dataset, name.c_str(), field_data, AMIO_DTYPE_F64, &field_shape, config_.amio_staging_timeout_ms);
                     } catch (const std::exception& e) {
                         CECE_LOG_ERROR(std::string("[CECE] Writer field write failed for '") + name + "': " + e.what());
                         skip_file_work = true;
