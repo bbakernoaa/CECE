@@ -18,6 +18,9 @@ load(pathJoin("cray-mpich", cray_mpich_ver))
 cmake_ver=os.getenv("cmake_ver") or "3.20.2"
 load(pathJoin("cmake", cmake_ver))
 
+python_ver=os.getenv("python_ver") or "3.12.0"
+load(pathJoin("python", python_ver))
+
 local ufs_modules = {
   {["jasper"]      = "2.0.25"},
   {["zlib"]        = "1.2.11"},
@@ -31,8 +34,7 @@ local ufs_modules = {
   {["crtm"]        = "2.4.0"},
   {["g2"]          = "3.5.1"},
   {["g2tmpl"]      = "1.13.0"},
-  {["ip"]          = "4.0.0"},
-  {["sp"]          = "2.3.3"},
+  {["ip"]          = "5.4.1"},
   {["w3emc"]       = "2.12.0"},
   {["gftl-shared"] = "1.6.1"},
   {["mapl-D"]      = "2.53.0"},

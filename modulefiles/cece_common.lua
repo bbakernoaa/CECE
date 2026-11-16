@@ -3,12 +3,12 @@ help([[Load CECE common libraries]])
 
 local ufs_modules = {
   {["libpng"]          = "1.6.37"},
-  {["hdf5"]            = "1.14.3"},
+  {["hdf5"]            = "1.14.5"},
   {["netcdf-c"]        = "4.9.2"},
   {["netcdf-fortran"]  = "4.6.1"},
   {["parallelio"]      = "2.6.2"},
   {["esmf"]            = "8.8.0"},
-  {["fms"]             = "2024.02"},
+  {["fms"]             = "2025.03-gfs-constants"},
 }
 
 for i = 1, #ufs_modules do
